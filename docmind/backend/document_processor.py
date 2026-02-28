@@ -95,6 +95,7 @@ class DocumentProcessor:
                 rc["source_file"],
                 rc["page_number"],
                 rc["content_type"],
+                rc.get("metadata", {}),
             )
             chunks.extend(sub_chunks)
 
@@ -109,6 +110,8 @@ class DocumentProcessor:
         """Extract text và OCR từ PDF."""
         doc = fitz.open(str(path))
         raw = []
+        image_dump_dir = path.parent / f"{path.stem}__images"
+        image_dump_dir.mkdir(exist_ok=True)
 
         for page_num, page in enumerate(doc):
             # 1. Extract native text
@@ -119,6 +122,7 @@ class DocumentProcessor:
                     "source_file": path.name,
                     "page_number": page_num,
                     "content_type": "text",
+                    "metadata": {},
                 })
 
             # 2. Extract embedded images và OCR
@@ -130,6 +134,8 @@ class DocumentProcessor:
                     img_bytes = base_image["image"]
                     img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
                     img_np = np.array(img)
+                    image_path = image_dump_dir / f"page_{page_num + 1}_img_{img_idx + 1}.png"
+                    img.save(image_path, format="PNG")
 
                     ocr_text = self._ocr_image_array(img_np)
                     color_text = self._describe_image_colors(img_np)
@@ -139,6 +145,7 @@ class DocumentProcessor:
                             "source_file": path.name,
                             "page_number": page_num,
                             "content_type": "ocr_image",
+                            "metadata": {"image_path": str(image_path)},
                         })
                     elif color_text.strip():
                         raw.append({
@@ -146,6 +153,7 @@ class DocumentProcessor:
                             "source_file": path.name,
                             "page_number": page_num,
                             "content_type": "ocr_image",
+                            "metadata": {"image_path": str(image_path)},
                         })
                 except Exception as e:
                     logger.warning(f"OCR image error (page {page_num}, img {img_idx}): {e}")
@@ -163,6 +171,7 @@ class DocumentProcessor:
                             "source_file": path.name,
                             "page_number": page_num,
                             "content_type": "ocr_page",
+                            "metadata": {},
                         })
                 except Exception as e:
                     logger.warning(f"Page OCR error (page {page_num}): {e}")
@@ -186,6 +195,7 @@ class DocumentProcessor:
             "source_file": path.name,
             "page_number": 0,
             "content_type": "ocr_image",
+            "metadata": {"image_path": str(path)},
         }]
 
     def _ocr_image_array(self, img_np: np.ndarray) -> str:
@@ -256,6 +266,7 @@ class DocumentProcessor:
         source_file: str,
         page_number: int,
         content_type: str,
+        metadata: Optional[dict] = None,
     ) -> list[TextChunk]:
         """
         Chia text thành chunks theo word count với overlap.
@@ -279,6 +290,7 @@ class DocumentProcessor:
                         page_number=page_number,
                         chunk_index=chunk_idx,
                         content_type=content_type,
+                        metadata=metadata or {},
                     ))
                     chunk_idx += 1
                     # Overlap: giữ lại CHUNK_OVERLAP words cuối
@@ -296,6 +308,7 @@ class DocumentProcessor:
                 page_number=page_number,
                 chunk_index=chunk_idx,
                 content_type=content_type,
+                metadata=metadata or {},
             ))
 
         # Nếu text quá ngắn, vẫn tạo 1 chunk
@@ -306,6 +319,7 @@ class DocumentProcessor:
                 page_number=page_number,
                 chunk_index=0,
                 content_type=content_type,
+                metadata=metadata or {},
             ))
 
         return chunks

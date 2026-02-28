@@ -6,6 +6,8 @@ Prompt được tối ưu cho tiếng Việt + tiếng Anh song ngữ.
 """
 
 import logging
+import base64
+from pathlib import Path
 from typing import AsyncGenerator, Optional
 
 from embedder import Embedder
@@ -54,10 +56,51 @@ def build_rag_prompt(question: str, search_results: list[SearchResult]) -> list[
         f"Hãy trả lời câu hỏi dựa trên các đoạn tài liệu trên."
     )
 
+    image_content = _build_image_content(search_results)
+
+    if image_content:
+        user_content = [{"type": "text", "text": user_message}, *image_content]
+    else:
+        user_content = user_message
+
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_message},
+        {"role": "user", "content": user_content},
     ]
+
+
+def _build_image_content(search_results: list[SearchResult], max_images: int = 2) -> list[dict]:
+    """Tạo danh sách image_url content cho VLM từ chunks có metadata.image_path."""
+    image_items: list[dict] = []
+    seen_paths: set[str] = set()
+
+    for result in search_results:
+        image_path = result.chunk.metadata.get("image_path") if result.chunk.metadata else None
+        if not image_path or image_path in seen_paths:
+            continue
+
+        path = Path(image_path)
+        if not path.exists():
+            continue
+
+        try:
+            encoded = base64.b64encode(path.read_bytes()).decode("utf-8")
+            suffix = path.suffix.lower().replace(".", "") or "png"
+            mime = "jpeg" if suffix == "jpg" else suffix
+            image_items.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/{mime};base64,{encoded}"},
+                }
+            )
+            seen_paths.add(image_path)
+        except Exception:
+            continue
+
+        if len(image_items) >= max_images:
+            break
+
+    return image_items
 
 
 class RAGPipeline:
