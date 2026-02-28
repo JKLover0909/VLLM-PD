@@ -8,7 +8,7 @@ bge-m3 hỗ trợ 100+ ngôn ngữ, bao gồm tiếng Việt, context lên đế
 import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
-from typing import Union
+from typing import Optional, Union
 import logging
 
 logger = logging.getLogger(__name__)

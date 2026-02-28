@@ -32,7 +32,7 @@ from vllm_client import VLLMClient
 # Config
 # ──────────────────────────────────────────────
 VLLM_URL = os.getenv("VLLM_URL", "http://localhost:8000")
-VLLM_MODEL = os.getenv("VLLM_MODEL", "llama3.1-8b")
+VLLM_MODEL = os.getenv("VLLM_MODEL", "llama3.1-8b-awq")
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 

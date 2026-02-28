@@ -1,473 +1,349 @@
 """
-app.py — DocMind Streamlit Frontend
-Giao diện hỏi đáp tài liệu kiểu NotebookLM với hỗ trợ tiếng Việt.
+Meiko Automation - DocMind QA Testbench (Streamlit)
+Webapp kiểm thử hệ thống RAG đa phương thức (text + image).
 """
 
 import json
+import os
 import time
-import uuid
+from typing import Any
+
 import requests
 import streamlit as st
 
-# ─────────────────────────────────────
-# Config
-# ─────────────────────────────────────
-BACKEND_URL = "http://localhost:8001"
+BACKEND_URL = os.getenv("DOCMIND_BACKEND_URL", "http://localhost:8001").rstrip("/")
 ALLOWED_TYPES = ["pdf", "png", "jpg", "jpeg", "bmp", "tiff", "webp"]
 
 st.set_page_config(
-    page_title="DocMind — Trợ lý Tài liệu AI",
-    page_icon="📚",
+    page_title="Meiko Automation · DocMind QA",
+    page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ─────────────────────────────────────
-# Custom CSS (dark premium theme)
-# ─────────────────────────────────────
-st.markdown("""
+st.markdown(
+    """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
-html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
-}
-
-/* Dark background */
 .stApp {
-    background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
-    color: #e8e8f0;
+    background: radial-gradient(circle at top right, #132f4c 0%, #0b1220 55%, #080d18 100%);
+    color: #e2e8f0;
 }
 
-/* Sidebar */
 [data-testid="stSidebar"] {
-    background: rgba(255,255,255,0.04);
-    border-right: 1px solid rgba(255,255,255,0.08);
+    background: rgba(15, 23, 42, 0.86);
+    border-right: 1px solid rgba(148, 163, 184, 0.25);
 }
 
-/* Header */
-.docmind-header {
-    background: linear-gradient(90deg, #6366f1, #8b5cf6, #06b6d4);
+.brand-title {
+    font-size: 1.85rem;
+    font-weight: 700;
+    background: linear-gradient(90deg, #22d3ee, #38bdf8, #60a5fa);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    font-size: 2rem;
-    font-weight: 700;
-    letter-spacing: -0.5px;
+    margin-bottom: 4px;
 }
 
-/* Chat bubble — user */
-.chat-user {
-    background: linear-gradient(135deg, #6366f1, #8b5cf6);
-    color: white;
-    border-radius: 18px 18px 4px 18px;
-    padding: 12px 18px;
-    margin: 8px 0;
-    margin-left: 20%;
-    box-shadow: 0 4px 20px rgba(99,102,241,0.3);
+.subtitle {
+    color: #cbd5e1;
+    margin-bottom: 14px;
 }
 
-/* Chat bubble — assistant */
-.chat-assistant {
-    background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 18px 18px 18px 4px;
-    padding: 14px 18px;
-    margin: 8px 0;
-    margin-right: 10%;
-    backdrop-filter: blur(10px);
-    line-height: 1.7;
-}
-
-/* Source badge */
-.source-badge {
+.status-chip {
     display: inline-block;
-    background: rgba(99,102,241,0.2);
-    border: 1px solid rgba(99,102,241,0.4);
-    color: #a5b4fc;
-    border-radius: 20px;
-    padding: 2px 10px;
-    font-size: 0.75rem;
-    margin: 2px 3px;
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    margin: 2px 4px 2px 0;
 }
 
-/* File card */
-.file-card {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
+.ok { background: rgba(34,197,94,.16); color: #86efac; border: 1px solid rgba(34,197,94,.35); }
+.warn { background: rgba(245,158,11,.16); color: #fcd34d; border: 1px solid rgba(245,158,11,.35); }
+
+.card {
+    background: rgba(15, 23, 42, 0.55);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-top: 8px;
+}
+
+.metric {
     border-radius: 12px;
-    padding: 10px 14px;
-    margin: 6px 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    transition: all 0.2s;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    background: rgba(30, 41, 59, 0.58);
+    padding: 12px;
+    text-align: center;
 }
 
-/* Status pill */
-.status-ok {
-    background: rgba(16,185,129,0.15);
-    color: #6ee7b7;
-    border: 1px solid rgba(16,185,129,0.3);
-    border-radius: 20px;
-    padding: 2px 10px;
-    font-size: 0.75rem;
-}
-.status-warn {
-    background: rgba(245,158,11,0.15);
-    color: #fcd34d;
-    border: 1px solid rgba(245,158,11,0.3);
-    border-radius: 20px;
-    padding: 2px 10px;
-    font-size: 0.75rem;
-}
+.metric .label { color: #94a3b8; font-size: 0.82rem; }
+.metric .value { color: #e2e8f0; font-size: 1.1rem; font-weight: 700; margin-top: 2px; }
 
-/* Input styling */
-.stTextInput > div > div > input,
-.stTextArea > div > div > textarea {
-    background: rgba(255,255,255,0.05) !important;
-    border: 1px solid rgba(255,255,255,0.15) !important;
-    border-radius: 12px !important;
-    color: #e8e8f0 !important;
-}
-
-/* Button */
 .stButton > button {
-    background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
-    color: white !important;
-    border: none !important;
     border-radius: 10px !important;
-    font-weight: 600 !important;
-    transition: all 0.2s !important;
-}
-.stButton > button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 8px 25px rgba(99,102,241,0.4) !important;
+    border: 1px solid rgba(56, 189, 248, 0.36) !important;
 }
 
-/* Divider */
-hr { border-color: rgba(255,255,255,0.08) !important; }
-
-/* Expander */
-.streamlit-expanderHeader {
-    background: rgba(255,255,255,0.03) !important;
-    border-radius: 8px !important;
-}
-
-/* Scrollable chat area */
-.chat-container {
-    max-height: 65vh;
-    overflow-y: auto;
-    padding-right: 8px;
+.stTextInput > div > div > input {
+    border-radius: 10px !important;
 }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
-# ─────────────────────────────────────
-# Session State Init
-# ─────────────────────────────────────
-def init_state():
+def init_state() -> None:
     defaults = {
         "session_id": None,
-        "messages": [],       # [{"role": "user"|"assistant", "content": str, "sources": list}]
-        "indexed_files": [],  # list of filenames
-        "vllm_status": None,
+        "messages": [],
+        "indexed_files": [],
+        "last_latency": None,
     }
-    for key, val in defaults.items():
+    for key, value in defaults.items():
         if key not in st.session_state:
-            st.session_state[key] = val
-
-init_state()
+            st.session_state[key] = value
 
 
-# ─────────────────────────────────────
-# API Helpers
-# ─────────────────────────────────────
+def api_health() -> dict[str, Any]:
+    try:
+        response = requests.get(f"{BACKEND_URL}/health", timeout=4)
+        response.raise_for_status()
+        return response.json()
+    except Exception:
+        return {"status": "error", "vllm_connected": False, "sessions": 0}
+
+
 def api_create_session() -> str | None:
     try:
-        r = requests.post(f"{BACKEND_URL}/sessions", timeout=5)
-        r.raise_for_status()
-        return r.json()["session_id"]
-    except Exception as e:
-        st.error(f"❌ Không thể kết nối backend: {e}")
+        response = requests.post(f"{BACKEND_URL}/sessions", timeout=8)
+        response.raise_for_status()
+        return response.json().get("session_id")
+    except Exception as exc:
+        st.error(f"Không thể tạo session: {exc}")
         return None
 
 
-def api_health() -> dict:
+def api_upload(session_id: str, file_obj) -> dict[str, Any] | None:
     try:
-        r = requests.get(f"{BACKEND_URL}/health", timeout=3)
-        return r.json()
-    except Exception:
-        return {"status": "error", "vllm_connected": False}
-
-
-def api_upload(session_id: str, file) -> dict | None:
-    try:
-        r = requests.post(
+        response = requests.post(
             f"{BACKEND_URL}/sessions/{session_id}/upload",
-            files={"file": (file.name, file.getvalue(), file.type)},
-            timeout=120,
+            files={"file": (file_obj.name, file_obj.getvalue(), file_obj.type)},
+            timeout=180,
         )
-        r.raise_for_status()
-        return r.json()
-    except requests.HTTPError as e:
-        detail = e.response.json().get("detail", str(e)) if e.response else str(e)
-        st.error(f"❌ Upload lỗi: {detail}")
+        response.raise_for_status()
+        return response.json()
+    except requests.HTTPError as exc:
+        detail = exc.response.json().get("detail", str(exc)) if exc.response else str(exc)
+        st.error(f"Upload lỗi: {detail}")
         return None
-    except Exception as e:
-        st.error(f"❌ Upload lỗi: {e}")
+    except Exception as exc:
+        st.error(f"Upload lỗi: {exc}")
         return None
-
-
-def api_query(session_id: str, question: str) -> tuple[str, list]:
-    """Non-streaming query, trả về (answer, sources)."""
-    try:
-        r = requests.post(
-            f"{BACKEND_URL}/query",
-            json={"session_id": session_id, "question": question, "stream": False},
-            timeout=120,
-        )
-        r.raise_for_status()
-        data = r.json()
-        return data["answer"], data.get("sources", [])
-    except requests.HTTPError as e:
-        detail = e.response.json().get("detail", str(e)) if e.response else str(e)
-        return f"❌ Lỗi: {detail}", []
-    except Exception as e:
-        return f"❌ Lỗi kết nối: {e}", []
 
 
 def api_query_stream(session_id: str, question: str):
-    """Streaming query via SSE. Yields (type, data) tuples."""
     try:
         with requests.post(
             f"{BACKEND_URL}/query/stream",
             json={"session_id": session_id, "question": question, "stream": True},
             stream=True,
-            timeout=120,
-        ) as resp:
-            resp.raise_for_status()
-            for line in resp.iter_lines():
+            timeout=240,
+        ) as response:
+            response.raise_for_status()
+            for line in response.iter_lines():
                 if line and line.startswith(b"data: "):
                     try:
-                        data = json.loads(line[6:])
-                        yield data
+                        yield json.loads(line[6:])
                     except json.JSONDecodeError:
                         continue
-    except Exception as e:
-        yield {"type": "error", "message": str(e)}
+    except Exception as exc:
+        yield {"type": "error", "message": str(exc)}
 
 
-# ─────────────────────────────────────
-# UI Components
-# ─────────────────────────────────────
-def render_message(msg: dict):
-    role = msg["role"]
-    content = msg["content"]
-    sources = msg.get("sources", [])
-
-    if role == "user":
-        st.markdown(
-            f'<div class="chat-user">👤 {content}</div>',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            f'<div class="chat-assistant">🤖 {content}</div>',
-            unsafe_allow_html=True,
-        )
-        if sources:
-            badges = " ".join(
-                f'<span class="source-badge">📄 {s["file"]} trang {s["page"]}</span>'
-                for s in sources
-            )
-            st.markdown(f"<div style='margin-top:4px'>{badges}</div>", unsafe_allow_html=True)
-
-
-def render_sidebar():
+def render_sidebar() -> None:
     with st.sidebar:
-        st.markdown('<p class="docmind-header">📚 DocMind</p>', unsafe_allow_html=True)
-        st.caption("Trợ lý Tài liệu AI · Tiếng Việt & English")
-        st.markdown("---")
+        st.markdown('<div class="brand-title">Meiko Automation</div>', unsafe_allow_html=True)
+        st.markdown("<div class='subtitle'>DocMind QA Testbench · Multimodal RAG</div>", unsafe_allow_html=True)
 
-        # Status
         health = api_health()
-        vllm_ok = health.get("vllm_connected", False)
-        if health.get("status") == "ok":
-            status_html = '<span class="status-ok">● Backend Online</span>'
-        else:
-            status_html = '<span class="status-warn">● Backend Offline</span>'
-
-        vllm_html = (
-            '<span class="status-ok">● vLLM Connected</span>'
-            if vllm_ok
-            else '<span class="status-warn">● vLLM Offline</span>'
+        backend_chip = (
+            '<span class="status-chip ok">Backend Online</span>'
+            if health.get("status") == "ok"
+            else '<span class="status-chip warn">Backend Offline</span>'
         )
-        st.markdown(f"{status_html}  {vllm_html}", unsafe_allow_html=True)
-        st.markdown("---")
+        vllm_chip = (
+            '<span class="status-chip ok">vLLM Connected</span>'
+            if health.get("vllm_connected")
+            else '<span class="status-chip warn">vLLM Offline</span>'
+        )
+        st.markdown(f"{backend_chip}{vllm_chip}", unsafe_allow_html=True)
 
-        # Session
+        st.markdown("---")
         if st.session_state.session_id is None:
-            if st.button("🚀 Tạo Session Mới", use_container_width=True):
-                sid = api_create_session()
-                if sid:
-                    st.session_state.session_id = sid
+            if st.button("Tạo session mới", use_container_width=True):
+                session_id = api_create_session()
+                if session_id:
+                    st.session_state.session_id = session_id
                     st.session_state.messages = []
                     st.session_state.indexed_files = []
                     st.rerun()
         else:
-            sid_short = st.session_state.session_id[:8]
-            st.markdown(f"**Session:** `{sid_short}...`")
-
-            if st.button("🔄 Session Mới", use_container_width=True, type="secondary"):
-                sid = api_create_session()
-                if sid:
-                    st.session_state.session_id = sid
+            st.caption(f"Session: {st.session_state.session_id}")
+            if st.button("Đổi session", use_container_width=True):
+                session_id = api_create_session()
+                if session_id:
+                    st.session_state.session_id = session_id
                     st.session_state.messages = []
                     st.session_state.indexed_files = []
                     st.rerun()
 
         st.markdown("---")
-
-        # Upload
-        st.markdown("#### 📁 Tài liệu")
-        uploaded = st.file_uploader(
-            "Kéo thả hoặc chọn file",
+        st.markdown("### Upload tài liệu test")
+        uploads = st.file_uploader(
+            "Hỗ trợ PDF + ảnh",
             type=ALLOWED_TYPES,
             accept_multiple_files=True,
-            help="Hỗ trợ: PDF, PNG, JPG, BMP, TIFF, WEBP",
+            help="Dùng để test khả năng OCR + RAG của hệ thống.",
         )
 
-        if uploaded and st.session_state.session_id:
-            if st.button("⚡ Index Tài liệu", use_container_width=True):
-                new_files = [f for f in uploaded if f.name not in st.session_state.indexed_files]
-                if not new_files:
-                    st.info("Tất cả file đã được index.")
-                else:
-                    progress = st.progress(0, text="Đang xử lý...")
-                    for i, f in enumerate(new_files):
-                        progress.progress(
-                            int((i / len(new_files)) * 100),
-                            text=f"Đang index: {f.name}",
-                        )
-                        result = api_upload(st.session_state.session_id, f)
-                        if result:
-                            st.session_state.indexed_files.append(f.name)
-                            st.success(
-                                f"✅ {f.name} — {result['num_chunks']} chunks"
-                            )
-                    progress.progress(100, text="Hoàn tất!")
-                    time.sleep(0.5)
-                    st.rerun()
-        elif uploaded and not st.session_state.session_id:
-            st.warning("⚠️ Hãy tạo session trước.")
+        if uploads and st.session_state.session_id and st.button("Index tài liệu", use_container_width=True):
+            new_uploads = [f for f in uploads if f.name not in st.session_state.indexed_files]
+            if not new_uploads:
+                st.info("Các file này đã được index trước đó.")
+            else:
+                progress = st.progress(0, text="Đang index...")
+                for idx, file_obj in enumerate(new_uploads):
+                    progress.progress(int((idx / len(new_uploads)) * 100), text=f"Xử lý: {file_obj.name}")
+                    result = api_upload(st.session_state.session_id, file_obj)
+                    if result:
+                        st.session_state.indexed_files.append(file_obj.name)
+                progress.progress(100, text="Hoàn tất index")
+                time.sleep(0.25)
+                st.rerun()
+        elif uploads and not st.session_state.session_id:
+            st.warning("Cần tạo session trước khi upload.")
 
-        # Indexed files list
+        if uploads:
+            image_uploads = [f for f in uploads if f.type and f.type.startswith("image/")][:2]
+            for image_file in image_uploads:
+                st.image(image_file, caption=f"Preview: {image_file.name}", use_column_width=True)
+
         if st.session_state.indexed_files:
-            st.markdown("**Đã index:**")
-            for fname in st.session_state.indexed_files:
-                ext = fname.split(".")[-1].upper()
-                icon = "📄" if ext == "PDF" else "🖼️"
-                st.markdown(
-                    f'<div class="file-card">{icon} <span style="font-size:0.85rem">{fname}</span></div>',
-                    unsafe_allow_html=True,
-                )
-
-        st.markdown("---")
-        # Tips
-        with st.expander("💡 Gợi ý câu hỏi"):
-            tips = [
-                "Tóm tắt nội dung chính của tài liệu này?",
-                "Các điểm quan trọng nhất trong tài liệu là gì?",
-                "Giải thích khái niệm X trong tài liệu?",
-                "So sánh các phương pháp được đề cập?",
-                "Kết luận của tài liệu là gì?",
-            ]
-            for tip in tips:
-                st.markdown(f"• _{tip}_")
+            st.markdown("---")
+            st.markdown("### File đã index")
+            for file_name in st.session_state.indexed_files:
+                icon = "🖼️" if file_name.lower().endswith(("png", "jpg", "jpeg", "bmp", "tiff", "webp")) else "📄"
+                st.markdown(f"- {icon} {file_name}")
 
 
-def render_chat_area():
-    st.markdown("#### 💬 Hỏi đáp Tài liệu")
+def render_metrics() -> None:
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown(
+            f"<div class='metric'><div class='label'>Session Active</div><div class='value'>{'Yes' if st.session_state.session_id else 'No'}</div></div>",
+            unsafe_allow_html=True,
+        )
+    with col2:
+        st.markdown(
+            f"<div class='metric'><div class='label'>Indexed Files</div><div class='value'>{len(st.session_state.indexed_files)}</div></div>",
+            unsafe_allow_html=True,
+        )
+    with col3:
+        latency_text = f"{st.session_state.last_latency:.2f}s" if st.session_state.last_latency else "-"
+        st.markdown(
+            f"<div class='metric'><div class='label'>Last Response</div><div class='value'>{latency_text}</div></div>",
+            unsafe_allow_html=True,
+        )
+
+
+def _format_source_item(source: Any) -> str:
+    if isinstance(source, dict):
+        return f"{source.get('file', '-')}:trang {source.get('page', '-')}"
+    return str(source)
+
+
+def render_chat() -> None:
+    st.markdown("### Chat kiểm thử")
+    st.markdown(
+        "<div class='card'>Gợi ý test: <b>“Trong ảnh này có thông tin gì?”</b>, <b>“Tóm tắt nội dung tài liệu theo 3 ý chính”</b>, <b>“Trích dẫn nguồn liên quan tới ...”</b></div>",
+        unsafe_allow_html=True,
+    )
 
     if not st.session_state.session_id:
-        st.markdown("""
-        <div style="text-align:center; padding:60px 20px; opacity:0.5">
-            <div style="font-size:4rem">📚</div>
-            <h3>Chào mừng đến với DocMind</h3>
-            <p>Tạo session và upload tài liệu để bắt đầu hỏi đáp</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.info("Tạo session ở sidebar để bắt đầu.")
         return
-
     if not st.session_state.indexed_files:
-        st.info("📁 Hãy upload và index tài liệu ở thanh bên trái để bắt đầu.")
+        st.info("Upload và index file để hệ thống có ngữ cảnh trả lời.")
         return
 
-    # Render messages
-    for msg in st.session_state.messages:
-        render_message(msg)
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+            if message.get("sources"):
+                source_text = " | ".join(
+                    f"{source.get('file', '-')}:trang {source.get('page', '-')}"
+                    for source in message["sources"]
+                )
+                st.caption(f"Nguồn: {source_text}")
 
-    # Chat input
-    st.markdown("---")
-    with st.form("chat_form", clear_on_submit=True):
-        col1, col2 = st.columns([5, 1])
-        with col1:
-            question = st.text_input(
-                "Câu hỏi",
-                placeholder="Hỏi về nội dung tài liệu... (Tiếng Việt hoặc English)",
-                label_visibility="collapsed",
+    question = st.chat_input("Nhập câu hỏi để test hệ thống...")
+    if not question:
+        return
+
+    st.session_state.messages.append({"role": "user", "content": question})
+    with st.chat_message("user"):
+        st.markdown(question)
+
+    full_answer = ""
+    sources = []
+    start_time = time.time()
+
+    with st.chat_message("assistant"):
+        placeholder = st.empty()
+        for event in api_query_stream(st.session_state.session_id, question):
+            event_type = event.get("type")
+            if event_type == "sources":
+                sources = event.get("sources", [])
+            elif event_type == "token":
+                full_answer += event.get("content", "")
+                placeholder.markdown(full_answer + "▌")
+            elif event_type == "done":
+                placeholder.markdown(full_answer)
+            elif event_type == "error":
+                full_answer = f"Lỗi truy vấn: {event.get('message', 'Unknown error')}"
+                placeholder.error(full_answer)
+
+        if sources:
+            source_text = " | ".join(
+                _format_source_item(source)
+                for source in sources
             )
-        with col2:
-            submitted = st.form_submit_button("Gửi ➤", use_container_width=True)
+            st.caption(f"Nguồn: {source_text}")
 
-    if submitted and question.strip():
-        # Thêm user message
-        st.session_state.messages.append({"role": "user", "content": question})
-
-        # Streaming response
-        answer_placeholder = st.empty()
-        full_answer = ""
-        sources = []
-
-        with st.spinner("🤔 Đang suy nghĩ..."):
-            for event in api_query_stream(st.session_state.session_id, question):
-                if event["type"] == "sources":
-                    sources = event["sources"]
-                elif event["type"] == "token":
-                    full_answer += event["content"]
-                    answer_placeholder.markdown(
-                        f'<div class="chat-assistant">🤖 {full_answer}▌</div>',
-                        unsafe_allow_html=True,
-                    )
-                elif event["type"] == "done":
-                    answer_placeholder.empty()
-                elif event["type"] == "error":
-                    full_answer = f"❌ Lỗi: {event['message']}"
-
-        # Lưu assistant message
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": full_answer,
-            "sources": sources,
-        })
-        st.rerun()
-
-    # Nếu có messages, hiển thị nút xóa chat
-    if st.session_state.messages:
-        if st.button("🗑️ Xóa lịch sử chat", type="secondary"):
-            st.session_state.messages = []
-            st.rerun()
+    st.session_state.last_latency = time.time() - start_time
+    st.session_state.messages.append(
+        {"role": "assistant", "content": full_answer, "sources": sources}
+    )
+    st.rerun()
 
 
-# ─────────────────────────────────────
-# Main Layout
-# ─────────────────────────────────────
-render_sidebar()
+def main() -> None:
+    init_state()
+    render_sidebar()
 
-# Main content
-st.markdown('<h1 class="docmind-header">DocMind — AI Document Assistant</h1>', unsafe_allow_html=True)
-st.caption("Phân tích tài liệu thông minh · Hỗ trợ PDF có ảnh, OCR tiếng Việt")
-st.markdown("---")
+    st.markdown('<div class="brand-title">DocMind Multimodal QA Demo</div>', unsafe_allow_html=True)
+    st.markdown(
+        "<div class='subtitle'>Môi trường kiểm thử hệ thống hỏi đáp tài liệu cho Meiko Automation</div>",
+        unsafe_allow_html=True,
+    )
+    render_metrics()
+    st.markdown("---")
+    render_chat()
 
-render_chat_area()
+
+if __name__ == "__main__":
+    main()

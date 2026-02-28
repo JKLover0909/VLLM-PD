@@ -12,6 +12,7 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+from collections import Counter
 
 import fitz  # PyMuPDF
 import easyocr
@@ -131,9 +132,17 @@ class DocumentProcessor:
                     img_np = np.array(img)
 
                     ocr_text = self._ocr_image_array(img_np)
+                    color_text = self._describe_image_colors(img_np)
                     if ocr_text.strip():
                         raw.append({
-                            "text": f"[Nội dung ảnh trang {page_num + 1}]\n{ocr_text}",
+                            "text": f"[Nội dung ảnh trang {page_num + 1}]\n{ocr_text}\n{color_text}",
+                            "source_file": path.name,
+                            "page_number": page_num,
+                            "content_type": "ocr_image",
+                        })
+                    elif color_text.strip():
+                        raw.append({
+                            "text": f"[Ảnh trang {page_num + 1}]\n{color_text}",
                             "source_file": path.name,
                             "page_number": page_num,
                             "content_type": "ocr_image",
@@ -170,9 +179,10 @@ class DocumentProcessor:
         img = Image.open(str(path)).convert("RGB")
         img_np = np.array(img)
         ocr_text = self._ocr_image_array(img_np)
+        color_text = self._describe_image_colors(img_np)
 
         return [{
-            "text": f"[Nội dung ảnh: {path.name}]\n{ocr_text}",
+            "text": f"[Nội dung ảnh: {path.name}]\n{ocr_text}\n{color_text}",
             "source_file": path.name,
             "page_number": 0,
             "content_type": "ocr_image",
@@ -182,6 +192,59 @@ class DocumentProcessor:
         """Chạy EasyOCR trên numpy array, trả về text."""
         results = self.ocr_reader.readtext(img_np, detail=0, paragraph=True)
         return "\n".join(results)
+
+    def _describe_image_colors(self, img_np: np.ndarray) -> str:
+        """Mô tả màu chủ đạo từ ảnh để hỗ trợ câu hỏi thị giác cơ bản trong RAG."""
+        if img_np.size == 0:
+            return ""
+
+        # Giảm kích thước để xử lý nhanh
+        img_small = Image.fromarray(img_np).resize((128, 128))
+        arr = np.array(img_small).reshape(-1, 3)
+
+        # Lượng tử màu để gom nhóm gần nhau
+        quantized = (arr // 32) * 32
+        color_counts = Counter(map(tuple, quantized.tolist()))
+        top_colors = color_counts.most_common(3)
+
+        if not top_colors:
+            return ""
+
+        total = sum(count for _, count in top_colors)
+        dominant_name = self._rgb_to_color_name(top_colors[0][0])
+
+        parts = []
+        for rgb, count in top_colors:
+            ratio = (count / total) * 100 if total else 0
+            name = self._rgb_to_color_name(rgb)
+            parts.append(f"{name} ({ratio:.1f}%)")
+
+        return (
+            f"[Phân tích màu ảnh] Màu chủ đạo: {dominant_name}. "
+            f"Top màu: {', '.join(parts)}."
+        )
+
+    def _rgb_to_color_name(self, rgb: tuple[int, int, int]) -> str:
+        """Ánh xạ RGB gần đúng về tên màu tiếng Việt."""
+        r, g, b = rgb
+        palette = {
+            "đỏ": (220, 40, 40),
+            "cam": (235, 140, 40),
+            "vàng": (230, 210, 50),
+            "xanh lá": (60, 170, 70),
+            "xanh dương": (50, 120, 220),
+            "tím": (140, 80, 180),
+            "hồng": (230, 120, 180),
+            "nâu": (130, 90, 60),
+            "đen": (25, 25, 25),
+            "xám": (140, 140, 140),
+            "trắng": (235, 235, 235),
+        }
+
+        def dist(c):
+            return (r - c[0]) ** 2 + (g - c[1]) ** 2 + (b - c[2]) ** 2
+
+        return min(palette, key=lambda name: dist(palette[name]))
 
     # ──────────────────────────────────────────────
     # Text Chunking
