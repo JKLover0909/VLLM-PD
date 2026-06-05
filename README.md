@@ -1,513 +1,391 @@
-# 🤖 VLLM-PD: AI Coding Agent & RAG Document System
+# VLLM-PD
 
-> **Hệ thống AI Agent tích hợp xử lý tài liệu thông minh**
-> 
-> Kết hợp AI Coding Agent (LangGraph + MCP) với hệ thống RAG xử lý tài liệu đa định dạng, hỗ trợ song ngữ Anh-Việt.
+VLLM-PD la he thong RAG va Coding Agent chay tren May 2. He thong hien tai phuc vu web React, API FastAPI, Qdrant vector database va LiteLLM router trong cung mot repo.
 
----
+`docmind/` la phan demo/tach rieng, khong phai duong chay chinh cua repo hien tai.
 
-## 📋 Mục lục
+## Trang thai hien tai
 
-- [Giới thiệu](#-giới-thiệu)
-- [Kiến trúc hệ thống](#-kiến-trúc-hệ-thống)
-- [Các thành phần chính](#-các-thành-phần-chính)
-- [Yêu cầu hệ thống](#-yêu-cầu-hệ-thống)
-- [Cài đặt](#-cài-đặt)
-- [Hướng dẫn sử dụng](#-hướng-dẫn-sử-dụng)
-- [Cấu trúc dự án](#-cấu-trúc-dự-án)
-- [API Endpoints](#-api-endpoints)
-- [Troubleshooting](#-troubleshooting)
-- [Tài liệu tham khảo](#-tài-liệu-tham-khảo)
+- Web cho nguoi dung: React SPA, duoc FastAPI phuc vu tai `/`.
+- API Gateway: FastAPI chay o port `8001`.
+- Public URL: dung `MACHINE2_API_PUBLIC_URL` trong `.env`, hien duoc expose bang ngrok port `8001`.
+- LiteLLM: chay noi bo o port `4000`, khong can public cho nguoi dung.
+- Qdrant: chay noi bo o port `6333`.
+- Embedding: `BAAI/bge-m3` chay tren May 2.
+- Parser tai lieu: Docling.
+- LLM upstream:
+  - Gemma4 local tren May 1 qua Ollama/ngrok.
+  - MiMo 2.5 Pro qua Xiaomi MiMo API.
+  - OpenAI GPT-4o mini.
+- Coding Agent: LangGraph + MCP tools, endpoint `/agent` duoc bao ve bang `AGENT_API_KEY`.
 
----
+## Kien truc nhanh
 
-## 🌟 Giới thiệu
-
-**VLLM-PD** là hệ thống AI hybrid kết hợp hai chức năng chính:
-
-1. **AI Coding Agent**: Hỗ trợ lập trình thông qua giao thức MCP (Model Context Protocol), tích hợp với LangGraph và VS Code
-2. **DocMind RAG**: Hệ thống xử lý và hỏi đáp tài liệu thông minh, hỗ trợ PDF, ảnh, OCR đa ngôn ngữ
-
-### ✨ Tính năng nổi bật
-
-- 🔧 **AI Coding Agent** với LangGraph orchestration
-- 📚 **RAG Pipeline** xử lý tài liệu đa định dạng (PDF, ảnh)
-- 🌐 **OCR đa ngôn ngữ** (tiếng Việt + tiếng Anh)
-- 🚀 **vLLM** để inference nhanh với Llama/Qwen models
-- 🔍 **Vector Database** với FAISS/Qdrant
-- 🎯 **Embedding đa ngôn ngữ** với BGE-M3
-- 🔄 **LiteLLM Router** hỗ trợ fallback sang Cloud APIs
-- 🔐 **Tailscale VPN** kết nối bảo mật giữa các máy
-
----
-
-## 🏗️ Kiến trúc hệ thống
-
-Hệ thống được thiết kế theo mô hình **microservices phân tán**, chạy trên nhiều máy kết nối qua Tailscale VPN:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│              TAILSCALE MESH VPN (Private Network)           │
-└───────────────────────┬─────────────────────────────────────┘
-                        │
-        ┌───────────────┼───────────────┐
-        │               │               │
-        ▼               ▼               ▼
-┌──────────────┐ ┌─────────────┐ ┌────────────┐
-│   Máy 3      │ │   Máy 2     │ │   Máy 1    │
-│ Workstation  │ │ RAG Server  │ │ LLM Host   │
-│              │ │  (Linux)    │ │ (Windows)  │
-│  VS Code     │ │             │ │            │
-│  + Cline     │◄┤ LangGraph   │ │  vLLM      │
-│              │ │  Agent      │ │  Server    │
-│              │ │             │ │            │
-│  Browser     │ │ FastAPI     │ │  Ollama    │
-│  Chat UI     │◄┤ Backend     │◄┤  (backup)  │
-│              │ │             │ │            │
-│              │ │ Qdrant      │ │  Qwen3     │
-│              │ │ LiteLLM     │ │  Llama3.1  │
-└──────────────┘ └─────────────┘ └────────────┘
+```text
+Nguoi dung / May 3
+        |
+        | HTTPS ngrok, port 8001
+        v
+May 2: FastAPI + React
+        |
+        |-- Upload tai lieu -> Docling -> BGE-M3 -> Qdrant
+        |
+        |-- Query RAG -> Qdrant -> LiteLLM
+        |
+        |-- /agent -> LangGraph -> MCP filesystem/git -> LiteLLM
+        |
+        v
+May 2: LiteLLM, port 4000 noi bo
+        |
+        |-- auto-model -> local Gemma4 -> fallback MiMo -> fallback OpenAI
+        |-- local-gemma -> Gemma4 local tren May 1
+        |-- mimo-pro -> MiMo 2.5 Pro
+        |-- openai-model -> GPT-4o mini
+        |-- coding-model -> Gemma4 local -> fallback OpenAI
 ```
 
-Chi tiết đầy đủ xem tại: [ARCHITECTURE.md](ARCHITECTURE.md)
+Chi tiet hon xem [ARCHITECTURE.md](ARCHITECTURE.md).
 
----
+## Thu muc chinh
 
-## 🧩 Các thành phần chính
+```text
+.
+|-- src/
+|   |-- api/main.py          # FastAPI, REST/SSE, static React mount
+|   |-- rag/
+|   |   |-- parser.py        # Docling parser
+|   |   |-- embedder.py      # BGE-M3 embedding
+|   |   |-- vector_store.py  # Qdrant session/file/chunk storage
+|   |   `-- rag_pipeline.py  # Retrieval + prompt + LiteLLM call
+|   `-- agent/
+|       |-- graph.py         # LangGraph coding agent
+|       `-- mcp_client.py    # MCP filesystem/git tools
+|-- frontend/                # React + Vite web app
+|-- docker-compose.yml       # Qdrant + LiteLLM
+|-- litellm_config.yaml      # Model aliases and fallback routing
+|-- requirements.txt         # Python dependencies for main system
+|-- .env.example             # Config template
+`-- docmind/                 # Separate demo/runtime area, not main flow
+```
 
-### 1. **DocMind** - RAG Document System
+## Yeu cau
 
-Hệ thống xử lý và hỏi đáp tài liệu với các tính năng:
+- Linux tren May 2.
+- Docker va Docker Compose.
+- Conda hoac Python 3.10 environment.
+- NVIDIA GPU neu muon chay BGE-M3 nhanh tren CUDA.
+- Node.js 20+ de build frontend.
+- May 1 dang expose Ollama/Gemma4 qua `OLLAMA_API_BASE`.
 
-- ✅ Upload và parse PDF, ảnh (PNG, JPG)
-- ✅ OCR với EasyOCR (vi + en)
-- ✅ Embedding đa ngôn ngữ (BGE-M3)
-- ✅ Vector search với FAISS
-- ✅ Streaming response từ vLLM
-- ✅ Session management
-- ✅ Web UI với Streamlit
+Repo hien dang dung conda env ten `docmind`, nhung day chi la ten moi truong. Thu muc `docmind/` van la demo rieng.
 
-**Stack:**
-- LLM: Llama 3.1 8B / Qwen3 14B (vLLM)
-- Embedding: BAAI/bge-m3
-- Vector DB: FAISS / Qdrant
-- Backend: FastAPI
-- Frontend: Streamlit
+## Cai dat moi truong
 
-### 2. **Agent System** - AI Coding Assistant
-
-Agent hỗ trợ lập trình với:
-
-- ✅ LangGraph orchestration
-- ✅ MCP (Model Context Protocol)
-- ✅ Tool calling & function execution
-- ✅ Tích hợp VS Code (qua Cline/Roo-Code)
-
-**Stack:**
-- Framework: LangGraph
-- Protocol: MCP
-- Backend: FastAPI
-- Client: Python SDK
-
-### 3. **Infrastructure Services**
-
-- **Qdrant**: Vector database (Docker)
-- **LiteLLM**: Router/Proxy với fallback sang Cloud APIs
-- **vLLM**: High-performance LLM inference server
-
----
-
-## 💻 Yêu cầu hệ thống
-
-### Hardware
-
-| Thành phần | Yêu cầu tối thiểu | Khuyến nghị |
-|---|---|---|
-| **CPU** | 8 cores | 16+ cores |
-| **RAM** | 16GB | 32GB+ |
-| **GPU** | NVIDIA RTX 4060 (12GB) | RTX 5070/5060 Ti (16GB) |
-| **Storage** | 50GB free | 100GB+ SSD |
-| **VRAM** | 12GB | 16GB+ |
-
-### Software
-
-- **OS**: Linux (Ubuntu 22.04+) / Windows 11 + WSL2
-- **Python**: 3.10 hoặc 3.11
-- **CUDA**: 11.8+ / 12.1+
-- **Docker** & **Docker Compose**
-- **Conda** (khuyến nghị dùng Miniconda)
-
----
-
-## 🚀 Cài đặt
-
-### Bước 1: Clone repository
+Tu root repo:
 
 ```bash
-git clone https://github.com/JKLover0909/VLLM-PD.git
-cd VLLM-PD
-```
+cd /home/jkl0909/Code/llm/VLLM-PD
 
-### Bước 2: Tạo môi trường Conda
-
-```bash
-# Tạo environment từ file
-cd docmind
-conda env create -f environment.yml
-
-# Hoặc tạo thủ công
-conda create -n docmind python=3.11 -y
+conda create -n docmind python=3.10 -y
 conda activate docmind
-```
-
-### Bước 3: Cài đặt dependencies
-
-```bash
-# Cài đặt PyTorch (CUDA 12.1)
-conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia -y
-
-# Cài đặt packages từ requirements
+pip install --upgrade pip
 pip install -r requirements.txt
 
-# Nếu dùng DocMind
-cd docmind
-pip install -r requirements.txt
+# Node.js neu env chua co npm/node
+conda install -n docmind -c conda-forge nodejs=20 -y
 ```
 
-### Bước 4: Khởi động Infrastructure Services
+Frontend:
 
 ```bash
-# Khởi động Qdrant + LiteLLM
-docker-compose up -d
-
-# Kiểm tra trạng thái
-docker-compose ps
+cd /home/jkl0909/Code/llm/VLLM-PD/frontend
+npm install
+npm run build
 ```
 
-### Bước 5: Cấu hình môi trường
+## Cau hinh `.env`
+
+Tao file `.env`:
 
 ```bash
-# Tạo file .env
+cd /home/jkl0909/Code/llm/VLLM-PD
 cp .env.example .env
-
-# Chỉnh sửa các biến môi trường
-nano .env
 ```
 
-**Nội dung .env mẫu:**
+Nhung bien quan trong:
 
 ```env
-# LLM Configuration
-VLLM_API_URL=http://localhost:8000/v1
-OLLAMA_API_URL=http://localhost:11434
+OLLAMA_API_BASE=https://your-machine-1-ollama-ngrok-url
+OLLAMA_MODEL=gemma4:latest
 
-# Vector Database
-QDRANT_URL=http://localhost:6333
+OPENAI_API_KEY=...
+MIMO_API_KEY=...
+MIMO_API_BASE=https://token-plan-sgp.xiaomimimo.com/v1
 
-# LiteLLM
-LITELLM_URL=http://localhost:4000
+LITELLM_URL=http://localhost:4000/v1
+LITELLM_MASTER_KEY=sk-local
 
-# Cloud APIs (optional, for fallback)
-OPENAI_API_KEY=your_key_here
-ANTHROPIC_API_KEY=your_key_here
+MACHINE2_API_HOST=0.0.0.0
+MACHINE2_API_PORT=8001
+MACHINE2_API_LOCAL_URL=http://localhost:8001
+MACHINE2_API_PUBLIC_URL=https://your-machine-2-ngrok-url
+
+QDRANT_HOST=localhost
+QDRANT_PORT=6333
+
+UPLOAD_DIR=./uploads
+MAX_UPLOAD_SIZE_MB=25
+QUERY_RATE_LIMIT_PER_MINUTE=15
+UPLOAD_RATE_LIMIT_PER_HOUR=10
+
+AGENT_API_KEY=replace_with_a_long_random_secret
+WORKSPACE_DIR=/home/jkl0909/Code/llm
+AGENT_REPOSITORY_DIR=/home/jkl0909/Code/llm/VLLM-PD
 ```
 
----
+Khong commit `.env`. File nay co the chua API key that.
 
-## 🎯 Hướng dẫn sử dụng
+## Chay he thong
 
-### Phương án 1: Chạy nhanh với script tự động (Khuyến nghị)
-
-Script `run_all.sh` sẽ tự động khởi động vLLM + Backend + Frontend:
+### 1. Khoi dong Qdrant va LiteLLM
 
 ```bash
-# Kích hoạt môi trường
+cd /home/jkl0909/Code/llm/VLLM-PD
+docker compose up -d
+docker compose ps
+```
+
+Kiem tra LiteLLM:
+
+```bash
+curl http://localhost:4000/health/liveliness
+
+KEY=$(sed -n 's/^LITELLM_MASTER_KEY=//p' .env)
+curl -H "Authorization: Bearer $KEY" http://localhost:4000/v1/models
+```
+
+### 2. Build React
+
+```bash
+cd /home/jkl0909/Code/llm/VLLM-PD/frontend
+npm install
+npm run build
+```
+
+FastAPI chi mount web khi `frontend/dist` ton tai.
+
+### 3. Chay FastAPI port 8001
+
+Chay foreground de debug:
+
+```bash
+cd /home/jkl0909/Code/llm/VLLM-PD
 conda activate docmind
-
-# Di chuyển vào thư mục scripts
-cd docmind/scripts
-
-# Khởi động toàn bộ hệ thống
-./run_all.sh start
-
-# Kiểm tra trạng thái
-./run_all.sh status
-
-# Dừng toàn bộ
-./run_all.sh stop
+uvicorn src.api.main:app --host 0.0.0.0 --port 8001
 ```
 
-**Tùy chọn khởi động:**
+Hoac dung service da cau hinh tren May 2:
 
 ```bash
-# Chỉ chạy vLLM + Backend (không có Streamlit frontend)
-./run_all.sh start --no-frontend
-
-# Khởi động lại một service cụ thể
-./run_all.sh restart vllm    # hoặc backend, frontend
+systemctl --user status vllm-pd-api
+systemctl --user restart vllm-pd-api
+journalctl --user -u vllm-pd-api -n 120 --no-pager
 ```
 
-**Log files được lưu tại:** `docmind/logs/`
+May hien tai da bat `loginctl enable-linger`, nen user service co the chay sau khi logout.
 
----
+### 4. Public bang ngrok
 
-### Phương án 2: Chạy thủ công từng service (Debug mode)
-
-Phù hợp khi cần debug hoặc chạy riêng từng phần.
-
-#### 2.1. Khởi động vLLM Server (Bắt buộc)
+Neu dung ngrok, expose port `8001`:
 
 ```bash
-conda activate docmind
-cd docmind/scripts
-bash start_vllm.sh
+ngrok http 8001
 ```
 
-vLLM sẽ chạy tại: `http://localhost:8000`
+Sau do cap nhat:
 
-**Kiểm tra:**
-```bash
-curl http://localhost:8000/v1/models
+```env
+MACHINE2_API_PUBLIC_URL=https://your-ngrok-url
 ```
 
-#### 2.2. Khởi động FastAPI Backend (Bắt buộc)
+Chi can public port `8001`. Khong public LiteLLM port `4000` neu khong co ly do rieng.
 
-```bash
-conda activate docmind
-cd docmind/backend
-uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+## Su dung web
+
+Mo:
+
+```text
+http://localhost:8001
 ```
 
-Backend API sẽ chạy tại: `http://localhost:8001`
+Hoac public URL trong `MACHINE2_API_PUBLIC_URL`.
 
-**Xem API docs:** http://localhost:8001/docs
+Nguoi dung co the:
 
-#### 2.3. Khởi động Streamlit Frontend (Tùy chọn)
+- Tao phien moi.
+- Upload PDF, DOCX, XLSX, PPTX, HTML, PNG, JPG, JPEG.
+- Chon mode `Hoi dap` hoac `Nghien cuu`.
+- Chon model `Tu dong`, `Gemma4 Local`, `MiMo 2.5 Pro`, `OpenAI`.
+- Dat cau hoi va xem sources tu tai lieu.
 
-```bash
-conda activate docmind
-cd docmind/frontend
-streamlit run app.py --server.port 8501
-```
+## API endpoints
 
-Web UI sẽ mở tại: `http://localhost:8501`
+| Method | Endpoint | Mo ta |
+|---|---|---|
+| `GET` | `/health` | Kiem tra API va Qdrant config |
+| `GET` | `/models` | Danh sach model cho frontend |
+| `POST` | `/sessions` | Tao session RAG |
+| `GET` | `/sessions/{session_id}` | Lay thong tin session |
+| `DELETE` | `/sessions/{session_id}` | Xoa session va file upload |
+| `POST` | `/sessions/{session_id}/upload` | Upload va index tai lieu |
+| `DELETE` | `/sessions/{session_id}/files/{filename}` | Xoa mot file trong session |
+| `POST` | `/query` | Hoi dap non-streaming |
+| `POST` | `/query/stream` | Hoi dap SSE streaming |
+| `POST` | `/agent` | Coding Agent, can `X-Agent-API-Key` |
 
----
-
-### Phương án 3: Sử dụng Jupyter Notebooks
-
-Thư mục `Notebooks/` chứa các notebook để test:
-
-```bash
-conda activate docmind
-jupyter lab
-
-# Mở các notebook:
-# - Test_docmind.ipynb: Test RAG pipeline
-# - Test_LocalAPI.ipynb: Test backend API
-```
-
----
-
-## 📁 Cấu trúc dự án
-
-```
-VLLM-PD/
-├── README.md                    # File này
-├── ARCHITECTURE.md              # Tài liệu kiến trúc chi tiết
-├── AGENTS.md                    # Hướng dẫn cấu hình Agent
-├── requirements.txt             # Dependencies chung
-├── docker-compose.yml           # Qdrant + LiteLLM
-├── litellm_config.yaml          # Cấu hình LiteLLM Router
-│
-├── docmind/                     # 📚 RAG Document System
-│   ├── README.md
-│   ├── environment.yml          # Conda environment
-│   ├── requirements.txt
-│   ├── backend/
-│   │   ├── main.py              # FastAPI app
-│   │   ├── document_processor.py
-│   │   ├── embedder.py          # BGE-M3 wrapper
-│   │   ├── vector_store.py      # FAISS session manager
-│   │   ├── rag_pipeline.py      # RAG orchestration
-│   │   ├── vllm_client.py       # vLLM client
-│   │   └── uploads/             # Session storage
-│   ├── frontend/
-│   │   └── app.py               # Streamlit UI
-│   ├── scripts/
-│   │   ├── run_all.sh           # 🚀 One-command launcher
-│   │   └── start_vllm.sh        # vLLM starter
-│   └── logs/                    # Log files
-│
-├── src/                         # 🤖 Agent System
-│   ├── main.py
-│   ├── agent/
-│   │   ├── graph.py             # LangGraph workflow
-│   │   └── mcp_client.py        # MCP protocol client
-│   ├── api/
-│   │   └── main.py              # Agent API server
-│   └── rag/
-│       ├── embedder.py
-│       ├── parser.py
-│       ├── rag_pipeline.py
-│       └── vector_store.py
-│
-├── Notebooks/                   # 📓 Jupyter notebooks
-│   ├── Test_docmind.ipynb
-│   └── Test_LocalAPI.ipynb
-│
-├── tests/                       # 🧪 Unit tests
-│   └── test_imports.py
-│
-└── documents/                   # 📄 Sample documents
-```
-
----
-
-## 🔌 API Endpoints
-
-### DocMind Backend API
-
-**Base URL:** `http://localhost:8001`
-
-| Method | Endpoint | Mô tả |
-|--------|----------|-------|
-| `GET` | `/health` | Health check |
-| `POST` | `/sessions` | Tạo session mới |
-| `GET` | `/sessions` | Liệt kê các session |
-| `POST` | `/sessions/{id}/upload` | Upload tài liệu |
-| `POST` | `/sessions/{id}/index` | Index tài liệu vào vector DB |
-| `POST` | `/sessions/{id}/query` | Hỏi đáp RAG (streaming) |
-| `DELETE` | `/sessions/{id}` | Xóa session |
-
-**Swagger UI:** http://localhost:8001/docs
-
-### Agent API (src/)
-
-**Base URL:** `http://localhost:8002` (nếu đã khởi động)
-
-| Method | Endpoint | Mô tả |
-|--------|----------|-------|
-| `POST` | `/agent/execute` | Thực thi Agent task |
-| `GET` | `/agent/status` | Trạng thái Agent |
-
----
-
-## 🛠️ Troubleshooting
-
-### Vấn đề 1: vLLM không khởi động được
+Request query mau:
 
 ```bash
-# Kiểm tra GPU
-nvidia-smi
+SESSION_ID=$(curl -fsS -X POST http://localhost:8001/sessions | jq -r .session_id)
 
-# Kiểm tra CUDA
-python -c "import torch; print(torch.cuda.is_available())"
-
-# Giảm model size nếu thiếu VRAM
-# Sửa trong start_vllm.sh: thay Llama 8B → 3B hoặc dùng quantization
+curl -fsS http://localhost:8001/query \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"session_id\":\"$SESSION_ID\",
+    \"question\":\"Tai lieu nay noi ve gi?\",
+    \"model\":\"local\",
+    \"mode\":\"chat\",
+    \"stream\":false
+  }" | jq .
 ```
 
-### Vấn đề 2: Port đã được sử dụng
+Upload mau:
 
 ```bash
-# Kiểm tra port 8000, 8001, 8501
-lsof -i :8000
-lsof -i :8001
-lsof -i :8501
-
-# Kill process nếu cần
-kill -9 <PID>
-
-# Hoặc dùng script stop
-cd docmind/scripts
-./run_all.sh stop
+curl -fsS -X POST \
+  "http://localhost:8001/sessions/$SESSION_ID/upload" \
+  -F "file=@documents/test1.pdf" | jq .
 ```
 
-### Vấn đề 3: Docker services không chạy
+Agent mau:
 
 ```bash
-# Kiểm tra logs
-docker-compose logs qdrant
-docker-compose logs litellm
+AGENT_KEY=$(sed -n 's/^AGENT_API_KEY=//p' .env)
 
-# Restart services
-docker-compose restart
-
-# Rebuild nếu cần
-docker-compose up -d --build
+curl -fsS http://localhost:8001/agent \
+  -H "X-Agent-API-Key: $AGENT_KEY" \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"session_id\":\"$SESSION_ID\",
+    \"task\":\"Khong goi cong cu. Chi tra loi dung mot tu: OK\"
+  }" | jq .
 ```
 
-### Vấn đề 4: Import errors
+## Model routing
+
+LiteLLM aliases trong `litellm_config.yaml`:
+
+| UI/API option | LiteLLM model group | Backend |
+|---|---|---|
+| `auto` | `auto-model` | Gemma4 local, fallback MiMo, fallback OpenAI |
+| `local` | `local-gemma` | Ollama/Gemma4 tren May 1 |
+| `mimo` | `mimo-pro` | MiMo 2.5 Pro |
+| `openai` | `openai-model` | OpenAI GPT-4o mini |
+| Agent | `coding-model` | Gemma4 local, fallback OpenAI |
+
+## Bao mat va gioi han
+
+- `.env` bi ignore boi Git.
+- `/agent` yeu cau header `X-Agent-API-Key` neu `AGENT_API_KEY` duoc set.
+- Upload chi nhan extension cho phep.
+- Ten file va session ID duoc validate de tranh path traversal.
+- Upload gioi han mac dinh 25 MB/file.
+- Query gioi han mac dinh 15 request/IP/phut.
+- Upload gioi han mac dinh 10 request/IP/gio.
+- MCP filesystem tool chi duoc phep truy cap `WORKSPACE_DIR`.
+- Git MCP tool khoa vao `AGENT_REPOSITORY_DIR`.
+
+## Kiem thu nhanh
 
 ```bash
-# Reinstall dependencies
-conda activate docmind
-pip install -r requirements.txt --force-reinstall
+cd /home/jkl0909/Code/llm/VLLM-PD
 
-# Hoặc tạo lại environment
-conda env remove -n docmind
-conda env create -f docmind/environment.yml
+# Python syntax
+conda run -n docmind python -m py_compile \
+  src/api/main.py \
+  src/rag/rag_pipeline.py \
+  src/agent/graph.py \
+  src/agent/mcp_client.py
+
+# Frontend build
+cd frontend
+conda run -n docmind npm run build
+
+# Health
+curl -fsS http://localhost:8001/health | jq .
+
+# Public health
+PUBLIC_URL=$(sed -n 's/^MACHINE2_API_PUBLIC_URL=//p' ../.env)
+curl -fsS -H 'ngrok-skip-browser-warning: true' "$PUBLIC_URL/health" | jq .
 ```
 
-### Vấn đề 5: Out of Memory (OOM)
+Da kiem thu tren May 2:
+
+- React build production thanh cong.
+- Desktop/mobile UI bang Playwright screenshot.
+- Qdrant va LiteLLM dang chay Docker.
+- Local Gemma4 va OpenAI tra `200`.
+- MiMo Token Plan SGP tra `200`.
+- Upload `documents/test1.pdf`, index 3 chunks, query SSE tra sources va token.
+- `/agent` co key tra `200`, khong co key tra `401`.
+
+## Troubleshooting
+
+### LiteLLM khong len
 
 ```bash
-# Giảm batch size trong vLLM
-# Sửa start_vllm.sh:
---max-model-len 2048 --gpu-memory-utilization 0.8
-
-# Hoặc dùng CPU offloading
---cpu-offload-gb 8
+docker compose logs --tail=120 litellm
+docker compose up -d --force-recreate litellm
 ```
 
----
+Neu thay loi config router, kiem tra `litellm_config.yaml`.
 
-## 📚 Tài liệu tham khảo
+### MiMo tra 401
 
-### Tài liệu chính
+Kiem tra `MIMO_API_BASE`. Token Plan key `tp-*` thuong can endpoint Token Plan, vi du:
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Kiến trúc chi tiết
-- [AGENTS.md](AGENTS.md) - Cấu hình Agent
-- [docmind/README.md](docmind/README.md) - DocMind RAG system
+```env
+MIMO_API_BASE=https://token-plan-sgp.xiaomimimo.com/v1
+```
 
-### Công nghệ sử dụng
+Pay-as-you-go key co the dung:
 
-- [vLLM](https://docs.vllm.ai/) - LLM Inference Engine
-- [LangGraph](https://python.langchain.com/docs/langgraph) - Agent Framework
-- [Qdrant](https://qdrant.tech/documentation/) - Vector Database
-- [LiteLLM](https://docs.litellm.ai/) - LLM Router/Proxy
-- [FastAPI](https://fastapi.tiangolo.com/) - Web Framework
-- [Streamlit](https://docs.streamlit.io/) - Web UI
-- [BGE-M3](https://huggingface.co/BAAI/bge-m3) - Multilingual Embedding
-- [Docling](https://github.com/DS4SD/docling) - Document Processing
-- [EasyOCR](https://github.com/JaidedAI/EasyOCR) - OCR Engine
+```env
+MIMO_API_BASE=https://api.xiaomimimo.com/v1
+```
 
-### Model weights
+### Web khong hien React
 
-- [Llama 3.1 8B Instruct](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct)
-- [Qwen3 14B Coder](https://huggingface.co/Qwen/Qwen3-14B-Coder)
-- [Qwen3 VL 7B](https://huggingface.co/Qwen/Qwen3-VL-7B)
+Build lai frontend va restart FastAPI:
 
----
+```bash
+cd frontend
+npm run build
+systemctl --user restart vllm-pd-api
+```
 
-## 📝 License
+### FastAPI khoi dong cham
 
-MIT License - Xem file [LICENSE](LICENSE) để biết thêm chi tiết.
+Lan dau co the cham vi BGE-M3 va Docling/OCR model duoc nap. Xem log:
 
----
+```bash
+journalctl --user -u vllm-pd-api -n 160 --no-pager
+```
 
-## 🤝 Đóng góp
+### Ngrok URL doi
 
-Mọi đóng góp đều được chào đón! Hãy tạo issue hoặc pull request.
+Cap nhat `MACHINE2_API_PUBLIC_URL` trong `.env`. Neu FastAPI chi doc bien nay de hien thi/ghi chu thi khong bat buoc restart, nhung client/test script can reload shell hoac source lai `.env`.
 
----
+## Ghi chu ve `docmind/`
 
-## 📧 Liên hệ
-
-- GitHub: [@JKLover0909](https://github.com/JKLover0909)
-- Repository: [VLLM-PD](https://github.com/JKLover0909/VLLM-PD)
-
----
-
-**Phát triển bởi JKLover0909** • Last updated: June 2026
+`docmind/` co requirements va backend rieng tu cac thu nghiem truoc. Trong kien truc hien tai, khong dung `docmind/` lam he thong chinh. Dung `src/`, `frontend/`, `docker-compose.yml`, `litellm_config.yaml` va `.env` o root repo.

@@ -1,830 +1,515 @@
-# 🏗️ ARCHITECTURE: Hệ thống AI Coding Agent & RAG Server Hybrid (Local-Cloud)
+# ARCHITECTURE
 
-> **Phiên bản:** v1.0 — Ngày tạo: 2026-06-03
->
-> **Mục tiêu:** Thiết kế kiến trúc và quy trình triển khai hệ thống AI Agent hỗ trợ lập trình (qua giao thức MCP) kết hợp hệ thống RAG xử lý tài liệu đa định dạng song ngữ Anh-Việt. Ưu tiên self-hosted, bảo mật dữ liệu và có khả năng fallback linh hoạt sang Cloud API.
+Tai lieu nay mo ta kien truc hien tai cua repo VLLM-PD tai May 2. Cac mo ta cu ve Streamlit, FAISS, FastAPI port 8000, MCP Hub rieng va vLLM host truc tiep khong con la duong chay chinh.
 
----
+`docmind/` duoc xem la demo/tach rieng va khong nam trong kien truc van hanh chinh.
 
-## 📋 Mục lục
+## 1. Muc tieu he thong
 
-1. [Tổng quan kiến trúc](#1-tổng-quan-kiến-trúc)
-2. [Sơ đồ kiến trúc & Luồng dữ liệu](#2-sơ-đồ-kiến-trúc--luồng-dữ-liệu)
-3. [Chi tiết từng máy chủ](#3-chi-tiết-từng-máy-chủ)
-4. [Đề xuất mô hình AI](#4-đề-xuất-mô-hình-ai)
-5. [Stack công nghệ chi tiết](#5-stack-công-nghệ-chi-tiết)
-6. [Thiết kế hệ thống Agent & MCP](#6-thiết-kế-hệ-thống-agent--mcp)
-7. [Cơ chế Router/Fallback thông minh](#7-cơ-chế-routerfallback-thông-minh)
-8. [Hệ thống RAG chi tiết](#8-hệ-thống-rag-chi-tiết)
-9. [Bảo mật & Kết nối mạng](#9-bảo-mật--kết-nối-mạng)
-10. [Sử dụng Cloud Credits](#10-sử-dụng-cloud-credits)
-11. [Kế hoạch triển khai theo giai đoạn](#11-kế-hoạch-triển-khai-theo-giai-đoạn)
+VLLM-PD gom hai nhom chuc nang:
 
----
+1. Web RAG cho nguoi dung:
+   - Upload tai lieu.
+   - Parse bang Docling.
+   - Embed bang BGE-M3.
+   - Luu va search Qdrant theo session.
+   - Goi LLM qua LiteLLM.
+   - Cho phep nguoi dung chon model.
 
-## 1. Tổng quan kiến trúc
+2. Coding Agent:
+   - Endpoint `/agent`.
+   - LangGraph dieu phoi agent.
+   - LLM qua LiteLLM `coding-model`.
+   - MCP filesystem/git tools.
+   - Bao ve bang `AGENT_API_KEY`.
 
-Hệ thống bao gồm **3 máy tính** phân tán trên **2 dải mạng khác nhau**, kết nối qua mạng riêng ảo (VPN), hoạt động theo mô hình **microservices** với các vai trò rõ ràng:
+## 2. Vai tro cac may
 
-| Máy | Vai trò | Hệ điều hành | GPU | VRAM |
-|:---|:---|:---|:---|:---|
-| **Máy 1** — LLM Host | Host mô hình LLM/VLM, phục vụ inference qua API chuẩn OpenAI | Windows 11 | RTX 5070 Ti | 16GB |
-| **Máy 2** — RAG + Agent Server | Xử lý tài liệu, Vector DB, điều phối Agent, Embedding, MCP Hub | Linux (Ubuntu) | RTX 5060 Ti | 16GB |
-| **Máy 3** — Developer Workstation | Máy trạm lập trình, VS Code, kết nối từ xa vào hệ thống | Bất kỳ | — | — |
+| May | Vai tro hien tai | Dich vu lien quan |
+|---|---|---|
+| May 1 | Host LLM local | Ollama/Gemma4, expose qua ngrok vao `OLLAMA_API_BASE` |
+| May 2 | Server chinh | FastAPI, React static, RAG pipeline, BGE-M3, Docling, Qdrant, LiteLLM, LangGraph Agent |
+| May 3 | Client | Browser truy cap web/API public cua May 2, hoac coding client goi `/agent` |
 
----
+He thong hien public mot URL chinh qua port `8001` cua May 2. LiteLLM port `4000` la noi bo.
 
-## 2. Sơ đồ kiến trúc & Luồng dữ liệu
+## 3. So do tong the
 
-### 2.1. Sơ đồ tổng thể
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        TAILSCALE MESH VPN (Private Network)                │
-│                     Tất cả 3 máy kết nối bảo mật qua đây                   │
-└───────┬─────────────────────────────┬───────────────────────┬───────────────┘
-        │                             │                       │
-        ▼                             ▼                       ▼
-┌───────────────┐           ┌─────────────────────┐   ┌──────────────────┐
-│   MÁY 3       │           │      MÁY 2          │   │     MÁY 1        │
-│  Developer    │           │  RAG + Agent Server  │   │   LLM Host       │
-│  Workstation  │           │     (Linux)          │   │   (Windows 11)   │
-│               │           │                      │   │                  │
-│  ┌──────────┐ │  MCP/SSE  │  ┌────────────────┐ │   │  ┌────────────┐ │
-│  │ VS Code  │◄├───────────┤► │  LangGraph     │ │   │  │  Ollama    │ │
-│  │ + Cline/ │ │           │  │  Agent Engine  │ │   │  │  Server    │ │
-│  │ Roo Code │ │           │  │                │ │   │  │            │ │
-│  └──────────┘ │           │  │  ┌──────────┐  │ │   │  │ ┌────────┐│ │
-│               │           │  │  │ MCP Hub  │  │ │   │  │ │Qwen3   ││ │
-│  ┌──────────┐ │           │  │  │ Server   │  │ │   │  │ │Coder   ││ │
-│  │ Browser  │ │  HTTP     │  │  └──────────┘  │ │   │  │ │14B     ││ │
-│  │ Chat UI  │◄├───────────┤► │                │ │   │  │ └────────┘│ │
-│  └──────────┘ │           │  └───────┬────────┘ │   │  │ ┌────────┐│ │
-│               │           │          │          │   │  │ │Qwen3   ││ │
-│               │           │          ▼          │   │  │ │VL-7B   ││ │
-│               │           │  ┌────────────────┐ │   │  │ └────────┘│ │
-│               │           │  │  LiteLLM       │ │   │  └────────────┘ │
-│               │           │  │  Router/Proxy  │─┤───┤──►  API :11434  │
-│               │           │  │                │ │   │                  │
-│               │           │  │  ┌──────────┐  │ │   └──────────────────┘
-│               │           │  │  │Fallback  │  │ │
-│               │           │  │  │→ OpenAI  │  │ │          ┌──────────┐
-│               │           │  │  │→ Mimo    │  │─┤─────────►│ Cloud    │
-│               │           │  │  │→ Azure   │  │ │          │ APIs     │
-│               │           │  │  └──────────┘  │ │          └──────────┘
-│               │           │  └────────────────┘ │
-│               │           │                      │
-│               │           │  ┌────────────────┐ │
-│               │           │  │  RAG Pipeline  │ │
-│               │           │  │                │ │
-│               │           │  │  ┌──────────┐  │ │
-│               │           │  │  │ Docling  │  │ │
-│               │           │  │  │ Parser   │  │ │
-│               │           │  │  └──────────┘  │ │
-│               │           │  │  ┌──────────┐  │ │
-│               │           │  │  │ BGE-M3   │  │ │
-│               │           │  │  │Embedding │  │ │
-│               │           │  │  └──────────┘  │ │
-│               │           │  │  ┌──────────┐  │ │
-│               │           │  │  │ Qdrant   │  │ │
-│               │           │  │  │VectorDB  │  │ │
-│               │           │  │  └──────────┘  │ │
-│               │           │  └────────────────┘ │
-└───────────────┘           └─────────────────────┘
+```text
+                           Public HTTPS ngrok
+Nguoi dung / May 3  --------------------------------+
+                                                     |
+                                                     v
+                                       +---------------------------+
+                                       | May 2: FastAPI :8001     |
+                                       | - React SPA at /         |
+                                       | - REST/SSE API           |
+                                       | - upload/session/query   |
+                                       | - protected /agent       |
+                                       +------------+--------------+
+                                                    |
+                +-----------------------------------+-----------------------------------+
+                |                                   |                                   |
+                v                                   v                                   v
+      +-------------------+               +-------------------+              +-------------------+
+      | RAG pipeline      |               | LangGraph Agent   |              | Static frontend   |
+      | Docling           |               | MCP fs/git tools  |              | frontend/dist     |
+      | BGE-M3            |               | coding-model      |              +-------------------+
+      | Qdrant search     |               +---------+---------+
+      +---------+---------+                         |
+                |                                   |
+                +-------------------+---------------+
+                                    |
+                                    v
+                         +----------------------+
+                         | LiteLLM proxy :4000  |
+                         | internal only        |
+                         +------+----+-----+----+
+                                |    |     |
+              +-----------------+    |     +----------------+
+              |                      |                      |
+              v                      v                      v
+    +-------------------+   +-------------------+   +-------------------+
+    | May 1 Ollama      |   | Xiaomi MiMo API   |   | OpenAI API        |
+    | Gemma4 local      |   | MiMo 2.5 Pro      |   | GPT-4o mini       |
+    +-------------------+   +-------------------+   +-------------------+
 ```
 
-### 2.2. Luồng dữ liệu chính
+## 4. Runtime services
 
-```
-  LUỒNG 1: Coding Agent (MCP)
-  ════════════════════════════
-  Máy 3 (VS Code) ──MCP/SSE──► Máy 2 (LangGraph Agent)
-                                    │
-                                    ├──► LiteLLM Router ──► Máy 1 (Ollama: Qwen3-Coder-14B)
-                                    │                   └──► [Fallback] OpenAI / Mimo Pro
-                                    │
-                                    ├──► MCP Server: filesystem (đọc/ghi code)
-                                    ├──► MCP Server: terminal (chạy lệnh)
-                                    └──► MCP Server: web-search (tìm kiếm web)
+| Service | Port | Public | Owner | Mo ta |
+|---|---:|---|---|---|
+| FastAPI + React | 8001 | Co, qua ngrok | systemd user service | Web, REST API, SSE, Agent endpoint |
+| LiteLLM | 4000 | Khong | Docker Compose | Router OpenAI-compatible |
+| Qdrant | 6333/6334 | Khong | Docker Compose | Vector database |
+| Ollama May 1 | 11434 local May 1 | Co, qua ngrok May 1 | May 1 | Gemma4 upstream |
 
+FastAPI service:
 
-  LUỒNG 2: RAG Hỏi đáp Tài liệu
-  ════════════════════════════════
-  Máy 3 (Browser/Chat UI) ──HTTP──► Máy 2 (FastAPI Gateway)
-                                        │
-                                        ├──► Docling (parse PDF/DOCX/XLSX/ảnh)
-                                        ├──► BGE-M3 Embedding (chạy trên GPU Máy 2)
-                                        ├──► Qdrant Vector DB (tìm kiếm ngữ nghĩa)
-                                        │
-                                        └──► LiteLLM Router ──► Máy 1 (Ollama: Qwen3-VL-7B)
-                                                            └──► [Fallback] OpenAI GPT-4o
-
-
-  LUỒNG 3: Xử lý Hình ảnh / OCR tiếng Việt
-  ═══════════════════════════════════════════
-  Tài liệu ảnh ──► Máy 2 (Docling + Vintern-1B hoặc Qwen3-VL-7B)
-                        │
-                        ├──► OCR local (ưu tiên)
-                        └──► [Fallback nặng] Google Document AI (dùng $300 credit)
+```text
+/home/jkl0909/.config/systemd/user/vllm-pd-api.service
 ```
 
----
+Quan ly:
 
-## 3. Chi tiết từng máy chủ
-
-### 3.1. Máy 1 — LLM Host (Windows 11, RTX 5070 Ti 16GB)
-
-**Vai trò cốt lõi:** Chuyên chạy inference cho các mô hình LLM/VLM lớn, phục vụ API chuẩn OpenAI-compatible cho toàn hệ thống.
-
-**Phần mềm triển khai:**
-
-| Thành phần | Công cụ | Lý do chọn |
-|:---|:---|:---|
-| Inference Engine | **Ollama** | Dễ cài trên Windows, tự động quản lý VRAM, hỗ trợ hot-swap model, API chuẩn OpenAI |
-| Kết nối mạng | **Tailscale** (thay Ngrok) | Bảo mật hơn Ngrok, không cần cổng public, ping thấp hơn |
-
-**Phân bổ VRAM (16GB) — Chiến lược đa model:**
-
-Ollama hỗ trợ **tự động load/unload** model theo nhu cầu (chỉ load model đang dùng vào VRAM), do đó bạn có thể cài **nhiều model** nhưng chỉ 1 model hoạt động tại một thời điểm:
-
-| Model | Kích thước trên VRAM | Dùng cho | Ghi chú |
-|:---|:---|:---|:---|
-| **Qwen3-Coder-14B** (Q4_K_M) | ~10GB | Coding Agent, lập trình, sửa lỗi | Model coding chuyên dụng, hỗ trợ function calling tốt |
-| **Qwen3-VL-7B** (Q4_K_M) | ~6GB | RAG hỏi đáp tài liệu + hình ảnh | Hiểu ảnh, bảng biểu, tiếng Việt tốt |
-| **Gemma 4 26B MoE** (Q4_K_M) | ~14GB | Task phức tạp cần suy luận sâu | Chỉ load khi cần, dùng Thinking Mode |
-
-> ⚠️ **Lưu ý quan trọng:** Với Q4_K_M quantization, model 14B chiếm ~10GB VRAM, còn lại ~6GB cho KV Cache (context window). Đủ cho context ~16K-32K tokens. Nếu cần context dài hơn, hãy chuyển sang dùng model 7B (chỉ chiếm ~6GB, dư ~10GB cho context rất dài).
-
-### 3.2. Máy 2 — RAG + Agent Server (Linux, RTX 5060 Ti 16GB)
-
-**Vai trò cốt lõi:** Bộ não điều phối toàn bộ hệ thống — chạy Agent Engine, RAG Pipeline, Vector DB, Embedding Model và LiteLLM Router.
-
-**Phân bổ VRAM (16GB):**
-
-| Thành phần | VRAM sử dụng | Ghi chú |
-|:---|:---|:---|
-| **BGE-M3 Embedding** | ~2GB | Mô hình embedding đa ngữ, chạy thường trực |
-| **Vintern-1B** (OCR tiếng Việt) | ~1.5GB | Mô hình VLM nhỏ chuyên OCR tiếng Việt, chạy thường trực |
-| **Docling** (AI layout models) | ~2GB | TableFormer + Layout Analysis |
-| **Dự phòng / KV Cache** | ~10.5GB | Dành cho burst processing hoặc model phụ |
-
-**Các service chạy trên Máy 2:**
-
-| Service | Port | Mô tả |
-|:---|:---|:---|
-| FastAPI Gateway | `:8000` | API Gateway chính, xử lý mọi request |
-| LiteLLM Proxy | `:4000` | Router chuyển hướng request LLM |
-| Qdrant | `:6333` | Vector Database |
-| LangGraph Agent | Internal | Điều phối Agent logic |
-| MCP Hub | `:3000` | Tập trung các MCP Server |
-| Chat UI (Open WebUI) | `:8080` | Giao diện chat cho RAG hỏi đáp |
-
-### 3.3. Máy 3 — Developer Workstation
-
-**Vai trò:** Máy trạm lập trình, nơi bạn ngồi code hàng ngày.
-
-**Cấu hình:**
-
-| Thành phần | Chi tiết |
-|:---|:---|
-| IDE | VS Code + Extension **Cline** hoặc **Roo Code** |
-| Kết nối | Tailscale VPN → SSH remote vào Máy 2 (VS Code Remote SSH) |
-| MCP Client | Tích hợp sẵn trong VS Code, kết nối tới MCP Hub trên Máy 2 |
-
----
-
-## 4. Đề xuất mô hình AI
-
-### 4.1. Mô hình chạy Local (Tự host)
-
-| Tên model | Kích thước | Quantize | Máy chạy | Tác vụ | Ưu điểm |
-|:---|:---|:---|:---|:---|:---|
-| **Qwen3-Coder-14B** | 14B | Q4_K_M | Máy 1 | Coding Agent chính | Chuyên coding, function calling chuẩn, hỗ trợ Thinking Mode |
-| **Qwen3-VL-7B** | 7B | Q4_K_M | Máy 1 | RAG hỏi đáp + Vision | Đọc hiểu ảnh, bảng biểu, hỗ trợ tiếng Việt tốt |
-| **Gemma 4 26B MoE** | 26B (4B active) | Q4_K_M | Máy 1 | Reasoning nâng cao | MoE nên nhanh, Thinking Mode mạnh |
-| **BGE-M3** | ~568M | FP16 | Máy 2 | Embedding đa ngữ | Hỗ trợ dense + sparse retrieval, tiếng Việt tốt |
-| **Vintern-1B** | 1B | FP16 | Máy 2 | OCR tiếng Việt chuyên sâu | Nhẹ, nhanh, chuyên biệt cho tài liệu Việt |
-
-### 4.2. Mô hình Cloud API (Dự phòng / Fallback)
-
-| Provider | Model | Dùng khi |
-|:---|:---|:---|
-| **OpenAI** | GPT-4o / GPT-4.1 | Task coding cực khó, logic phức tạp vượt khả năng local |
-| **Xiaomi Mimo Pro** | Mimo Pro | Backup cho các tác vụ tổng hợp, hỏi đáp thông thường |
-| **Google Cloud** | Document AI | OCR tài liệu scan phức tạp (dùng $300 credit) |
-| **Azure OpenAI** | GPT-4o (Azure) | Backup enterprise-grade (dùng $100 student credit) |
-
----
-
-## 5. Stack công nghệ chi tiết
-
-### 5.1. Tổng quan Stack
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    PRESENTATION LAYER                    │
-│  VS Code + Cline/Roo Code │ Open WebUI (Chat) │ Browser │
-└────────────────────────────┬────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────┐
-│                    GATEWAY LAYER (Máy 2)                 │
-│              FastAPI + LiteLLM Proxy Router              │
-└────────────────────────────┬────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────┐
-│                ORCHESTRATION LAYER (Máy 2)               │
-│           LangGraph (Agent Engine) + MCP Hub             │
-└───────┬─────────────┬──────────────┬────────────────────┘
-        │             │              │
-┌───────▼──────┐ ┌────▼─────┐ ┌─────▼──────────┐
-│  RAG         │ │  MCP     │ │  INFERENCE     │
-│  Pipeline    │ │  Servers │ │  LAYER         │
-│              │ │          │ │                │
-│ • Docling    │ │ • FS     │ │ • Máy 1:      │
-│ • BGE-M3    │ │ • Term   │ │   Ollama       │
-│ • Qdrant    │ │ • Web    │ │ • Cloud:       │
-│ • Vintern   │ │ • Git    │ │   OpenAI/Mimo  │
-└──────────────┘ └──────────┘ └────────────────┘
+```bash
+systemctl --user status vllm-pd-api
+systemctl --user restart vllm-pd-api
+journalctl --user -u vllm-pd-api -n 120 --no-pager
 ```
 
-### 5.2. Chi tiết từng thành phần
+Docker services:
 
-#### 🔧 Inference Engine (Máy 1)
-
-| Công cụ | Phiên bản | Lý do chọn |
-|:---|:---|:---|
-| **Ollama** | Latest | Cài đặt đơn giản trên Windows, API chuẩn OpenAI, tự quản lý VRAM, hỗ trợ hot-swap model |
-
-> **Tại sao Ollama mà không phải vLLM trên Windows?**
-> - vLLM chủ yếu tối ưu cho Linux, cài trên Windows phức tạp.
-> - Ollama có bản Windows native, cài 1 click, API tương thích OpenAI.
-> - Với 1 user (bạn), throughput của Ollama là đủ. vLLM chỉ cần khi phục vụ nhiều user đồng thời.
-
-#### 🧠 Agent Orchestration (Máy 2)
-
-| Công cụ | Vai trò | Lý do chọn |
-|:---|:---|:---|
-| **LangGraph** | Điều phối Agent, quản lý state | Framework mạnh nhất cho agentic workflow phức tạp, hỗ trợ cycles, persistence, human-in-the-loop |
-| **langchain-mcp-adapters** | Kết nối MCP tools → LangGraph | Chuyển đổi MCP tools thành LangChain tools chuẩn để LangGraph sử dụng |
-| **FastAPI** | API Gateway | Async, hiệu năng cao, dễ tùy biến, tích hợp tốt với LangGraph |
-
-#### 📄 Document Processing (Máy 2)
-
-| Công cụ | Vai trò | Lý do chọn |
-|:---|:---|:---|
-| **Docling** (IBM) | Parse PDF, DOCX, XLSX, ảnh | Xử lý đa định dạng trong 1 pipeline, trích xuất bảng biểu bằng AI (TableFormer), export Markdown/JSON |
-| **PyMuPDF** | Backup cho PDF nhanh | Tốc độ cao khi cần extract text đơn giản từ PDF |
-| **openpyxl** | Xử lý Excel nâng cao | Đọc dữ liệu có cấu trúc từ Excel sheets |
-
-#### 🔍 Vector Database & Embedding (Máy 2)
-
-| Công cụ | Vai trò | Lý do chọn |
-|:---|:---|:---|
-| **Qdrant** | Vector Database | Hiệu năng cao (Rust), hỗ trợ metadata filtering mạnh, tự host dễ, phù hợp quy mô vừa |
-| **BGE-M3** (BAAI) | Embedding Model | Hỗ trợ dense + sparse + multi-vector, tiếng Việt tốt, ~568M params chạy nhẹ trên GPU |
-
-> **Tại sao Qdrant mà không phải ChromaDB?**
-> - ChromaDB phù hợp prototype/dev, nhưng Qdrant mạnh hơn rất nhiều về filtering, performance và production-ready.
-> - Qdrant viết bằng Rust, tốc độ query nhanh, hỗ trợ disk-based index (tiết kiệm RAM).
-
-#### 🔀 LLM Router (Máy 2)
-
-| Công cụ | Vai trò | Lý do chọn |
-|:---|:---|:---|
-| **LiteLLM Proxy** | Router/Load Balancer | Hỗ trợ 100+ LLM providers, fallback tự động, health check, API chuẩn OpenAI |
-
-#### 📊 Observability (Máy 2)
-
-| Công cụ | Vai trò | Lý do chọn |
-|:---|:---|:---|
-| **Langfuse** (self-hosted) | Tracing & Monitoring | Theo dõi chuỗi suy luận của Agent, debug lỗi, đo latency, tự host được |
-
----
-
-## 6. Thiết kế hệ thống Agent & MCP
-
-### 6.1. Kiến trúc MCP
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                       MÁY 2 (Linux Server)                       │
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │                  LangGraph Agent Engine                   │    │
-│  │                                                           │    │
-│  │   ┌─────────┐    ┌──────────┐    ┌──────────────────┐   │    │
-│  │   │  Plan   │───►│ Execute  │───►│ Evaluate/Retry   │   │    │
-│  │   │  Node   │    │  Node    │    │     Node         │   │    │
-│  │   └─────────┘    └────┬─────┘    └──────────────────┘   │    │
-│  │                       │                                   │    │
-│  │              ┌────────▼────────┐                          │    │
-│  │              │  MCP Client Hub │ (langchain-mcp-adapters) │    │
-│  │              └────────┬────────┘                          │    │
-│  └───────────────────────┼───────────────────────────────────┘    │
-│                          │                                        │
-│          ┌───────────────┼───────────────────────┐               │
-│          │               │                       │               │
-│    ┌─────▼─────┐   ┌────▼──────┐   ┌───────────▼──────────┐   │
-│    │ MCP Server│   │MCP Server │   │  MCP Server          │   │
-│    │filesystem │   │ terminal  │   │  brave-search / tavily│   │
-│    │           │   │           │   │                       │   │
-│    │ • read    │   │ • exec    │   │  • web_search        │   │
-│    │ • write   │   │ • run_test│   │  • fetch_url         │   │
-│    │ • list    │   │ • install │   │                       │   │
-│    └───────────┘   └───────────┘   └───────────────────────┘   │
-│                                                                  │
-└──────────────────────────────────────────────────────────────────┘
+```bash
+docker compose ps
+docker compose logs --tail=120 litellm
+docker compose logs --tail=120 qdrant
 ```
 
-### 6.2. Các MCP Server cần thiết lập
+## 5. Backend API layer
 
-| MCP Server | Transport | Chức năng | Cách cài |
-|:---|:---|:---|:---|
-| **@modelcontextprotocol/server-filesystem** | stdio | Đọc/ghi/sửa file code | `npx @modelcontextprotocol/server-filesystem <workspace_path>` |
-| **mcp-server-terminal** | stdio | Chạy lệnh terminal, test, build | Cài qua pip hoặc npx |
-| **@anthropic/mcp-server-brave-search** hoặc **tavily** | stdio | Tìm kiếm web | Cần API key của Brave Search hoặc Tavily |
-| **mcp-server-git** | stdio | Thao tác Git (commit, diff, log) | `npx @modelcontextprotocol/server-git` |
-| **mcp-server-qdrant** | stdio | Truy vấn Vector DB trực tiếp | Cài qua pip |
+File chinh: `src/api/main.py`.
 
-### 6.3. Cấu hình MCP trong VS Code (Máy 3)
+Chuc nang:
 
-Tạo file `.vscode/mcp.json` trong workspace:
+- Load `.env` bang `python-dotenv`.
+- Khoi tao singleton trong FastAPI lifespan:
+  - `VectorStore`
+  - `Embedder`
+  - `DocumentParser`
+  - `RAGPipeline`
+- Mount React build tai `/` neu `frontend/dist` ton tai.
+- CORS mo cho public web/API.
+- Validate UUID session ID.
+- Validate filename va file extension.
+- Gioi han upload/query theo IP bang in-memory rate limiter.
+- Bao ve `/agent` bang constant-time compare voi `AGENT_API_KEY`.
+
+Endpoints:
+
+| Endpoint | Vai tro |
+|---|---|
+| `GET /health` | Health check |
+| `GET /models` | Model list cho UI |
+| `POST /sessions` | Tao session |
+| `GET /sessions/{session_id}` | Doc thong tin session |
+| `DELETE /sessions/{session_id}` | Xoa session va file |
+| `POST /sessions/{session_id}/upload` | Upload, parse, embed, index |
+| `DELETE /sessions/{session_id}/files/{filename}` | Xoa file khoi Qdrant/session |
+| `POST /query` | RAG non-streaming |
+| `POST /query/stream` | RAG SSE streaming |
+| `POST /agent` | Coding Agent |
+
+## 6. Frontend layer
+
+Thu muc: `frontend/`.
+
+Stack:
+
+- React 18.
+- Vite.
+- `lucide-react`.
+- `react-markdown`.
+
+Man hinh chinh:
+
+- Sidebar tai lieu.
+- Nut tao phien moi.
+- Upload nhieu file.
+- Tabs `Hoi dap` va `Nghien cuu`.
+- Model selector.
+- Chat composer.
+- Panel sources tren desktop.
+- Sources inline tren mobile.
+
+Frontend dung relative API path, vi vay cung mot public URL port `8001` phuc vu ca web va API:
+
+```text
+/              -> React SPA
+/health        -> FastAPI
+/models        -> FastAPI
+/sessions      -> FastAPI
+/query/stream  -> FastAPI SSE
+```
+
+Build:
+
+```bash
+cd frontend
+npm install
+npm run build
+```
+
+`frontend/dist` la build output va khong can commit.
+
+## 7. RAG pipeline
+
+Thanh phan:
+
+| File | Vai tro |
+|---|---|
+| `src/rag/parser.py` | Dung Docling de convert tai lieu sang markdown, sau do chunk |
+| `src/rag/embedder.py` | Load `BAAI/bge-m3`, embed query/documents |
+| `src/rag/vector_store.py` | Qdrant collection, session filtering, add/search/delete chunks |
+| `src/rag/rag_pipeline.py` | Retrieval, prompt, model routing, LiteLLM call |
+
+Luon upload:
+
+```text
+User upload
+  -> FastAPI validate session/filename/extension/size
+  -> Save file vao UPLOAD_DIR/session_id
+  -> Docling process_file
+  -> Split markdown thanh TextChunk
+  -> BGE-M3 embed_documents
+  -> Qdrant upsert payload co session_id va source_file
+```
+
+Luon query:
+
+```text
+Question
+  -> BGE-M3 embed_query
+  -> Qdrant search theo session_id
+  -> build_rag_prompt
+  -> LiteLLM chat.completions
+  -> answer + formatted sources
+```
+
+Mode `chat`:
+
+- Retrieval top_k mac dinh 5.
+- Prompt tra loi ngan gon, co citation.
+
+Mode `research`:
+
+- Retrieval top_k 10.
+- Prompt yeu cau bao cao nghien cuu:
+  - Tom tat dieu hanh.
+  - Phat hien chinh.
+  - Bang chung.
+  - Diem chua ro.
+  - Cau hoi nghien cuu tiep theo.
+- Max tokens cao hon mode chat.
+
+## 8. LiteLLM routing
+
+File: `litellm_config.yaml`.
+
+Model groups:
+
+| Group | Backend | Dung cho |
+|---|---|---|
+| `auto-model` | Ollama/Gemma4 | Lua chon tu dong trong UI |
+| `local-gemma` | Ollama/Gemma4 | Khi user chon Gemma4 Local |
+| `mimo-pro` | OpenAI-compatible MiMo API | Khi user chon MiMo 2.5 Pro |
+| `openai-model` | OpenAI GPT-4o mini | Khi user chon OpenAI |
+| `coding-model` | Ollama/Gemma4 | LangGraph Coding Agent |
+
+Fallback:
+
+```yaml
+router_settings:
+  fallbacks:
+    - auto-model: ["mimo-pro", "openai-model"]
+    - coding-model: ["openai-model"]
+```
+
+Y nghia:
+
+- Web chon `auto`: uu tien local Gemma4, neu fail thi MiMo, neu fail tiep thi OpenAI.
+- Agent: uu tien local Gemma4, fallback OpenAI.
+- Neu user chon truc tiep `mimo` hoac `openai`, LiteLLM goi dung group do, khong fallback sang group khac.
+
+MiMo Token Plan:
+
+```env
+MIMO_API_BASE=https://token-plan-sgp.xiaomimimo.com/v1
+```
+
+Pay-as-you-go MiMo co the dung endpoint khac:
+
+```env
+MIMO_API_BASE=https://api.xiaomimimo.com/v1
+```
+
+## 9. Coding Agent architecture
+
+File:
+
+- `src/agent/graph.py`
+- `src/agent/mcp_client.py`
+
+LangGraph:
+
+```text
+AgentState(messages)
+      |
+      v
+call_model
+      |
+      |-- neu co tool_calls -> ToolNode -> call_model
+      |
+      `-- neu khong -> END
+```
+
+LLM:
+
+- `ChatOpenAI`
+- `model="coding-model"`
+- `openai_api_base=LITELLM_URL`
+- `openai_api_key=LITELLM_MASTER_KEY`
+
+MCP:
+
+- Dung `langchain-mcp-adapters==0.2.2`.
+- Dung `MultiServerMCPClient`.
+- Filesystem MCP:
+  - `@modelcontextprotocol/server-filesystem`
+  - allowed directory: `WORKSPACE_DIR`
+- Git MCP:
+  - `mcp-server-git`
+  - repository: `AGENT_REPOSITORY_DIR`
+- Tools duoc cache bang `lru_cache`.
+- Neu MCP fail, fallback local tools chi doc/ghi/list ben trong `WORKSPACE_DIR`.
+
+Security:
+
+- Public `/agent` can header:
+
+```text
+X-Agent-API-Key: <AGENT_API_KEY>
+```
+
+Khong nen de `AGENT_API_KEY` trong `.env` rong khi public API.
+
+## 10. Data model
+
+Qdrant collection:
+
+```text
+docmind_documents
+```
+
+Vector dimension:
+
+```text
+1024
+```
+
+Payload moi point:
 
 ```json
 {
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/home/jkl0909/Code"
-      ]
-    },
-    "terminal": {
-      "command": "npx",
-      "args": ["-y", "mcp-server-terminal"]
-    },
-    "brave-search": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/mcp-server-brave-search"],
-      "env": {
-        "BRAVE_API_KEY": "${env:BRAVE_API_KEY}"
-      }
-    },
-    "git": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-git",
-        "--repository", "/home/jkl0909/Code"
-      ]
-    }
+  "session_id": "...",
+  "text": "...",
+  "source_file": "test1.pdf",
+  "page_number": 1,
+  "chunk_index": 0,
+  "content_type": "text",
+  "metadata": {
+    "source": "docling"
   }
 }
 ```
 
-### 6.4. Luồng hoạt động của Coding Agent
+Session isolation dua vao payload filter `session_id`.
 
-```
-  Người dùng (VS Code) gửi yêu cầu: "Hãy sửa lỗi import ở file utils.py"
-       │
-       ▼
-  ┌──────────────────────────────────────┐
-  │  1. PLAN NODE (LangGraph)            │
-  │  LLM phân tích yêu cầu → Lên kế hoạch│
-  │  "Cần đọc file utils.py trước"       │
-  └────────────┬─────────────────────────┘
-               │
-               ▼
-  ┌──────────────────────────────────────┐
-  │  2. EXECUTE NODE                     │
-  │  Gọi MCP Tool: filesystem.read_file  │
-  │  → Nhận nội dung utils.py            │
-  └────────────┬─────────────────────────┘
-               │
-               ▼
-  ┌──────────────────────────────────────┐
-  │  3. REASON NODE                      │
-  │  LLM (Qwen3-Coder-14B via LiteLLM)  │
-  │  Phân tích lỗi → Sinh code sửa      │
-  └────────────┬─────────────────────────┘
-               │
-               ▼
-  ┌──────────────────────────────────────┐
-  │  4. EXECUTE NODE                     │
-  │  Gọi MCP Tool: filesystem.write_file │
-  │  → Ghi code đã sửa vào utils.py     │
-  └────────────┬─────────────────────────┘
-               │
-               ▼
-  ┌──────────────────────────────────────┐
-  │  5. VERIFY NODE                      │
-  │  Gọi MCP Tool: terminal.run_command  │
-  │  → Chạy test: "python -m pytest"     │
-  │  → Kiểm tra kết quả pass/fail       │
-  └────────────┬─────────────────────────┘
-               │
-               ▼
-  ┌──────────────────────────────────────┐
-  │  6. EVALUATE NODE                    │
-  │  Test pass? → Trả kết quả cho user   │
-  │  Test fail? → Quay lại bước 3 (retry)│
-  └──────────────────────────────────────┘
+## 11. Public networking
+
+Hien tai chi can mot public URL cho nguoi dung va May 3:
+
+```text
+MACHINE2_API_PUBLIC_URL -> ngrok -> http://localhost:8001
 ```
 
----
+Khong can public LiteLLM:
 
-## 7. Cơ chế Router/Fallback thông minh
-
-### 7.1. Thiết kế Router bằng LiteLLM Proxy
-
-LiteLLM Proxy chạy trên **Máy 2** như một middleware trung tâm, mọi request LLM từ Agent hoặc RAG đều đi qua đây:
-
-```
-  Mọi request ──► LiteLLM Proxy (:4000)
-                      │
-                      ├── Ưu tiên 1: Local Model (Máy 1 Ollama)
-                      │     ├── Healthy? → Forward request
-                      │     └── Lỗi / Timeout? ──► Fallback
-                      │
-                      ├── Ưu tiên 2: Xiaomi Mimo Pro API
-                      │     ├── Available? → Forward
-                      │     └── Lỗi? ──► Fallback tiếp
-                      │
-                      └── Ưu tiên 3: OpenAI API
-                            └── Luôn available (trả phí)
+```text
+MACHINE2_LITELLM_LOCAL_URL=http://localhost:4000
 ```
 
-### 7.2. Cấu hình LiteLLM Proxy (`config.yaml`)
+Ly do:
 
-```yaml
-# File: /home/jkl0909/Code/llm/VLLM-PD/litellm_config.yaml
+- Web va API da cung domain/port 8001.
+- Frontend dung relative paths.
+- Coding client co the goi `/agent` qua cung public URL.
+- LiteLLM co master key va provider credentials, nen nen o noi bo.
 
-model_list:
-  # ============================================================
-  # CODING MODEL — Dùng cho Agent lập trình
-  # ============================================================
-  - model_name: coding-model
-    litellm_params:
-      model: ollama/qwen3-coder-14b
-      api_base: http://<tailscale-ip-may1>:11434  # Máy 1 qua Tailscale
-      timeout: 120
-      stream: true
+## 12. Security boundaries
 
-  - model_name: coding-model-fallback
-    litellm_params:
-      model: openai/gpt-4o
-      api_key: os.environ/OPENAI_API_KEY
-      timeout: 60
+| Boundary | Co che |
+|---|---|
+| Secret/API key | `.env`, `.gitignore` |
+| Agent endpoint | `AGENT_API_KEY` va `X-Agent-API-Key` |
+| Session ID | UUID validation |
+| File path | `Path(filename).name`, extension allowlist |
+| Upload size | `MAX_UPLOAD_SIZE_MB` |
+| Abuse control | In-memory per-IP rate limit |
+| MCP filesystem | `WORKSPACE_DIR` |
+| MCP git | `AGENT_REPOSITORY_DIR` |
+| LiteLLM | Noi bo port 4000 |
 
-  # ============================================================
-  # VISION MODEL — Dùng cho RAG hình ảnh & tài liệu
-  # ============================================================
-  - model_name: vision-model
-    litellm_params:
-      model: ollama/qwen3-vl-7b
-      api_base: http://<tailscale-ip-may1>:11434
-      timeout: 90
-      stream: true
+## 13. Current operational state on May 2
 
-  - model_name: vision-model-fallback
-    litellm_params:
-      model: openai/gpt-4o  # GPT-4o hỗ trợ vision
-      api_key: os.environ/OPENAI_API_KEY
+Da thiet lap:
 
-  # ============================================================
-  # GENERAL MODEL — Hỏi đáp, tóm tắt, phân loại
-  # ============================================================
-  - model_name: general-model
-    litellm_params:
-      model: ollama/gemma4-26b-a4b
-      api_base: http://<tailscale-ip-may1>:11434
-      timeout: 120
+- `docker compose` chay Qdrant va LiteLLM.
+- `systemd --user` chay FastAPI/React:
 
-  - model_name: general-model-fallback-mimo
-    litellm_params:
-      model: openai/mimo-pro  # Xiaomi Mimo Pro (OpenAI-compatible)
-      api_key: os.environ/MIMO_API_KEY
-      api_base: https://api.mimo.xiaomi.com/v1  # URL ví dụ
-
-  - model_name: general-model-fallback-openai
-    litellm_params:
-      model: openai/gpt-4o-mini
-      api_key: os.environ/OPENAI_API_KEY
-
-# ============================================================
-# ROUTER SETTINGS
-# ============================================================
-router_settings:
-  # Khi model chính lỗi → tự động chuyển sang fallback
-  fallbacks:
-    - coding-model: ["coding-model-fallback"]
-    - vision-model: ["vision-model-fallback"]
-    - general-model: ["general-model-fallback-mimo", "general-model-fallback-openai"]
-
-  # Health check mỗi 30 giây để phát hiện sớm Máy 1 offline
-  enable_health_check: true
-  health_check_interval: 30
-
-  # Không retry model lỗi, chuyển fallback ngay lập tức
-  num_retries: 0
-
-  # Timeout mặc định
-  timeout: 120
-
-  # Routing strategy
-  routing_strategy: "simple-shuffle"  # Hoặc "latency-based-routing"
-
-litellm_settings:
-  # Log chi tiết để debug
-  set_verbose: false
-  # Cache response để tiết kiệm (optional)
-  cache: true
-  cache_params:
-    type: "local"
-    ttl: 600  # 10 phút
+```text
+vllm-pd-api.service
 ```
 
-### 7.3. Khởi chạy LiteLLM Proxy
+- `loginctl enable-linger` da bat, nen service co the chay sau khi logout.
+- React da build production.
+- LiteLLM da nhan 5 model groups.
+- MCP filesystem/git da load du 26 tools.
+
+Da test:
+
+- `GET /health` local va public ngrok.
+- `GET /models`.
+- React desktop/mobile bang Playwright screenshot.
+- Upload `documents/test1.pdf`.
+- Qdrant index 3 chunks.
+- `POST /query/stream` tra sources, meta, token va done.
+- Local Gemma4 tra `200`.
+- MiMo Token Plan SGP tra `200`.
+- OpenAI tra `200`.
+- `/agent` co key tra `200`, khong key tra `401`.
+
+## 14. Failure modes
+
+### Machine 1 Ollama/ngrok fail
+
+Anh huong:
+
+- `local-gemma` fail.
+- `auto-model` co the fallback sang MiMo/OpenAI.
+- `coding-model` co the fallback sang OpenAI.
+
+Can lam:
 
 ```bash
-# Trên Máy 2 (Linux)
-litellm --config /home/jkl0909/Code/llm/VLLM-PD/litellm_config.yaml \
-        --port 4000 \
-        --host 0.0.0.0
+curl "$OLLAMA_API_BASE/api/tags"
+docker compose restart litellm
 ```
 
-### 7.4. Sử dụng trong code Python
+### LiteLLM fail config
 
-```python
-# Mọi service trên Máy 2 gọi LLM thông qua LiteLLM Proxy
-# Cú pháp giống hệt OpenAI SDK — dễ migrate
+Anh huong:
 
-from openai import OpenAI
+- Query RAG va Agent khong goi duoc model.
 
-client = OpenAI(
-    api_key="sk-any-key",  # LiteLLM Proxy không cần key thật
-    base_url="http://localhost:4000/v1"  # LiteLLM Proxy trên Máy 2
-)
-
-# Gọi Coding Model (tự động fallback nếu Máy 1 lỗi)
-response = client.chat.completions.create(
-    model="coding-model",
-    messages=[
-        {"role": "system", "content": "Bạn là trợ lý lập trình chuyên nghiệp."},
-        {"role": "user", "content": "Hãy viết hàm quicksort bằng Python"}
-    ],
-    stream=True
-)
-```
-
----
-
-## 8. Hệ thống RAG chi tiết
-
-### 8.1. Pipeline xử lý tài liệu
-
-```
-  Tài liệu đầu vào
-  (PDF, DOCX, XLSX, ảnh)
-       │
-       ▼
-  ┌──────────────────────────────────────┐
-  │  BƯỚC 1: DOCUMENT PARSING           │
-  │                                      │
-  │  Docling (IBM)                       │
-  │  ├── PDF → Text + Table + Layout     │
-  │  ├── DOCX → Markdown structured      │
-  │  ├── XLSX → Bảng dữ liệu có headers │
-  │  └── Ảnh → Vintern-1B (OCR Việt)     │
-  │          hoặc Qwen3-VL-7B (Máy 1)   │
-  └────────────┬─────────────────────────┘
-               │
-               ▼
-  ┌──────────────────────────────────────┐
-  │  BƯỚC 2: CHUNKING                   │
-  │                                      │
-  │  LangChain RecursiveCharacterSplitter│
-  │  ├── chunk_size: 1000 tokens         │
-  │  ├── chunk_overlap: 200 tokens       │
-  │  └── Giữ nguyên cấu trúc bảng biểu  │
-  └────────────┬─────────────────────────┘
-               │
-               ▼
-  ┌──────────────────────────────────────┐
-  │  BƯỚC 3: EMBEDDING                  │
-  │                                      │
-  │  BGE-M3 (chạy trên GPU Máy 2)       │
-  │  ├── Dense vector (1024 dims)        │
-  │  ├── Sparse vector (BM25-like)       │
-  │  └── Multi-vector (ColBERT-like)     │
-  └────────────┬─────────────────────────┘
-               │
-               ▼
-  ┌──────────────────────────────────────┐
-  │  BƯỚC 4: INDEXING                   │
-  │                                      │
-  │  Qdrant Vector Database              │
-  │  ├── Collection: "documents_vi_en"   │
-  │  ├── Payload: metadata (filename,    │
-  │  │   page, language, doc_type)       │
-  │  └── Hybrid search: dense + sparse   │
-  └──────────────────────────────────────┘
-```
-
-### 8.2. Pipeline truy vấn RAG (Query)
-
-```
-  Câu hỏi người dùng: "Trong báo cáo Q3, doanh thu là bao nhiêu?"
-       │
-       ▼
-  ┌──────────────────────────────────────┐
-  │  1. QUERY EXPANSION                 │
-  │  LLM tạo thêm các biến thể câu hỏi  │
-  │  để tăng recall:                     │
-  │  - "revenue Q3 report"              │
-  │  - "doanh thu quý 3 báo cáo"       │
-  └────────────┬─────────────────────────┘
-               │
-               ▼
-  ┌──────────────────────────────────────┐
-  │  2. HYBRID SEARCH (Qdrant)          │
-  │  ├── Dense search (semantic)         │
-  │  ├── Sparse search (keyword)         │
-  │  └── Rerank: Cross-encoder hoặc LLM │
-  │      → Top-K chunks (K=5)           │
-  └────────────┬─────────────────────────┘
-               │
-               ▼
-  ┌──────────────────────────────────────┐
-  │  3. GENERATION                      │
-  │  LLM (qua LiteLLM Router):          │
-  │  - Context: top-K chunks             │
-  │  - System prompt: "Trả lời bằng     │
-  │    tiếng Việt, trích dẫn nguồn"     │
-  │  → Câu trả lời + citations          │
-  └──────────────────────────────────────┘
-```
-
----
-
-## 9. Bảo mật & Kết nối mạng
-
-### 9.1. Thay thế Ngrok bằng Tailscale VPN
-
-> **Khuyến nghị mạnh:** Chuyển từ Ngrok sang **Tailscale** để kết nối Máy 1 và Máy 2.
-
-| Tiêu chí | Ngrok (Hiện tại) | Tailscale (Đề xuất) |
-|:---|:---|:---|
-| **Bảo mật** | ⚠️ Tạo URL public, ai cũng truy cập được | ✅ Mạng riêng tư, Zero Trust, mã hóa WireGuard |
-| **Tốc độ** | ⚠️ Đi qua relay server của Ngrok | ✅ Kết nối P2P trực tiếp giữa 2 máy (nếu có thể) |
-| **Ổn định** | ⚠️ URL thay đổi khi restart (bản free) | ✅ IP Tailscale cố định (100.x.x.x) |
-| **Chi phí** | ⚠️ Bản free giới hạn bandwidth | ✅ Miễn phí cho cá nhân (lên đến 100 thiết bị) |
-| **Setup** | Đơn giản | Đơn giản (cài client trên cả 2 máy, login cùng tài khoản) |
-
-**Cách cài Tailscale:**
+Can lam:
 
 ```bash
-# Trên Máy 1 (Windows 11):
-# Tải installer từ https://tailscale.com/download/windows
-# Đăng nhập bằng Google/GitHub account
-
-# Trên Máy 2 (Linux):
-curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up
-
-# Trên Máy 3 (Developer Workstation):
-# Cài Tailscale client và đăng nhập cùng tài khoản
+docker compose logs --tail=120 litellm
+docker compose up -d --force-recreate litellm
 ```
 
-Sau khi cài, cả 3 máy sẽ có IP nội bộ dạng `100.x.x.x` và có thể giao tiếp trực tiếp như trong cùng LAN.
+### FastAPI fail startup
 
-### 9.2. Ma trận bảo mật
+Thuong gap khi:
 
-| Lớp bảo mật | Giải pháp |
-|:---|:---|
-| **Mạng** | Tailscale VPN (WireGuard encryption) |
-| **API Authentication** | API Key cho LiteLLM Proxy, Bearer token cho FastAPI |
-| **Dữ liệu** | Toàn bộ dữ liệu lưu local trên Máy 2, không gửi lên cloud (trừ khi fallback) |
-| **MCP** | Giới hạn filesystem access trong workspace path cụ thể |
-| **Cloud Fallback** | Chỉ gửi prompt/query, KHÔNG gửi toàn bộ tài liệu gốc lên cloud |
+- Qdrant chua len.
+- Python env thieu package.
+- GPU/model embedding load loi.
 
----
+Can lam:
 
-## 10. Sử dụng Cloud Credits
-
-### 10.1. Google Cloud ($300 Free Trial)
-
-| Dịch vụ | Chi phí ước tính | Mục đích |
-|:---|:---|:---|
-| **Document AI (OCR)** | ~$1.5/1000 trang | Xử lý tài liệu scan phức tạp mà local OCR (Vintern-1B) chưa chính xác |
-| **Cloud Storage** | ~$0.02/GB/tháng | Backup tài liệu gốc (optional) |
-| **Vertex AI** | Pay-per-use | Thử nghiệm Gemma 4 trên cloud (nếu muốn so sánh với local) |
-
-> 💡 **Chiến lược:** Dùng $300 chủ yếu cho Document AI OCR. Với giá ~$1.5/1000 trang, bạn có thể OCR ~200,000 trang tài liệu. Đủ dùng rất lâu.
-
-### 10.2. Azure Student ($100)
-
-| Dịch vụ | Chi phí ước tính | Mục đích |
-|:---|:---|:---|
-| **Azure OpenAI Service** | Pay-per-token | Backup API cho coding agent khi cần model cực mạnh (GPT-4o) |
-| **Azure AI Search** | $0 (Free tier) | Thử nghiệm so sánh với Qdrant (optional) |
-
-> 💡 **Chiến lược:** Reserve $100 Azure cho Azure OpenAI API. Dùng làm "bảo hiểm" cho những task coding cực khó mà local model + OpenAI trực tiếp đều thất bại.
-
----
-
-## 11. Kế hoạch triển khai theo giai đoạn
-
-### Phase 1: Nền tảng mạng & Inference (Tuần 1)
-
-- [ ] Cài Tailscale trên cả 3 máy, xác nhận kết nối P2P
-- [ ] Cài Ollama trên Máy 1 (Windows), tải Qwen3-Coder-14B + Qwen3-VL-7B
-- [ ] Kiểm tra API Ollama hoạt động qua Tailscale IP từ Máy 2
-- [ ] Gỡ bỏ Ngrok (sau khi Tailscale ổn định)
-
-### Phase 2: LiteLLM Router & Fallback (Tuần 1-2)
-
-- [ ] Cài LiteLLM Proxy trên Máy 2
-- [ ] Cấu hình `config.yaml` với local model + OpenAI + Mimo Pro fallback
-- [ ] Test fallback: tắt Ollama → xác nhận request chuyển sang OpenAI
-- [ ] Cài Langfuse (self-hosted) để monitoring
-
-### Phase 3: RAG Pipeline (Tuần 2-3)
-
-- [ ] Cài Qdrant trên Máy 2 (Docker hoặc binary)
-- [ ] Cài BGE-M3 embedding model trên Máy 2 (qua sentence-transformers hoặc TEI)
-- [ ] Cài Docling, viết script ingest tài liệu (PDF/DOCX/XLSX)
-- [ ] Cài Vintern-1B cho OCR tiếng Việt
-- [ ] Xây dựng FastAPI endpoint cho RAG query
-- [ ] Cài Open WebUI làm giao diện chat cho RAG
-
-### Phase 4: Agent & MCP (Tuần 3-4)
-
-- [ ] Xây dựng LangGraph Agent Engine trên Máy 2
-- [ ] Cài đặt các MCP Server (filesystem, terminal, web-search, git)
-- [ ] Tích hợp langchain-mcp-adapters để kết nối MCP → LangGraph
-- [ ] Cài Cline/Roo Code trên VS Code (Máy 3), cấu hình kết nối
-- [ ] Test end-to-end: yêu cầu sửa code → Agent đọc file → sửa → chạy test
-
-### Phase 5: Tối ưu & Production (Tuần 4+)
-
-- [ ] Fine-tune prompt template cho từng tác vụ (coding, RAG, OCR)
-- [ ] Cấu hình Google Document AI làm backup OCR (dùng $300 credit)
-- [ ] Thiết lập Azure OpenAI làm backup cho coding model
-- [ ] Viết script tự động khởi động tất cả services (systemd trên Linux)
-- [ ] Viết tài liệu vận hành & troubleshooting
-
----
-
-## 📎 Phụ lục: Cấu trúc thư mục dự án
-
-```
-VLLM-PD/
-├── ARCHITECTURE.md              # File này
-├── AGENTS.md                    # Quy tắc cho AI Agent
-├── docker-compose.yml           # Orchestrate services trên Máy 2
-├── litellm_config.yaml          # Cấu hình LiteLLM Router
-├── .vscode/
-│   └── mcp.json                 # Cấu hình MCP cho VS Code
-├── src/
-│   ├── agent/
-│   │   ├── graph.py             # LangGraph Agent definition
-│   │   ├── nodes.py             # Agent nodes (plan, execute, evaluate)
-│   │   ├── state.py             # Agent state schema
-│   │   └── prompts.py           # System prompts cho từng tác vụ
-│   ├── rag/
-│   │   ├── ingest.py            # Document ingestion pipeline
-│   │   ├── chunker.py           # Text chunking logic
-│   │   ├── embedder.py          # BGE-M3 embedding wrapper
-│   │   ├── retriever.py         # Qdrant hybrid search
-│   │   └── generator.py         # RAG generation logic
-│   ├── mcp/
-│   │   ├── servers/             # Custom MCP server definitions
-│   │   └── client.py            # MCP client integration
-│   ├── router/
-│   │   └── middleware.py        # Custom routing logic (nếu cần)
-│   └── api/
-│       ├── main.py              # FastAPI application
-│       ├── routes/
-│       │   ├── chat.py          # Chat/RAG endpoints
-│       │   ├── agent.py         # Agent task endpoints
-│       │   └── documents.py     # Document upload/manage
-│       └── models/
-│           └── schemas.py       # Pydantic models
-├── scripts/
-│   ├── setup_may1.sh            # Script cài đặt cho Máy 1
-│   ├── setup_may2.sh            # Script cài đặt cho Máy 2
-│   └── start_services.sh        # Khởi động toàn bộ services
-├── Notebooks/
-│   └── Test_LocalAPI.ipynb      # Notebook test API
-└── tests/
-    ├── test_router.py           # Test LiteLLM fallback
-    ├── test_rag.py              # Test RAG pipeline
-    └── test_agent.py            # Test Agent workflow
+```bash
+journalctl --user -u vllm-pd-api -n 160 --no-pager
+systemctl --user restart vllm-pd-api
 ```
 
----
+### Web trang trang hoac 404 asset
 
-> **Ghi chú cuối:** Kiến trúc này được thiết kế theo nguyên tắc **modular** — mỗi thành phần có thể thay thế hoặc nâng cấp độc lập. Ví dụ: Bạn có thể đổi Ollama sang vLLM khi chuyển Máy 1 sang Linux, hoặc thay Qdrant bằng Milvus khi dữ liệu tăng lên hàng triệu documents, mà không cần thay đổi phần còn lại của hệ thống.
+Can build lai frontend:
+
+```bash
+cd frontend
+npm run build
+systemctl --user restart vllm-pd-api
+```
+
+## 15. Deployment checklist
+
+```bash
+cd /home/jkl0909/Code/llm/VLLM-PD
+
+# Python syntax
+conda run -n docmind python -m py_compile \
+  src/api/main.py \
+  src/rag/rag_pipeline.py \
+  src/agent/graph.py \
+  src/agent/mcp_client.py
+
+# Frontend
+cd frontend
+npm install
+npm run build
+
+# Infra
+cd ..
+docker compose up -d
+docker compose ps
+
+# API service
+systemctl --user restart vllm-pd-api
+curl -fsS http://localhost:8001/health | jq .
+
+# Public URL
+PUBLIC_URL=$(sed -n 's/^MACHINE2_API_PUBLIC_URL=//p' .env)
+curl -fsS -H 'ngrok-skip-browser-warning: true' "$PUBLIC_URL/health" | jq .
+```
+
+## 16. Nhung gi khong con la duong chinh
+
+- `docmind/` khong phai runtime chinh.
+- Streamlit khong phai frontend chinh.
+- FAISS khong phai vector store chinh.
+- FastAPI port 8000 khong phai port chinh.
+- LiteLLM public URL khong can thiet cho May 3.
+- vLLM local server khong phai backend inference dang dung trong repo hien tai.
