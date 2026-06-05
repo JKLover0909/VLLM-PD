@@ -1,349 +1,328 @@
-# ARCHITECTURE
+# Kiến trúc hệ thống VLLM-PD
 
-Tai lieu nay mo ta kien truc hien tai cua repo VLLM-PD tai May 2. Cac mo ta cu ve Streamlit, FAISS, FastAPI port 8000, MCP Hub rieng va vLLM host truc tiep khong con la duong chay chinh.
+Tài liệu này mô tả kiến trúc của luồng chạy chính trong repository `VLLM-PD`, dựa trên mã nguồn và cấu hình được đối chiếu ngày **05/06/2026**.
 
-`docmind/` duoc xem la demo/tach rieng va khong nam trong kien truc van hanh chinh.
+Các phát biểu về cấu trúc phần mềm, endpoint, model logic và luồng dữ liệu được lấy trực tiếp từ mã nguồn. Trạng thái dịch vụ đang chạy, URL ngrok, số lượng MCP tool hoặc kết quả kiểm thử trên một máy cụ thể là thông tin vận hành theo thời điểm và cần được xác minh lại bằng các lệnh ở phần [Vận hành và kiểm tra](#18-vận-hành-và-kiểm-tra).
 
-## 1. Muc tieu he thong
+> **Phạm vi:** `src/`, `frontend/`, `docker-compose.yml`, `litellm_config.yaml` và `.env` ở thư mục gốc tạo thành hệ thống chính. Thư mục `docmind/` là demo hoặc phiên bản thử nghiệm tách biệt, không thuộc đường chạy chính được mô tả trong tài liệu này.
 
-VLLM-PD gom hai nhom chuc nang:
+## 1. Mục tiêu và phạm vi chức năng
 
-1. Web RAG cho nguoi dung:
-   - Upload tai lieu.
-   - Parse bang Docling.
-   - Embed bang BGE-M3.
-   - Luu va search Qdrant theo session.
-   - Goi LLM qua LiteLLM.
-   - Cho phep nguoi dung chon model.
+VLLM-PD cung cấp hai nhóm chức năng độc lập nhưng dùng chung API Gateway và LiteLLM:
 
-2. Coding Agent:
-   - Endpoint `/agent`.
-   - LangGraph dieu phoi agent.
-   - LLM qua LiteLLM `coding-model`.
-   - MCP filesystem/git tools.
-   - Bao ve bang `AGENT_API_KEY`.
+### 1.1. Không gian hỏi đáp và nghiên cứu tài liệu
 
-## 2. Vai tro cac may
+- Tạo phiên làm việc theo UUID.
+- Tải lên nhiều định dạng tài liệu.
+- Trích xuất nội dung bằng Docling.
+- Chia nội dung thành các đoạn nhỏ có chồng lấn.
+- Sinh vector embedding bằng `BAAI/bge-m3`.
+- Lưu và tìm kiếm vector trong Qdrant, có lọc theo `session_id`.
+- Tạo prompt RAG từ các đoạn liên quan.
+- Gọi mô hình ngôn ngữ thông qua LiteLLM.
+- Trả lời đồng bộ hoặc streaming bằng Server-Sent Events (SSE).
+- Cho phép chọn chế độ `Hỏi đáp` hoặc `Nghiên cứu`.
+- Cho phép chọn backend local, MiMo, OpenAI hoặc định tuyến tự động.
 
-| May | Vai tro hien tai | Dich vu lien quan |
+### 1.2. Coding Agent
+
+- Nhận tác vụ tại endpoint `POST /agent`.
+- Dùng LangGraph để điều phối vòng lặp giữa mô hình và công cụ.
+- Gọi mô hình logic `coding-model` qua LiteLLM.
+- Nạp công cụ filesystem và Git qua MCP.
+- Dùng bộ công cụ file cục bộ giới hạn trong workspace khi MCP không khả dụng.
+- Có thể bảo vệ endpoint bằng `AGENT_API_KEY`.
+
+## 2. Các nguyên tắc kiến trúc
+
+Hệ thống hiện tuân theo các nguyên tắc chính sau:
+
+1. **Một cổng vào cho người dùng:** FastAPI phục vụ cả REST/SSE API và React SPA trên cổng `8001`.
+2. **Tách model vật lý khỏi ứng dụng:** mã nguồn chỉ gọi các tên model logic của LiteLLM.
+3. **Tách dữ liệu theo phiên:** mọi vector tài liệu có `session_id` và truy vấn Qdrant luôn lọc theo giá trị này.
+4. **Xử lý nặng ngoài event loop:** parse, embedding và thao tác Qdrant chính trong luồng upload/query được chuyển sang thread bằng `asyncio.to_thread`.
+5. **Ưu tiên mô hình local, có fallback cloud:** các route `auto-model` và `coding-model` có chuỗi dự phòng được cấu hình tại LiteLLM.
+6. **Giới hạn phạm vi công cụ Agent:** MCP filesystem và bộ công cụ fallback bị ràng buộc bởi `WORKSPACE_DIR`; Git MCP được gắn với `AGENT_REPOSITORY_DIR`.
+
+## 3. Bố cục repository
+
+```text
+VLLM-PD/
+├── src/
+│   ├── api/
+│   │   └── main.py              # FastAPI, REST, SSE, static frontend
+│   ├── rag/
+│   │   ├── parser.py            # Docling và chunking
+│   │   ├── embedder.py          # BGE-M3
+│   │   ├── vector_store.py      # Qdrant
+│   │   └── rag_pipeline.py      # Retrieval, prompt, gọi LiteLLM
+│   └── agent/
+│       ├── graph.py             # Đồ thị LangGraph
+│       └── mcp_client.py        # MCP và công cụ fallback
+├── frontend/
+│   ├── src/main.jsx             # React SPA
+│   ├── src/styles.css
+│   └── vite.config.js
+├── docker-compose.yml           # Qdrant và LiteLLM
+├── litellm_config.yaml          # Model logic và fallback
+├── .env.example                 # Mẫu cấu hình
+├── requirements.txt
+├── tests/
+└── docmind/                     # Demo/nhánh thử nghiệm, không phải runtime chính
+```
+
+## 4. Mô hình triển khai ba máy
+
+| Máy | Trách nhiệm | Thành phần chính |
 |---|---|---|
-| May 1 | Host LLM local | Ollama/Gemma4, expose qua ngrok vao `OLLAMA_API_BASE` |
-| May 2 | Server chinh | FastAPI, React static, RAG pipeline, BGE-M3, Docling, Qdrant, LiteLLM, LangGraph Agent |
-| May 3 | Client | Browser truy cap web/API public cua May 2, hoac coding client goi `/agent` |
+| Máy 1 | Máy chủ suy luận local | Ollama, model `gemma4:latest`, có thể được Máy 2 truy cập qua ngrok |
+| Máy 2 | Máy chủ ứng dụng | FastAPI, React build, Docling, BGE-M3, Qdrant, LiteLLM, LangGraph và MCP client |
+| Máy 3 | Máy khách | Trình duyệt hoặc client gọi API của Máy 2 |
 
-He thong hien public mot URL chinh qua port `8001` cua May 2. LiteLLM port `4000` la noi bo.
-
-## 3. So do tong the
+Sơ đồ tổng thể:
 
 ```text
-                           Public HTTPS ngrok
-Nguoi dung / May 3  --------------------------------+
-                                                     |
-                                                     v
-                                       +---------------------------+
-                                       | May 2: FastAPI :8001     |
-                                       | - React SPA at /         |
-                                       | - REST/SSE API           |
-                                       | - upload/session/query   |
-                                       | - protected /agent       |
-                                       +------------+--------------+
-                                                    |
-                +-----------------------------------+-----------------------------------+
-                |                                   |                                   |
-                v                                   v                                   v
-      +-------------------+               +-------------------+              +-------------------+
-      | RAG pipeline      |               | LangGraph Agent   |              | Static frontend   |
-      | Docling           |               | MCP fs/git tools  |              | frontend/dist     |
-      | BGE-M3            |               | coding-model      |              +-------------------+
-      | Qdrant search     |               +---------+---------+
-      +---------+---------+                         |
-                |                                   |
-                +-------------------+---------------+
-                                    |
-                                    v
-                         +----------------------+
-                         | LiteLLM proxy :4000  |
-                         | internal only        |
-                         +------+----+-----+----+
-                                |    |     |
-              +-----------------+    |     +----------------+
-              |                      |                      |
-              v                      v                      v
-    +-------------------+   +-------------------+   +-------------------+
-    | May 1 Ollama      |   | Xiaomi MiMo API   |   | OpenAI API        |
-    | Gemma4 local      |   | MiMo 2.5 Pro      |   | GPT-4o mini       |
-    +-------------------+   +-------------------+   +-------------------+
+                         HTTPS, thường qua ngrok
+┌──────────────────┐    MACHINE2_API_PUBLIC_URL
+│ Người dùng/Máy 3 │ ─────────────────────────────────────────┐
+└──────────────────┘                                          │
+                                                              ▼
+                                                ┌──────────────────────────┐
+                                                │ Máy 2: FastAPI :8001    │
+                                                │                          │
+                                                │ React SPA tại /          │
+                                                │ REST API                 │
+                                                │ SSE /query/stream        │
+                                                │ Coding Agent /agent      │
+                                                └────────────┬─────────────┘
+                                                             │
+                          ┌──────────────────────────────────┼───────────────────────┐
+                          │                                  │                       │
+                          ▼                                  ▼                       ▼
+               ┌────────────────────┐             ┌──────────────────┐   ┌──────────────────┐
+               │ RAG pipeline       │             │ LangGraph Agent  │   │ frontend/dist    │
+               │ Docling            │             │ MCP filesystem   │   │ React static     │
+               │ BGE-M3             │             │ MCP Git           │   └──────────────────┘
+               │ Qdrant retrieval   │             └─────────┬────────┘
+               └──────────┬─────────┘                       │
+                          └──────────────────┬───────────────┘
+                                             ▼
+                                  ┌──────────────────────┐
+                                  │ LiteLLM Proxy :4000 │
+                                  └──────┬──────┬───────┘
+                                         │      │
+                         ┌───────────────┘      └────────────────┐
+                         ▼                                       ▼
+              ┌──────────────────────┐                ┌─────────────────────┐
+              │ Máy 1: Ollama       │                │ Cloud providers     │
+              │ Gemma4 local        │                │ MiMo / OpenAI       │
+              └──────────────────────┘                └─────────────────────┘
+
+Máy 2 còn chạy Qdrant :6333/:6334 để lưu vector và payload tài liệu.
 ```
 
-## 4. Runtime services
+## 5. Thành phần runtime và cổng mạng
 
-| Service | Port | Public | Owner | Mo ta |
-|---|---:|---|---|---|
-| FastAPI + React | 8001 | Co, qua ngrok | systemd user service | Web, REST API, SSE, Agent endpoint |
-| LiteLLM | 4000 | Khong | Docker Compose | Router OpenAI-compatible |
-| Qdrant | 6333/6334 | Khong | Docker Compose | Vector database |
-| Ollama May 1 | 11434 local May 1 | Co, qua ngrok May 1 | May 1 | Gemma4 upstream |
+| Thành phần | Cổng mặc định | Cách chạy | Chức năng |
+|---|---:|---|---|
+| FastAPI + React | `8001` | Uvicorn hoặc user service | API Gateway, SSE và SPA |
+| LiteLLM | `4000` | Docker Compose | Proxy OpenAI-compatible và model router |
+| Qdrant REST | `6333` | Docker Compose | API vector database |
+| Qdrant gRPC | `6334` | Docker Compose | Giao thức gRPC của Qdrant |
+| Ollama trên Máy 1 | `11434` | Ngoài repository | Suy luận Gemma4 local |
+| Vite dev server | do Vite cấp | Chỉ khi phát triển | Frontend development và proxy API |
 
-FastAPI service:
+`docker-compose.yml` đang publish `4000`, `6333` và `6334` lên tất cả interface của Docker host theo cú pháp `HOST:CONTAINER`. Vì vậy, “nội bộ” là chủ đích triển khai, **không phải bảo đảm do Compose tự tạo ra**. Máy 2 cần firewall, security group hoặc binding loopback nếu không muốn các cổng này bị truy cập từ mạng ngoài.
 
-```text
-/home/jkl0909/.config/systemd/user/vllm-pd-api.service
-```
-
-Quan ly:
-
-```bash
-systemctl --user status vllm-pd-api
-systemctl --user restart vllm-pd-api
-journalctl --user -u vllm-pd-api -n 120 --no-pager
-```
-
-Docker services:
-
-```bash
-docker compose ps
-docker compose logs --tail=120 litellm
-docker compose logs --tail=120 qdrant
-```
-
-## 5. Backend API layer
-
-File chinh: `src/api/main.py`.
-
-Chuc nang:
-
-- Load `.env` bang `python-dotenv`.
-- Khoi tao singleton trong FastAPI lifespan:
-  - `VectorStore`
-  - `Embedder`
-  - `DocumentParser`
-  - `RAGPipeline`
-- Mount React build tai `/` neu `frontend/dist` ton tai.
-- CORS mo cho public web/API.
-- Validate UUID session ID.
-- Validate filename va file extension.
-- Gioi han upload/query theo IP bang in-memory rate limiter.
-- Bao ve `/agent` bang constant-time compare voi `AGENT_API_KEY`.
-
-Endpoints:
-
-| Endpoint | Vai tro |
-|---|---|
-| `GET /health` | Health check |
-| `GET /models` | Model list cho UI |
-| `POST /sessions` | Tao session |
-| `GET /sessions/{session_id}` | Doc thong tin session |
-| `DELETE /sessions/{session_id}` | Xoa session va file |
-| `POST /sessions/{session_id}/upload` | Upload, parse, embed, index |
-| `DELETE /sessions/{session_id}/files/{filename}` | Xoa file khoi Qdrant/session |
-| `POST /query` | RAG non-streaming |
-| `POST /query/stream` | RAG SSE streaming |
-| `POST /agent` | Coding Agent |
-
-## 6. Frontend layer
-
-Thu muc: `frontend/`.
-
-Stack:
-
-- React 18.
-- Vite.
-- `lucide-react`.
-- `react-markdown`.
-
-Man hinh chinh:
-
-- Sidebar tai lieu.
-- Nut tao phien moi.
-- Upload nhieu file.
-- Tabs `Hoi dap` va `Nghien cuu`.
-- Model selector.
-- Chat composer.
-- Panel sources tren desktop.
-- Sources inline tren mobile.
-
-Frontend dung relative API path, vi vay cung mot public URL port `8001` phuc vu ca web va API:
-
-```text
-/              -> React SPA
-/health        -> FastAPI
-/models        -> FastAPI
-/sessions      -> FastAPI
-/query/stream  -> FastAPI SSE
-```
-
-Build:
-
-```bash
-cd frontend
-npm install
-npm run build
-```
-
-`frontend/dist` la build output va khong can commit.
-
-## 7. RAG pipeline
-
-Thanh phan:
-
-| File | Vai tro |
-|---|---|
-| `src/rag/parser.py` | Dung Docling de convert tai lieu sang markdown, sau do chunk |
-| `src/rag/embedder.py` | Load `BAAI/bge-m3`, embed query/documents |
-| `src/rag/vector_store.py` | Qdrant collection, session filtering, add/search/delete chunks |
-| `src/rag/rag_pipeline.py` | Retrieval, prompt, model routing, LiteLLM call |
-
-Luon upload:
-
-```text
-User upload
-  -> FastAPI validate session/filename/extension/size
-  -> Save file vao UPLOAD_DIR/session_id
-  -> Docling process_file
-  -> Split markdown thanh TextChunk
-  -> BGE-M3 embed_documents
-  -> Qdrant upsert payload co session_id va source_file
-```
-
-Luon query:
-
-```text
-Question
-  -> BGE-M3 embed_query
-  -> Qdrant search theo session_id
-  -> build_rag_prompt
-  -> LiteLLM chat.completions
-  -> answer + formatted sources
-```
-
-Mode `chat`:
-
-- Retrieval top_k mac dinh 5.
-- Prompt tra loi ngan gon, co citation.
-
-Mode `research`:
-
-- Retrieval top_k 10.
-- Prompt yeu cau bao cao nghien cuu:
-  - Tom tat dieu hanh.
-  - Phat hien chinh.
-  - Bang chung.
-  - Diem chua ro.
-  - Cau hoi nghien cuu tiep theo.
-- Max tokens cao hon mode chat.
-
-## 8. LiteLLM routing
-
-File: `litellm_config.yaml`.
-
-Model groups:
-
-| Group | Backend | Dung cho |
-|---|---|---|
-| `auto-model` | Ollama/Gemma4 | Lua chon tu dong trong UI |
-| `local-gemma` | Ollama/Gemma4 | Khi user chon Gemma4 Local |
-| `mimo-pro` | OpenAI-compatible MiMo API | Khi user chon MiMo 2.5 Pro |
-| `openai-model` | OpenAI GPT-4o mini | Khi user chon OpenAI |
-| `coding-model` | Ollama/Gemma4 | LangGraph Coding Agent |
-
-Fallback:
+Ví dụ binding chỉ vào loopback:
 
 ```yaml
-router_settings:
-  fallbacks:
-    - auto-model: ["mimo-pro", "openai-model"]
-    - coding-model: ["openai-model"]
+ports:
+  - "127.0.0.1:4000:4000"
 ```
 
-Y nghia:
+## 6. Vòng đời khởi động
 
-- Web chon `auto`: uu tien local Gemma4, neu fail thi MiMo, neu fail tiep thi OpenAI.
-- Agent: uu tien local Gemma4, fallback OpenAI.
-- Neu user chon truc tiep `mimo` hoac `openai`, LiteLLM goi dung group do, khong fallback sang group khac.
+FastAPI dùng `lifespan` để tạo bốn singleton theo thứ tự:
 
-MiMo Token Plan:
+1. `VectorStore`
+   - Kết nối Qdrant.
+   - Kiểm tra collection.
+   - Tạo collection và payload index nếu chưa tồn tại.
+2. `Embedder`
+   - Nạp `BAAI/bge-m3`.
+   - Chọn CUDA nếu `torch.cuda.is_available()`, nếu không dùng CPU.
+3. `DocumentParser`
+   - Khởi tạo `DocumentConverter` của Docling.
+4. `RAGPipeline`
+   - Giữ tham chiếu đến embedder và vector store.
+   - Khởi tạo `AsyncOpenAI` trỏ đến LiteLLM.
 
-```env
-MIMO_API_BASE=https://token-plan-sgp.xiaomimimo.com/v1
-```
+Hệ quả vận hành:
 
-Pay-as-you-go MiMo co the dung endpoint khac:
+- API không sẵn sàng nếu Qdrant không kết nối được.
+- Lần khởi động đầu có thể chậm do tải BGE-M3 và model của Docling.
+- Việc nạp Coding Agent xảy ra khi import `src.api.main`; quá trình này có thể thực hiện khám phá MCP trước khi ứng dụng nhận request.
+- React chỉ được mount nếu `frontend/dist` đã tồn tại tại thời điểm module FastAPI được import.
 
-```env
-MIMO_API_BASE=https://api.xiaomimimo.com/v1
-```
+## 7. Kiến trúc API Gateway
 
-## 9. Coding Agent architecture
+Tệp chính: `src/api/main.py`.
 
-File:
+Trách nhiệm:
 
-- `src/agent/graph.py`
-- `src/agent/mcp_client.py`
+- Nạp `.env` bằng `python-dotenv`.
+- Khởi tạo tài nguyên dùng chung.
+- Validate UUID công khai.
+- Kiểm tra tên và phần mở rộng file.
+- Giới hạn dung lượng upload.
+- Rate limit query/upload theo IP trong bộ nhớ.
+- Điều phối upload, parse, embedding và index.
+- Cung cấp query đồng bộ và streaming.
+- Chuyển tác vụ đến LangGraph Agent.
+- Phục vụ build React tại `/`.
 
-LangGraph:
+### 7.1. Danh sách endpoint
 
-```text
-AgentState(messages)
-      |
-      v
-call_model
-      |
-      |-- neu co tool_calls -> ToolNode -> call_model
-      |
-      `-- neu khong -> END
-```
+| Method | Endpoint | Chức năng | Xác thực |
+|---|---|---|---|
+| `GET` | `/health` | Trả trạng thái tiến trình và cấu hình Qdrant | Không |
+| `GET` | `/models` | Danh sách model cho UI | Không |
+| `POST` | `/sessions` | Sinh UUID phiên mới | Không |
+| `GET` | `/sessions/{session_id}` | Tổng hợp file và chunk trong Qdrant | Không |
+| `DELETE` | `/sessions/{session_id}` | Xóa vector và thư mục upload của phiên | Không |
+| `POST` | `/sessions/{session_id}/upload` | Upload, parse, embed và index | Không |
+| `DELETE` | `/sessions/{session_id}/files/{filename}` | Xóa một file khỏi Qdrant và ổ đĩa | Không |
+| `POST` | `/query` | RAG đồng bộ | Không |
+| `POST` | `/query/stream` | RAG streaming bằng SSE | Không |
+| `POST` | `/agent` | Thực thi Coding Agent | Header API key nếu đã cấu hình |
 
-LLM:
+### 7.2. Lưu ý về health check
 
-- `ChatOpenAI`
-- `model="coding-model"`
-- `openai_api_base=LITELLM_URL`
-- `openai_api_key=LITELLM_MASTER_KEY`
-
-MCP:
-
-- Dung `langchain-mcp-adapters==0.2.2`.
-- Dung `MultiServerMCPClient`.
-- Filesystem MCP:
-  - `@modelcontextprotocol/server-filesystem`
-  - allowed directory: `WORKSPACE_DIR`
-- Git MCP:
-  - `mcp-server-git`
-  - repository: `AGENT_REPOSITORY_DIR`
-- Tools duoc cache bang `lru_cache`.
-- Neu MCP fail, fallback local tools chi doc/ghi/list ben trong `WORKSPACE_DIR`.
-
-Security:
-
-- Public `/agent` can header:
-
-```text
-X-Agent-API-Key: <AGENT_API_KEY>
-```
-
-Khong nen de `AGENT_API_KEY` trong `.env` rong khi public API.
-
-## 10. Data model
-
-Qdrant collection:
-
-```text
-docmind_documents
-```
-
-Vector dimension:
-
-```text
-1024
-```
-
-Payload moi point:
+`GET /health` hiện chỉ trả:
 
 ```json
 {
-  "session_id": "...",
-  "text": "...",
-  "source_file": "test1.pdf",
+  "status": "healthy",
+  "qdrant_host": "localhost",
+  "qdrant_port": 6333
+}
+```
+
+Endpoint này không thực hiện truy vấn sống đến Qdrant, LiteLLM, model upstream hoặc MCP. Vì các singleton được tạo khi startup, response `200` cho thấy tiến trình FastAPI đã khởi động thành công, nhưng không bảo đảm tất cả dependency vẫn khỏe tại thời điểm kiểm tra.
+
+## 8. Vòng đời session
+
+Session là UUID do API sinh ra và dùng làm khóa phân vùng logic.
+
+```text
+POST /sessions
+  └─ sinh UUID
+     └─ VectorStore.create_session() chỉ ghi log, không tạo bản ghi
+
+Upload file đầu tiên
+  └─ Qdrant bắt đầu có point mang session_id
+
+GET /sessions/{id}
+  ├─ có point      -> trả thông tin session
+  └─ chưa có point -> 404 "Session not found or empty"
+
+DELETE /sessions/{id}
+  ├─ xóa point theo payload filter
+  └─ xóa uploads/{session_id}
+```
+
+Frontend lưu UUID tại `localStorage` với khóa `vllm-pd-session`. Nếu session mới chưa có tài liệu, `GET /sessions/{id}` trả `404`; frontend coi đây là phiên rỗng hợp lệ và tiếp tục giữ UUID.
+
+Không có bảng session riêng, thời hạn hết hạn hoặc tác vụ tự động dọn session. Dữ liệu chỉ bị xóa khi client gọi endpoint xóa hoặc quản trị viên dọn trực tiếp.
+
+## 9. Luồng nạp và lập chỉ mục tài liệu
+
+### 9.1. Định dạng được API cho phép
+
+```text
+.pdf, .docx, .xlsx, .pptx, .html, .htm, .png, .jpg, .jpeg
+```
+
+Frontend hiện không khai báo `.htm` trong thuộc tính `accept`, nhưng backend vẫn chấp nhận định dạng này.
+
+### 9.2. Trình tự xử lý
+
+```text
+UploadFile
+  │
+  ├─ rate limit theo IP
+  ├─ validate session UUID
+  ├─ loại bỏ nguy cơ path traversal trong filename
+  ├─ kiểm tra extension
+  ├─ ghi file theo từng khối 1 MiB
+  └─ kiểm tra MAX_UPLOAD_SIZE_MB
+       │
+       ▼
+Docling DocumentConverter.convert()
+       │
+       ▼
+export_to_markdown()
+       │
+       ▼
+chia chunk khoảng 1.000 ký tự, chồng lấn khoảng 20% số dòng
+       │
+       ▼
+BGE-M3 embed_documents(), batch mặc định 32
+       │
+       ├─ xóa các vector cũ của cùng filename trong session
+       └─ upsert vector và payload mới vào Qdrant
+```
+
+Nếu parse, embedding hoặc index lỗi, API cố gắng xóa file vật lý vừa tải lên và trả lỗi.
+
+### 9.3. Đặc điểm chunking hiện tại
+
+- `CHUNK_SIZE = 1000` ký tự.
+- `CHUNK_OVERLAP = 200` được khai báo nhưng chưa được dùng trực tiếp.
+- Phần chồng lấn thực tế là khoảng 20% số dòng cuối của chunk trước.
+- Chunk được đánh dấu `table` khi phát hiện mẫu Markdown table đơn giản.
+- Metadata mặc định là `{"source": "docling"}`.
+
+### 9.4. Giới hạn cần biết
+
+- `page_number` hiện luôn bắt đầu và giữ ở `1`; parser chưa ánh xạ provenance trang thật từ cấu trúc Docling.
+- Logic nhận diện bảng dùng heuristic chuỗi, không phải kiểu phần tử từ Docling.
+- Chunking dựa trên số ký tự và dòng, chưa dựa trên token hoặc cấu trúc heading.
+- Mã nguồn RAG có khả năng gửi tối đa hai ảnh từ `metadata.image_path`, nhưng parser hiện chưa tạo trường này. Vì vậy luồng vision chưa hoàn chỉnh theo đường chạy mặc định.
+- Khi upload lại cùng tên file, vector cũ bị xóa trước khi vector mới được upsert; file vật lý mới đã ghi đè file cũ.
+
+## 10. Embedding và lưu trữ vector
+
+### 10.1. Embedding
+
+| Thuộc tính | Giá trị |
+|---|---|
+| Model | `BAAI/bge-m3` |
+| Kích thước vector | `1024` |
+| Thiết bị | CUDA nếu có, ngược lại CPU |
+| Chuẩn hóa | L2 normalization |
+| Batch mặc định | `32` |
+| Query prefix | Chuỗi rỗng |
+
+Vector được chuẩn hóa L2 và Qdrant dùng cosine similarity.
+
+### 10.2. Qdrant
+
+| Thuộc tính | Giá trị |
+|---|---|
+| Collection | `docmind_documents` |
+| Vector size | `1024` |
+| Distance | `COSINE` |
+| Payload index | `session_id`, kiểu keyword |
+
+Payload của mỗi point:
+
+```json
+{
+  "session_id": "b2fbd2b3-4c72-4ea7-8e06-57ac6b43163b",
+  "text": "Nội dung chunk...",
+  "source_file": "tai-lieu.pdf",
   "page_number": 1,
   "chunk_index": 0,
   "content_type": "text",
@@ -353,163 +332,557 @@ Payload moi point:
 }
 ```
 
-Session isolation dua vao payload filter `session_id`.
-
-## 11. Public networking
-
-Hien tai chi can mot public URL cho nguoi dung va May 3:
+Mỗi lần index tạo UUID point mới. Cô lập dữ liệu dựa trên payload filter:
 
 ```text
-MACHINE2_API_PUBLIC_URL -> ngrok -> http://localhost:8001
+session_id == UUID của request
 ```
 
-Khong can public LiteLLM:
+Đây là cô lập logic ở tầng ứng dụng, chưa phải cơ chế multi-tenant có xác thực chủ sở hữu. Bất kỳ client nào biết UUID đều có thể gọi API đọc, query hoặc xóa session vì các endpoint RAG hiện chưa yêu cầu đăng nhập.
+
+## 11. Luồng truy vấn RAG
 
 ```text
-MACHINE2_LITELLM_LOCAL_URL=http://localhost:4000
+Câu hỏi + session_id + model + mode
+  │
+  ├─ rate limit theo IP
+  ├─ validate UUID
+  └─ BGE-M3 embed_query()
+       │
+       ▼
+Qdrant cosine search
+  ├─ filter session_id
+  ├─ score_threshold = 0,25
+  └─ top_k = 5 hoặc 10
+       │
+       ▼
+build_rag_prompt()
+  ├─ system prompt theo mode
+  ├─ context từ các chunk
+  └─ ảnh từ metadata.image_path nếu có
+       │
+       ▼
+LiteLLM /v1/chat/completions
+       │
+       ├─ /query        -> JSON hoàn chỉnh
+       └─ /query/stream -> SSE
 ```
 
-Ly do:
+### 11.1. Chế độ `chat`
 
-- Web va API da cung domain/port 8001.
-- Frontend dung relative paths.
-- Coding client co the goi `/agent` qua cung public URL.
-- LiteLLM co master key va provider credentials, nen nen o noi bo.
+- `top_k = 5`.
+- `max_tokens = 1024`.
+- Yêu cầu trả lời dựa trên tài liệu và trích dẫn nguồn.
 
-## 12. Security boundaries
+### 11.2. Chế độ `research`
 
-| Boundary | Co che |
+- `top_k = 10`.
+- `max_tokens = 1800`.
+- Yêu cầu cấu trúc:
+  - Tóm tắt điều hành.
+  - Phát hiện chính.
+  - Bằng chứng.
+  - Điểm chưa rõ.
+  - Câu hỏi nghiên cứu tiếp theo.
+
+### 11.3. Khi không tìm thấy kết quả
+
+Pipeline vẫn gọi LLM với context:
+
+```text
+(Không tìm thấy đoạn tài liệu liên quan.)
+```
+
+System prompt yêu cầu mô hình nói rõ rằng không tìm thấy thông tin thay vì dùng kiến thức ngoài tài liệu.
+
+## 12. Giao thức SSE
+
+`POST /query/stream` trả `Content-Type: text/event-stream`. Mỗi event nằm trong trường `data` dưới dạng JSON.
+
+Thứ tự bình thường:
+
+```text
+sources -> meta -> token... -> done
+```
+
+Ví dụ:
+
+```text
+data: {"type":"sources","sources":[...]}
+
+data: {"type":"meta","model":"auto-model","mode":"chat"}
+
+data: {"type":"token","content":"Nội"}
+
+data: {"type":"token","content":" dung"}
+
+data: {"type":"done"}
+```
+
+Khi lỗi xảy ra sau khi stream đã bắt đầu:
+
+```text
+data: {"type":"error","message":"..."}
+```
+
+Response đặt:
+
+```text
+Cache-Control: no-cache
+X-Accel-Buffering: no
+```
+
+Frontend hiện xử lý `sources`, `token` và `error`; event `meta` và `done` chưa được dùng để cập nhật trạng thái giao diện.
+
+## 13. LiteLLM và định tuyến model
+
+Ứng dụng gọi LiteLLM qua URL mặc định:
+
+```text
+http://localhost:4000/v1
+```
+
+### 13.1. Ánh xạ từ UI/API
+
+| Giá trị API | Model logic LiteLLM | Backend chính |
+|---|---|---|
+| `auto` | `auto-model` | Ollama `gemma4:latest` |
+| `local` | `local-gemma` | Ollama `gemma4:latest` |
+| `mimo` | `mimo-pro` | `openai/mimo-v2.5-pro` |
+| `openai` | `openai-model` | `openai/gpt-4o-mini` |
+| Coding Agent | `coding-model` | Ollama `gemma4:latest` |
+
+### 13.2. Chuỗi fallback
+
+```yaml
+auto-model:
+  - mimo-pro
+  - openai-model
+
+coding-model:
+  - openai-model
+```
+
+Ý nghĩa:
+
+- `auto`: Gemma4 local → MiMo → OpenAI.
+- Agent: Gemma4 local → OpenAI.
+- `local`, `mimo` và `openai` không có fallback riêng trong cấu hình hiện tại.
+- Router dùng `simple-shuffle`, retry một lần và timeout tổng quát 120 giây.
+
+### 13.3. Điểm cần lưu ý
+
+- `OLLAMA_MODEL` có trong `.env.example` nhưng `litellm_config.yaml` đang ghi trực tiếp `gemma4:latest`; đổi riêng biến này chưa làm thay đổi model.
+- `MIMO_API_BASE` phụ thuộc loại tài khoản hoặc gói dịch vụ MiMo.
+- `LITELLM_MASTER_KEY` bảo vệ LiteLLM, nhưng giá trị mặc định `sk-local` chỉ phù hợp môi trường tin cậy.
+- Provider key được truyền vào container LiteLLM qua `.env`; không được đưa các key này vào frontend.
+
+## 14. Coding Agent và MCP
+
+### 14.1. Đồ thị LangGraph
+
+```text
+START
+  │
+  ▼
+agent: gọi coding-model
+  │
+  ├─ có tool_calls ──► tools: ToolNode
+  │                         │
+  │                         └────────► agent
+  │
+  └─ không có tool_calls ──► END
+```
+
+State hiện chỉ chứa:
+
+```python
+messages: Sequence[BaseMessage]
+```
+
+Agent chưa có plan, checkpoint, giới hạn số vòng lặp, bộ nhớ bền vững hoặc hàng đợi tác vụ riêng trong mã nguồn hiện tại.
+
+### 14.2. Kết nối mô hình
+
+`ChatOpenAI` được dùng như client OpenAI-compatible:
+
+```text
+model               = coding-model
+openai_api_base     = LITELLM_URL
+openai_api_key      = LITELLM_MASTER_KEY
+temperature         = 0,2
+```
+
+### 14.3. MCP servers
+
+| Tên | Runtime | Phạm vi |
+|---|---|---|
+| `filesystem` | `npx -y @modelcontextprotocol/server-filesystem` | `WORKSPACE_DIR` |
+| `git` | `uvx mcp-server-git --repository ...` | `AGENT_REPOSITORY_DIR` |
+
+Tool được khám phá qua `MultiServerMCPClient` và cache bằng `lru_cache(maxsize=1)`.
+
+Nếu MCP adapter không được cài hoặc không server nào nạp được tool, hệ thống dùng ba tool cục bộ:
+
+- `read_file`
+- `write_file`
+- `list_dir`
+
+Các đường dẫn fallback được resolve và bắt buộc nằm trong `WORKSPACE_DIR`.
+
+### 14.4. Hợp đồng `/agent`
+
+Request:
+
+```json
+{
+  "session_id": "chuỗi do client cung cấp",
+  "task": "Mô tả tác vụ lập trình"
+}
+```
+
+Response:
+
+```json
+{
+  "session_id": "chuỗi từ request",
+  "status": "completed",
+  "output": "Kết quả cuối",
+  "steps": [
+    {
+      "role": "ai",
+      "content": "...",
+      "tool_calls": []
+    }
+  ]
+}
+```
+
+`session_id` của Agent hiện không được validate, không liên kết với session RAG và không được dùng để lưu trạng thái Agent. Nó chỉ được phản hồi lại cho client.
+
+## 15. Frontend
+
+Frontend là React 18 SPA build bằng Vite.
+
+Chức năng chính:
+
+- Kiểm tra `/health` và tải `/models` khi khởi động.
+- Khôi phục UUID session từ `localStorage`.
+- Tạo phiên mới.
+- Chọn và upload nhiều file theo thứ tự.
+- Xóa file.
+- Chọn model.
+- Chuyển giữa `Hỏi đáp` và `Nghiên cứu`.
+- Gửi câu hỏi qua SSE.
+- Render Markdown.
+- Hiển thị nguồn ở panel desktop và trong từng tin nhắn.
+
+Production:
+
+```text
+frontend/dist -> FastAPI StaticFiles -> /
+```
+
+Development:
+
+```text
+Vite dev server
+  └─ proxy /health, /models, /sessions, /query -> http://localhost:8001
+```
+
+Frontend dùng URL tương đối nên web và API có thể chạy cùng origin. API bật CORS `*`, nhưng trong production cùng origin thì CORS rộng thường không cần thiết.
+
+## 16. Bảo mật và ranh giới tin cậy
+
+### 16.1. Biện pháp đã có
+
+| Rủi ro | Biện pháp hiện tại |
 |---|---|
-| Secret/API key | `.env`, `.gitignore` |
-| Agent endpoint | `AGENT_API_KEY` va `X-Agent-API-Key` |
-| Session ID | UUID validation |
-| File path | `Path(filename).name`, extension allowlist |
-| Upload size | `MAX_UPLOAD_SIZE_MB` |
-| Abuse control | In-memory per-IP rate limit |
-| MCP filesystem | `WORKSPACE_DIR` |
-| MCP git | `AGENT_REPOSITORY_DIR` |
-| LiteLLM | Noi bo port 4000 |
+| Path traversal qua tên file | So sánh filename với `Path(filename).name` |
+| File không hỗ trợ | Allowlist phần mở rộng |
+| File quá lớn | Đọc theo block và giới hạn `MAX_UPLOAD_SIZE_MB` |
+| Session ID không hợp lệ | Parse bằng `uuid.UUID` |
+| Lạm dụng query/upload | Rate limit trong bộ nhớ theo IP |
+| Truy cập Agent | So sánh API key bằng `secrets.compare_digest` |
+| Agent đọc/ghi ngoài workspace | Giới hạn `WORKSPACE_DIR` |
+| Git tool truy cập sai repository | Cố định `AGENT_REPOSITORY_DIR` |
+| Lộ provider key cho browser | Browser chỉ gọi API Gateway, không gọi LiteLLM trực tiếp |
 
-## 13. Current operational state on May 2
+### 16.2. Rủi ro và hạn chế hiện tại
 
-Da thiet lap:
+1. **Endpoint RAG không có xác thực.** UUID là định danh, không phải secret hoặc quyền sở hữu.
+2. **`AGENT_API_KEY` rỗng sẽ vô hiệu hóa xác thực Agent.** Điều kiện kiểm tra chỉ chạy khi biến này có giá trị.
+3. **CORS cho phép mọi origin, method và header.**
+4. **Rate limit nằm trong RAM.** Dữ liệu mất khi restart và không dùng chung giữa nhiều worker/instance.
+5. **Tin tưởng `X-Forwarded-For`.** Client có thể giả header nếu API không đứng sau reverse proxy đáng tin cậy.
+6. **Docker publish cổng ra host.** LiteLLM và Qdrant cần firewall hoặc bind loopback.
+7. **Thông báo lỗi có thể lộ chi tiết nội bộ.** Một số exception được trả nguyên văn trong HTTP/SSE response.
+8. **Upload kiểm tra extension, chưa kiểm tra MIME hoặc magic bytes.**
+9. **Không có quét mã độc, quota ổ đĩa hoặc chính sách lưu giữ file.**
+10. **Agent có quyền ghi file.** Đây là năng lực có rủi ro cao, cần workspace riêng, backup và nguyên tắc đặc quyền tối thiểu.
 
-- `docker compose` chay Qdrant va LiteLLM.
-- `systemd --user` chay FastAPI/React:
+Khuyến nghị tối thiểu khi public:
 
-```text
-vllm-pd-api.service
-```
+- Bắt buộc `AGENT_API_KEY` mạnh.
+- Thêm xác thực cho toàn bộ API và kiểm tra chủ sở hữu session.
+- Bind LiteLLM/Qdrant vào `127.0.0.1` hoặc chặn bằng firewall.
+- Thu hẹp CORS về domain frontend.
+- Chỉ tin `X-Forwarded-For` từ reverse proxy được kiểm soát.
+- Thay rate limiter in-memory bằng Redis hoặc gateway rate limit nếu chạy nhiều instance.
+- Không chạy Agent trên repository hoặc tài khoản hệ thống có quyền vượt quá nhu cầu.
 
-- `loginctl enable-linger` da bat, nen service co the chay sau khi logout.
-- React da build production.
-- LiteLLM da nhan 5 model groups.
-- MCP filesystem/git da load du 26 tools.
+## 17. Cấu hình
 
-Da test:
+### 17.1. Nhóm biến môi trường
 
-- `GET /health` local va public ngrok.
-- `GET /models`.
-- React desktop/mobile bang Playwright screenshot.
-- Upload `documents/test1.pdf`.
-- Qdrant index 3 chunks.
-- `POST /query/stream` tra sources, meta, token va done.
-- Local Gemma4 tra `200`.
-- MiMo Token Plan SGP tra `200`.
-- OpenAI tra `200`.
-- `/agent` co key tra `200`, khong key tra `401`.
+| Nhóm | Biến chính |
+|---|---|
+| Ollama | `OLLAMA_API_BASE`, `OLLAMA_MODEL` |
+| Provider cloud | `OPENAI_API_KEY`, `MIMO_API_KEY`, `MIMO_API_BASE` |
+| LiteLLM | `LITELLM_URL`, `LITELLM_MASTER_KEY` |
+| API public | `MACHINE2_API_HOST`, `MACHINE2_API_PORT`, `MACHINE2_API_PUBLIC_URL` |
+| Qdrant | `QDRANT_HOST`, `QDRANT_PORT` |
+| Upload | `UPLOAD_DIR`, `MAX_UPLOAD_SIZE_MB` |
+| Rate limit | `QUERY_RATE_LIMIT_PER_MINUTE`, `UPLOAD_RATE_LIMIT_PER_HOUR` |
+| Agent | `AGENT_API_KEY`, `WORKSPACE_DIR`, `AGENT_REPOSITORY_DIR` |
+| Log | `LOG_LEVEL` |
 
-## 14. Failure modes
+Không commit `.env`. File này chứa provider key, LiteLLM master key và Agent API key.
 
-### Machine 1 Ollama/ngrok fail
+### 17.2. Giá trị mặc định đáng chú ý
 
-Anh huong:
+| Cấu hình | Mặc định trong mã |
+|---|---|
+| `QDRANT_HOST` | `localhost` |
+| `QDRANT_PORT` | `6333` |
+| `UPLOAD_DIR` | `./uploads` |
+| `LITELLM_URL` | `http://localhost:4000/v1` |
+| `LITELLM_MASTER_KEY` | `sk-local` |
+| `MAX_UPLOAD_SIZE_MB` | `25` |
+| Query rate limit | `15` request/IP/phút |
+| Upload rate limit | `10` request/IP/giờ |
 
-- `local-gemma` fail.
-- `auto-model` co the fallback sang MiMo/OpenAI.
-- `coding-model` co the fallback sang OpenAI.
+## 18. Vận hành và kiểm tra
 
-Can lam:
-
-```bash
-curl "$OLLAMA_API_BASE/api/tags"
-docker compose restart litellm
-```
-
-### LiteLLM fail config
-
-Anh huong:
-
-- Query RAG va Agent khong goi duoc model.
-
-Can lam:
-
-```bash
-docker compose logs --tail=120 litellm
-docker compose up -d --force-recreate litellm
-```
-
-### FastAPI fail startup
-
-Thuong gap khi:
-
-- Qdrant chua len.
-- Python env thieu package.
-- GPU/model embedding load loi.
-
-Can lam:
+### 18.1. Build frontend
 
 ```bash
-journalctl --user -u vllm-pd-api -n 160 --no-pager
-systemctl --user restart vllm-pd-api
-```
-
-### Web trang trang hoac 404 asset
-
-Can build lai frontend:
-
-```bash
-cd frontend
-npm run build
-systemctl --user restart vllm-pd-api
-```
-
-## 15. Deployment checklist
-
-```bash
-cd /home/jkl0909/Code/llm/VLLM-PD
-
-# Python syntax
-conda run -n docmind python -m py_compile \
-  src/api/main.py \
-  src/rag/rag_pipeline.py \
-  src/agent/graph.py \
-  src/agent/mcp_client.py
-
-# Frontend
 cd frontend
 npm install
 npm run build
-
-# Infra
-cd ..
-docker compose up -d
-docker compose ps
-
-# API service
-systemctl --user restart vllm-pd-api
-curl -fsS http://localhost:8001/health | jq .
-
-# Public URL
-PUBLIC_URL=$(sed -n 's/^MACHINE2_API_PUBLIC_URL=//p' .env)
-curl -fsS -H 'ngrok-skip-browser-warning: true' "$PUBLIC_URL/health" | jq .
 ```
 
-## 16. Nhung gi khong con la duong chinh
+### 18.2. Khởi động hạ tầng
 
-- `docmind/` khong phai runtime chinh.
-- Streamlit khong phai frontend chinh.
-- FAISS khong phai vector store chinh.
-- FastAPI port 8000 khong phai port chinh.
-- LiteLLM public URL khong can thiet cho May 3.
-- vLLM local server khong phai backend inference dang dung trong repo hien tai.
+```bash
+docker compose up -d
+docker compose ps
+```
+
+### 18.3. Chạy API foreground
+
+```bash
+uvicorn src.api.main:app --host 0.0.0.0 --port 8001
+```
+
+### 18.4. User service trên Máy 2
+
+Nếu máy đã cài service `vllm-pd-api`:
+
+```bash
+systemctl --user status vllm-pd-api
+systemctl --user restart vllm-pd-api
+journalctl --user -u vllm-pd-api -n 160 --no-pager
+```
+
+Đường dẫn service từng được sử dụng:
+
+```text
+~/.config/systemd/user/vllm-pd-api.service
+```
+
+Repository không chứa unit file này, vì vậy cần xác minh nội dung thực tế trên Máy 2.
+
+### 18.5. Kiểm tra dependency
+
+```bash
+# FastAPI
+curl -fsS http://localhost:8001/health
+
+# LiteLLM
+curl -fsS http://localhost:4000/health/liveliness
+
+# Qdrant
+curl -fsS http://localhost:6333/healthz
+
+# Model list qua LiteLLM
+curl -fsS \
+  -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+  http://localhost:4000/v1/models
+```
+
+### 18.6. Smoke test RAG
+
+```bash
+SESSION_ID=$(
+  curl -fsS -X POST http://localhost:8001/sessions |
+  jq -r .session_id
+)
+
+curl -fsS -X POST \
+  "http://localhost:8001/sessions/$SESSION_ID/upload" \
+  -F "file=@documents/test1.pdf" |
+  jq .
+
+curl -N -fsS http://localhost:8001/query/stream \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"session_id\":\"$SESSION_ID\",
+    \"question\":\"Tóm tắt tài liệu này.\",
+    \"model\":\"auto\",
+    \"mode\":\"chat\"
+  }"
+```
+
+### 18.7. Smoke test Agent
+
+```bash
+curl -fsS http://localhost:8001/agent \
+  -H "X-Agent-API-Key: $AGENT_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "session_id":"smoke-test",
+    "task":"Không gọi công cụ. Chỉ trả lời: OK"
+  }' |
+  jq .
+```
+
+## 19. Failure modes và cách chẩn đoán
+
+### 19.1. Qdrant không sẵn sàng khi API khởi động
+
+Biểu hiện:
+
+- FastAPI không hoàn tất startup.
+- Log lỗi kết nối hoặc tạo collection.
+
+Kiểm tra:
+
+```bash
+docker compose ps qdrant
+docker compose logs --tail=120 qdrant
+curl -fsS http://localhost:6333/healthz
+```
+
+### 19.2. BGE-M3 hoặc Docling nạp lỗi
+
+Nguyên nhân thường gặp:
+
+- Thiếu package.
+- Không tải được model lần đầu.
+- CUDA/PyTorch không tương thích.
+- Không đủ RAM/VRAM hoặc dung lượng đĩa.
+
+Kiểm tra log FastAPI và thử khởi động foreground để thấy stack trace đầy đủ.
+
+### 19.3. Ollama hoặc ngrok của Máy 1 lỗi
+
+Ảnh hưởng:
+
+- `local-gemma` lỗi trực tiếp.
+- `auto-model` có thể chuyển sang MiMo/OpenAI.
+- `coding-model` có thể chuyển sang OpenAI.
+
+Kiểm tra:
+
+```bash
+curl "$OLLAMA_API_BASE/api/tags"
+docker compose logs --tail=120 litellm
+```
+
+### 19.4. LiteLLM lỗi cấu hình hoặc provider
+
+Ảnh hưởng:
+
+- RAG vẫn retrieval được nhưng không sinh câu trả lời.
+- Agent không gọi được model.
+
+Kiểm tra:
+
+```bash
+docker compose logs --tail=160 litellm
+docker compose up -d --force-recreate litellm
+```
+
+### 19.5. React trắng trang hoặc thiếu asset
+
+Kiểm tra `frontend/dist`, build lại và restart API:
+
+```bash
+cd frontend
+npm run build
+systemctl --user restart vllm-pd-api
+```
+
+### 19.6. Session vừa tạo trả 404
+
+Đây là hành vi hiện tại nếu session chưa có vector. Upload ít nhất một tài liệu rồi gọi lại `GET /sessions/{id}`.
+
+### 19.7. Nguồn luôn hiển thị trang 1
+
+Đây là giới hạn của parser hiện tại, không phải lỗi Qdrant hoặc frontend. Cần trích xuất provenance trang từ Docling và gán vào từng `TextChunk`.
+
+## 20. Khả năng mở rộng và điểm cải tiến
+
+Các hướng ưu tiên theo tác động:
+
+1. **Xác thực và phân quyền session**
+   - Gắn session với user/tenant.
+   - Kiểm tra quyền trên upload, query và delete.
+2. **Parser có provenance chính xác**
+   - Dùng cấu trúc document của Docling thay vì chỉ `export_to_markdown()`.
+   - Lưu page, bounding box, heading và loại phần tử.
+3. **Chunking tốt hơn**
+   - Chunk theo token và cấu trúc tài liệu.
+   - Giữ bảng, heading và đoạn văn theo ngữ nghĩa.
+4. **Vision pipeline hoàn chỉnh**
+   - Trích xuất/lưu ảnh.
+   - Tạo `metadata.image_path`.
+   - Chỉ route request có ảnh đến model hỗ trợ vision.
+5. **Session registry**
+   - Lưu session độc lập với vector.
+   - Hỗ trợ phiên rỗng, TTL và cleanup job.
+6. **Health/readiness chuyên sâu**
+   - Ping Qdrant, LiteLLM và model upstream.
+   - Tách liveness và readiness.
+7. **Rate limit phân tán**
+   - Redis, API gateway hoặc reverse proxy.
+8. **Quan sát hệ thống**
+   - Structured logging, request ID, latency từng stage, token usage và tracing.
+9. **Agent bền vững và an toàn hơn**
+   - Checkpoint, timeout, recursion limit, approval gate cho thao tác ghi/chạy lệnh.
+10. **Triển khai nhiều instance**
+    - Đưa upload sang object storage.
+    - Dùng session/auth store dùng chung.
+    - Loại bỏ state chỉ tồn tại trong RAM.
+
+## 21. Những thành phần không thuộc đường chạy chính
+
+- `docmind/` không phải backend/frontend chính.
+- Streamlit không phải frontend production.
+- FAISS không phải vector store của hệ thống chính.
+- Port `8000` không phải port API mặc định.
+- Máy 3 không cần truy cập trực tiếp LiteLLM.
+- Repository hiện không chạy vLLM server làm backend suy luận chính; tên dự án `VLLM-PD` không đồng nghĩa runtime hiện tại đang dùng vLLM.
+
+## 22. Tóm tắt
+
+VLLM-PD là một hệ thống RAG và Coding Agent triển khai tập trung trên Máy 2:
+
+- FastAPI là cổng vào duy nhất cho web và API.
+- React cung cấp giao diện hỏi đáp/nghiên cứu.
+- Docling, BGE-M3 và Qdrant tạo pipeline nạp và retrieval tài liệu.
+- LiteLLM tách ứng dụng khỏi model vật lý và cung cấp fallback.
+- LangGraph kết hợp LLM với MCP để tạo Coding Agent.
+
+Kiến trúc phù hợp với triển khai một máy chủ ứng dụng và lượng người dùng nhỏ. Trước khi mở rộng hoặc public rộng rãi, các hạng mục quan trọng nhất là xác thực session, cô lập cổng hạ tầng, provenance trang chính xác, health check dependency và kiểm soát quyền của Agent.
