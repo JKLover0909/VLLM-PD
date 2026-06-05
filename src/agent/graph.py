@@ -35,7 +35,7 @@ def get_llm():
     
     return ChatOpenAI(
         model="coding-model",
-        openai_api_key="sk-local",  # LiteLLM không bắt buộc key thật
+        openai_api_key=os.getenv("LITELLM_MASTER_KEY", "sk-local"),
         openai_api_base=proxy_url,
         temperature=0.2,
     )

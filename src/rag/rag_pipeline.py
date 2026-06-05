@@ -5,8 +5,9 @@ src/rag/rag_pipeline.py
 Nhận câu hỏi -> Embed -> Tìm kiếm ngữ nghĩa trong Qdrant -> Tạo prompt đa phương thức -> Gọi LiteLLM.
 """
 
-import logging
+import asyncio
 import base64
+import logging
 import os
 from pathlib import Path
 from typing import AsyncGenerator, Tuple, List, Dict, Any
@@ -27,8 +28,29 @@ Nguyên tắc trả lời:
 5. Trình bày thông tin rõ ràng, có cấu trúc, sử dụng gạch đầu dòng khi cần thiết.
 6. Tuyệt đối không tự suy diễn hoặc bịa đặt thông tin nằm ngoài tài liệu."""
 
+RESEARCH_SYSTEM_PROMPT = """Bạn là chuyên gia nghiên cứu tài liệu, hỗ trợ cả tiếng Việt và tiếng Anh.
 
-def build_rag_prompt(question: str, search_results: List[SearchResult]) -> List[Dict[str, Any]]:
+Nguyên tắc:
+1. Chỉ sử dụng bằng chứng từ các đoạn tài liệu được cung cấp.
+2. Tổng hợp theo cấu trúc: Tóm tắt điều hành, Phát hiện chính, Bằng chứng, Điểm chưa rõ và Câu hỏi nghiên cứu tiếp theo.
+3. Phân biệt rõ dữ kiện, suy luận có căn cứ và thông tin còn thiếu.
+4. Trích dẫn tên tệp và số trang cho từng phát hiện quan trọng.
+5. Trả lời bằng ngôn ngữ của câu hỏi.
+6. Không bịa đặt hoặc bổ sung kiến thức ngoài tài liệu."""
+
+MODEL_ROUTES = {
+    "auto": "auto-model",
+    "local": "local-gemma",
+    "mimo": "mimo-pro",
+    "openai": "openai-model",
+}
+
+
+def build_rag_prompt(
+    question: str,
+    search_results: List[SearchResult],
+    mode: str = "chat",
+) -> List[Dict[str, Any]]:
     """
     Tạo danh sách messages cho OpenAI client từ câu hỏi và context tìm được.
     Hỗ trợ text và hình ảnh (Vision).
@@ -45,12 +67,17 @@ def build_rag_prompt(question: str, search_results: List[SearchResult]) -> List[
             )
         context_text = "\n\n".join(context_parts)
 
+    instruction = (
+        "Hãy lập báo cáo nghiên cứu dựa trên các đoạn tài liệu và hình ảnh đính kèm (nếu có)."
+        if mode == "research"
+        else "Hãy trả lời câu hỏi dựa trên các đoạn tài liệu và hình ảnh đính kèm (nếu có) ở trên."
+    )
     user_message = (
         f"Dưới đây là các đoạn trích từ tài liệu:\n\n"
         f"{context_text}\n\n"
         f"---\n"
         f"Câu hỏi: {question}\n\n"
-        f"Hãy trả lời câu hỏi dựa trên các đoạn tài liệu và hình ảnh đính kèm (nếu có) ở trên."
+        f"{instruction}"
     )
 
     image_content = _build_image_content(search_results)
@@ -61,7 +88,10 @@ def build_rag_prompt(question: str, search_results: List[SearchResult]) -> List[
         user_content = user_message
 
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {
+            "role": "system",
+            "content": RESEARCH_SYSTEM_PROMPT if mode == "research" else SYSTEM_PROMPT,
+        },
         {"role": "user", "content": user_content},
     ]
 
@@ -128,44 +158,67 @@ class RAGPipeline:
         # Kết nối tới LiteLLM Proxy
         proxy_url = os.getenv("LITELLM_URL", "http://localhost:4000/v1")
         self.openai_client = AsyncOpenAI(
-            api_key="sk-local",
+            api_key=os.getenv("LITELLM_MASTER_KEY", "sk-local"),
             base_url=proxy_url
         )
 
-    async def query(self, session_id: str, question: str) -> Tuple[str, List[SearchResult]]:
+    async def query(
+        self,
+        session_id: str,
+        question: str,
+        model: str = "auto",
+        mode: str = "chat",
+    ) -> Tuple[str, List[SearchResult], str]:
         """
         Non-streaming RAG query.
         """
-        search_results = self._retrieve(session_id, question)
-        messages = build_rag_prompt(question, search_results)
+        search_results = await asyncio.to_thread(
+            self._retrieve,
+            session_id,
+            question,
+            10 if mode == "research" else self.top_k,
+        )
+        messages = build_rag_prompt(question, search_results, mode=mode)
+        routed_model = self._resolve_model(model)
 
         try:
-            # Dùng vision-model để tự động gọi local Qwen3-VL hoặc fallback sang OpenAI GPT-4o
             response = await self.openai_client.chat.completions.create(
-                model="vision-model",
+                model=routed_model,
                 messages=messages,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                max_tokens=1800 if mode == "research" else self.max_tokens,
             )
-            answer = response.choices[0].message.content
-            return answer, search_results
+            answer = response.choices[0].message.content or ""
+            return answer, search_results, routed_model
         except Exception as e:
             logger.error(f"Error in RAG generation: {e}")
             raise e
 
-    async def query_stream(self, session_id: str, question: str) -> Tuple[AsyncGenerator[str, None], List[SearchResult]]:
+    async def query_stream(
+        self,
+        session_id: str,
+        question: str,
+        model: str = "auto",
+        mode: str = "chat",
+    ) -> Tuple[AsyncGenerator[str, None], List[SearchResult], str]:
         """
         Streaming RAG query.
         """
-        search_results = self._retrieve(session_id, question)
-        messages = build_rag_prompt(question, search_results)
+        search_results = await asyncio.to_thread(
+            self._retrieve,
+            session_id,
+            question,
+            10 if mode == "research" else self.top_k,
+        )
+        messages = build_rag_prompt(question, search_results, mode=mode)
+        routed_model = self._resolve_model(model)
 
         try:
             response = await self.openai_client.chat.completions.create(
-                model="vision-model",
+                model=routed_model,
                 messages=messages,
                 temperature=self.temperature,
-                max_tokens=self.max_tokens,
+                max_tokens=1800 if mode == "research" else self.max_tokens,
                 stream=True
             )
 
@@ -175,12 +228,17 @@ class RAGPipeline:
                     if content:
                         yield content
 
-            return token_generator(), search_results
+            return token_generator(), search_results, routed_model
         except Exception as e:
             logger.error(f"Error in streaming RAG generation: {e}")
             raise e
 
-    def _retrieve(self, session_id: str, question: str) -> List[SearchResult]:
+    def _retrieve(
+        self,
+        session_id: str,
+        question: str,
+        top_k: int | None = None,
+    ) -> List[SearchResult]:
         """
         Tìm kiếm ngữ nghĩa từ Vector Store.
         """
@@ -188,11 +246,18 @@ class RAGPipeline:
         results = self.vector_store.search(
             session_id=session_id,
             query_embedding=query_embedding,
-            top_k=self.top_k,
+            top_k=top_k or self.top_k,
             score_threshold=self.score_threshold
         )
         logger.info(f"Retrieved {len(results)} chunks for query: '{question[:50]}'")
         return results
+
+    def _resolve_model(self, model: str) -> str:
+        """Ánh xạ lựa chọn từ UI sang model logic của LiteLLM."""
+        try:
+            return MODEL_ROUTES[model]
+        except KeyError as exc:
+            raise ValueError(f"Unsupported model option: {model}") from exc
 
     def format_sources(self, results: List[SearchResult]) -> List[Dict[str, Any]]:
         """

@@ -1,106 +1,158 @@
 """
 src/agent/mcp_client.py
 -----------------------
-Client kết nối tới các MCP Server (stdio) sử dụng langchain-mcp-adapters.
-Tự động khởi tạo các tools (filesystem, git, terminal) để cung cấp cho LangGraph Agent.
+Load filesystem and git MCP tools for the Coding Agent.
 """
 
-import os
+import asyncio
 import logging
-from typing import List
+import os
+import shutil
+import sys
+from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
+from pathlib import Path
+from typing import Coroutine, List, TypeVar
+
 from langchain_core.tools import BaseTool
 
 logger = logging.getLogger(__name__)
+T = TypeVar("T")
 
-# Thử import adapter của LangChain
 try:
-    from langchain_mcp_adapters.tools import load_mcp_tools
+    from langchain_mcp_adapters.client import MultiServerMCPClient
+
     HAS_MCP_ADAPTER = True
 except ImportError:
     HAS_MCP_ADAPTER = False
-    logger.warning("langchain-mcp-adapters is not installed. Fallback to native mock/local tools.")
+    logger.warning("langchain-mcp-adapters is unavailable; using local tools.")
 
 
-def get_mcp_tools() -> List[BaseTool]:
-    """
-    Khởi tạo và tải tất cả các công cụ từ các MCP Server qua stdio.
-    """
-    tools = []
-    workspace_dir = os.getenv("WORKSPACE_DIR", "/home/jkl0909/Code")
-
-    if not HAS_MCP_ADAPTER:
-        logger.warning("Using mock tools because langchain-mcp-adapters is not available.")
-        # Trả về các mock tools cơ bản để chạy thử nếu chưa cài đặt adapter
-        return _get_fallback_local_tools()
-
-    # 1. Tải Filesystem MCP Tools
+def _run_async(coroutine: Coroutine[None, None, T]) -> T:
+    """Run MCP discovery safely, including when imported from an active loop."""
     try:
-        logger.info(f"Connecting to filesystem MCP server for workspace: {workspace_dir}...")
-        fs_tools = load_mcp_tools(
-            "stdio",
-            command="npx",
-            args=["-y", "@modelcontextprotocol/server-filesystem", workspace_dir]
-        )
-        tools.extend(fs_tools)
-        logger.info(f"Loaded {len(fs_tools)} filesystem tools successfully.")
-    except Exception as e:
-        logger.error(f"Error loading filesystem MCP tools: {e}")
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coroutine)
 
-    # 2. Tải Git MCP Tools
-    try:
-        logger.info("Connecting to git MCP server...")
-        git_tools = load_mcp_tools(
-            "stdio",
-            command="npx",
-            args=["-y", "@modelcontextprotocol/server-git", "--repository", workspace_dir]
-        )
-        tools.extend(git_tools)
-        logger.info(f"Loaded {len(git_tools)} git tools successfully.")
-    except Exception as e:
-        logger.error(f"Error loading git MCP tools: {e}")
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(asyncio.run, coroutine).result()
 
-    # Nếu không tải được công cụ nào, sử dụng fallback tools cục bộ
-    if not tools:
-        logger.warning("No MCP tools loaded. Fallback to local tools.")
-        return _get_fallback_local_tools()
 
+async def _load_mcp_tools(
+    workspace_dir: Path,
+    repository_dir: Path,
+) -> List[BaseTool]:
+    env = dict(os.environ)
+    runtime_bin = str(Path(sys.executable).parent)
+    env["PATH"] = os.pathsep.join(
+        filter(None, [runtime_bin, str(Path.home() / ".local" / "bin"), env.get("PATH")])
+    )
+
+    npx_path = str(Path(runtime_bin) / "npx")
+    uvx_path = shutil.which("uvx", path=env["PATH"]) or str(
+        Path.home() / ".local" / "bin" / "uvx"
+    )
+    connections = {
+        "filesystem": {
+            "transport": "stdio",
+            "command": npx_path,
+            "args": [
+                "-y",
+                "@modelcontextprotocol/server-filesystem",
+                str(workspace_dir),
+            ],
+            "env": env,
+        },
+        "git": {
+            "transport": "stdio",
+            "command": uvx_path,
+            "args": [
+                "mcp-server-git",
+                "--repository",
+                str(repository_dir),
+            ],
+            "env": env,
+        },
+    }
+
+    tools: List[BaseTool] = []
+    for server_name, connection in connections.items():
+        try:
+            client = MultiServerMCPClient({server_name: connection})
+            server_tools = await client.get_tools()
+            tools.extend(server_tools)
+            logger.info(
+                "Loaded %s tools from the %s MCP server.",
+                len(server_tools),
+                server_name,
+            )
+        except Exception as exc:
+            logger.error("Unable to load %s MCP tools: %s", server_name, exc)
     return tools
 
 
-def _get_fallback_local_tools() -> List[BaseTool]:
-    """
-    Các tool dự phòng bằng Python nguyên bản khi không kết nối được MCP Server.
-    Đảm bảo Agent luôn có các tool cơ bản để đọc ghi file.
-    """
+@lru_cache(maxsize=1)
+def get_mcp_tools() -> List[BaseTool]:
+    """Return cached MCP tools, with workspace-confined local fallbacks."""
+    workspace_dir = Path(
+        os.getenv("WORKSPACE_DIR", "/home/jkl0909/Code/llm")
+    ).expanduser().resolve()
+    repository_dir = Path(
+        os.getenv("AGENT_REPOSITORY_DIR", Path.cwd())
+    ).expanduser().resolve()
+
+    if HAS_MCP_ADAPTER:
+        tools = _run_async(_load_mcp_tools(workspace_dir, repository_dir))
+        if tools:
+            return tools
+
+    logger.warning("No MCP tools loaded; using workspace-confined local tools.")
+    return _get_fallback_local_tools(workspace_dir)
+
+
+def _get_fallback_local_tools(workspace_dir: Path) -> List[BaseTool]:
+    """Provide minimal file tools while enforcing the configured workspace."""
     from langchain_core.tools import tool
+
+    def resolve_path(raw_path: str) -> Path:
+        candidate = Path(raw_path).expanduser()
+        if not candidate.is_absolute():
+            candidate = workspace_dir / candidate
+        resolved = candidate.resolve()
+        try:
+            resolved.relative_to(workspace_dir)
+        except ValueError as exc:
+            raise ValueError(
+                f"Path must stay inside workspace: {workspace_dir}"
+            ) from exc
+        return resolved
 
     @tool
     def read_file(file_path: str) -> str:
-        """Đọc nội dung của một tệp tại đường dẫn được cung cấp."""
+        """Read a UTF-8 text file inside the configured workspace."""
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                return f.read()
-        except Exception as e:
-            return f"Error reading file: {str(e)}"
+            return resolve_path(file_path).read_text(encoding="utf-8")
+        except Exception as exc:
+            return f"Error reading file: {exc}"
 
     @tool
     def write_file(file_path: str, content: str) -> str:
-        """Ghi nội dung mới vào tệp tại đường dẫn được cung cấp (ghi đè)."""
+        """Write a UTF-8 text file inside the configured workspace."""
         try:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(content)
-            return f"Successfully wrote to {file_path}"
-        except Exception as e:
-            return f"Error writing file: {str(e)}"
+            target = resolve_path(file_path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+            return f"Successfully wrote to {target}"
+        except Exception as exc:
+            return f"Error writing file: {exc}"
 
     @tool
     def list_dir(directory: str = ".") -> str:
-        """Liệt kê các tệp và thư mục con trong thư mục chỉ định."""
+        """List a directory inside the configured workspace."""
         try:
-            items = os.listdir(directory)
-            return "\n".join(items)
-        except Exception as e:
-            return f"Error listing directory: {str(e)}"
+            return "\n".join(sorted(item.name for item in resolve_path(directory).iterdir()))
+        except Exception as exc:
+            return f"Error listing directory: {exc}"
 
     return [read_file, write_file, list_dir]
