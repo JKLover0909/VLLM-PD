@@ -14,7 +14,7 @@ services:
 
   # LiteLLM Proxy / Router
   litellm:
-    image: ghcr.io/berriai/litellm:main-latest
+    image: litellm/litellm:main-stable
     container_name: litellm-proxy
     ports:
       - "4000:4000"
@@ -22,6 +22,10 @@ services:
       - ./litellm_config.yaml:/app/config.yaml
     env_file:
       - .env
+    environment:
+      OLLAMA_API_BASE: ${OLLAMA_API_BASE:-https://carless-overarch-establish.ngrok-free.dev}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-local}
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
     command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
     restart: unless-stopped
     depends_on:

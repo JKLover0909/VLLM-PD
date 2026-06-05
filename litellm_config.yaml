@@ -4,67 +4,35 @@ model_list:
   # ============================================================
   - model_name: coding-model
     litellm_params:
-      model: ollama/qwen3-coder-14b
-      api_base: http://${TAILSCALE_M1_IP}:11434
+      model: ollama/gemma4:latest
+      api_base: os.environ/OLLAMA_API_BASE
       timeout: 120
       stream: true
-
-  - model_name: coding-model-fallback
-    litellm_params:
-      model: openai/gpt-4o
-      api_key: ${OPENAI_API_KEY}
-      timeout: 60
+    model_info:
+      max_input_tokens: 32768
+      max_output_tokens: 4096
 
   # ============================================================
   # VISION MODEL — Dùng cho RAG hình ảnh & tài liệu
   # ============================================================
   - model_name: vision-model
     litellm_params:
-      model: ollama/qwen3-vl-7b
-      api_base: http://${TAILSCALE_M1_IP}:11434
+      model: ollama/gemma4:latest
+      api_base: os.environ/OLLAMA_API_BASE
       timeout: 90
       stream: true
-
-  - model_name: vision-model-fallback
-    litellm_params:
-      model: openai/gpt-4o
-      api_key: ${OPENAI_API_KEY}
+    model_info:
+      max_input_tokens: 32768
+      max_output_tokens: 4096
 
   # ============================================================
   # GENERAL MODEL — Hỏi đáp, tóm tắt, phân loại
   # ============================================================
   - model_name: general-model
     litellm_params:
-      model: ollama/gemma4-26b-a4b
-      api_base: http://${TAILSCALE_M1_IP}:11434
+      model: ollama/gemma4:latest
+      api_base: os.environ/OLLAMA_API_BASE
       timeout: 120
-
-  - model_name: general-model-fallback-mimo
-    litellm_params:
-      model: openai/mimo-pro  # OpenAI-compatible API
-      api_key: ${MIMO_API_KEY}
-      api_base: https://api.mimo.xiaomi.com/v1
-
-  - model_name: general-model-fallback-openai
-    litellm_params:
-      model: openai/gpt-4o-mini
-      api_key: ${OPENAI_API_KEY}
-
-router_settings:
-  fallbacks:
-    - coding-model: ["coding-model-fallback"]
-    - vision-model: ["vision-model-fallback"]
-    - general-model: ["general-model-fallback-mimo", "general-model-fallback-openai"]
-
-  enable_health_check: true
-  health_check_interval: 30
-  num_retries: 0
-  timeout: 120
-  routing_strategy: "simple-shuffle"
-
-litellm_settings:
-  set_verbose: false
-  cache: true
-  cache_params:
-    type: "local"
-    ttl: 600
+    model_info:
+      max_input_tokens: 32768
+      max_output_tokens: 4096
