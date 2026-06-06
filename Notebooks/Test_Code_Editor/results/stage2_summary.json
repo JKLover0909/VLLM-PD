@@ -1,0 +1,45 @@
+[
+  {
+    "provider": "local",
+    "model": "local-gemma",
+    "passed": false,
+    "inspection_iterations": null,
+    "inspection_latency": 11.538,
+    "refusal_latency": 0.861,
+    "tools": [
+      "list_directory",
+      "read_file",
+      "search_text"
+    ]
+  },
+  {
+    "provider": "mimo",
+    "model": "mimo-pro",
+    "passed": true,
+    "inspection_iterations": 7,
+    "inspection_latency": 24.851,
+    "refusal_latency": 3.588,
+    "tools": [
+      "list_directory",
+      "list_directory",
+      "read_file",
+      "search_text",
+      "read_file",
+      "read_file"
+    ]
+  },
+  {
+    "provider": "openai",
+    "model": "openai-model",
+    "passed": false,
+    "inspection_iterations": 5,
+    "inspection_latency": 8.076,
+    "refusal_latency": 1.622,
+    "tools": [
+      "list_directory",
+      "read_file",
+      "search_text",
+      "read_file"
+    ]
+  }
+]

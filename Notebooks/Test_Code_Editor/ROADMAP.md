@@ -18,7 +18,7 @@ Ba backend cần kiểm thử:
 |---|---|---|
 | `local` | `local-gemma` | Gemma4 trên Máy 1 |
 | `mimo` | `mimo-pro` | Xiaomi MiMo 2.5 Pro |
-| `openai` | `openai-model` | OpenAI GPT-4o mini |
+| `openai` | `openai-model` | OpenAI GPT-5.4 mini |
 | `auto` | `coding-model` | Gemma4, fallback OpenAI |
 
 > Lưu ý: khả năng chat tốt không đảm bảo model gọi tool đúng. Mỗi model phải vượt qua bài test tool-calling trước khi được cấp quyền sửa code.
@@ -698,4 +698,3 @@ Kết quả Milestone 1 phải trả lời được:
 5. Model nào chỉ nên dùng để sinh code dạng text?
 
 Chưa cấp quyền ghi file hoặc chạy terminal trước khi hoàn thành mốc này.
-

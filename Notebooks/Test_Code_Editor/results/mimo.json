@@ -1,0 +1,39 @@
+[
+  {
+    "passed": true,
+    "requested_model": "mimo-pro",
+    "actual_model": "mimo-pro",
+    "http_status": 200,
+    "latency_seconds": 3.702,
+    "finish_reason": "tool_calls",
+    "assistant_content": "",
+    "tool_call_count": 1,
+    "tool_name": "get_file_metadata",
+    "tool_arguments_raw": "{\"file_path\": \"calculator.py\"}",
+    "tool_arguments": {
+      "file_path": "calculator.py"
+    },
+    "arguments_error": null,
+    "checks": {
+      "has_tool_calls": true,
+      "exactly_one_tool_call": true,
+      "correct_tool_name": true,
+      "arguments_are_valid_json": true,
+      "has_file_path": true,
+      "targets_calculator_py": true
+    },
+    "usage": {
+      "completion_tokens": 56,
+      "prompt_tokens": 336,
+      "total_tokens": 392,
+      "completion_tokens_details": {
+        "reasoning_tokens": 31
+      },
+      "prompt_tokens_details": {
+        "cached_tokens": 320
+      }
+    },
+    "run_number": 1,
+    "tested_at": "2026-06-06T10:35:40.045007+00:00"
+  }
+]

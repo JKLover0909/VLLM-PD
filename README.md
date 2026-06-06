@@ -16,7 +16,7 @@ VLLM-PD la he thong RAG va Coding Agent chay tren May 2. He thong hien tai phuc 
 - LLM upstream:
   - Gemma4 local tren May 1 qua Ollama/ngrok.
   - MiMo 2.5 Pro qua Xiaomi MiMo API.
-  - OpenAI GPT-4o mini.
+  - OpenAI GPT-5.4 mini.
 - Coding Agent: LangGraph + MCP tools, endpoint `/agent` duoc bao ve bang `AGENT_API_KEY`.
 
 ## Kien truc nhanh
@@ -40,7 +40,7 @@ May 2: LiteLLM, port 4000 noi bo
         |-- auto-model -> local Gemma4 -> fallback MiMo -> fallback OpenAI
         |-- local-gemma -> Gemma4 local tren May 1
         |-- mimo-pro -> MiMo 2.5 Pro
-        |-- openai-model -> GPT-4o mini
+        |-- openai-model -> GPT-5.4 mini
         |-- coding-model -> Gemma4 local -> fallback OpenAI
 ```
 
@@ -290,7 +290,7 @@ LiteLLM aliases trong `litellm_config.yaml`:
 | `auto` | `auto-model` | Gemma4 local, fallback MiMo, fallback OpenAI |
 | `local` | `local-gemma` | Ollama/Gemma4 tren May 1 |
 | `mimo` | `mimo-pro` | MiMo 2.5 Pro |
-| `openai` | `openai-model` | OpenAI GPT-4o mini |
+| `openai` | `openai-model` | OpenAI GPT-5.4 mini |
 | Agent | `coding-model` | Gemma4 local, fallback OpenAI |
 
 ## Bao mat va gioi han

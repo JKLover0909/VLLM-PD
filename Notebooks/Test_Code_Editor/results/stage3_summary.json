@@ -1,0 +1,25 @@
+[
+  {
+    "provider": "local",
+    "model": "local-gemma",
+    "status": "SKIPPED",
+    "passed": false,
+    "reason": "Failed Stage 2 multi-step read-only agent gate"
+  },
+  {
+    "provider": "mimo",
+    "model": "mimo-pro",
+    "status": "PASS",
+    "passed": true,
+    "iterations": 3,
+    "latency_seconds": 18.639
+  },
+  {
+    "provider": "openai",
+    "model": "openai-model",
+    "status": "PASS",
+    "passed": true,
+    "iterations": 3,
+    "latency_seconds": 3.909
+  }
+]

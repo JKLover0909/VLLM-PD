@@ -289,8 +289,8 @@ async def list_models():
             },
             {
                 "id": "openai",
-                "name": "OpenAI",
-                "description": "Dùng GPT-4o mini cho truy vấn khó và phản hồi ổn định.",
+                "name": "OpenAI GPT-5.4 mini",
+                "description": "Dùng GPT-5.4 mini cho coding, tool calling và truy vấn khó.",
             },
         ],
     }

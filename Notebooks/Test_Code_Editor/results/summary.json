@@ -1,0 +1,26 @@
+[
+  {
+    "provider": "local",
+    "model": "local-gemma",
+    "passed_runs": 1,
+    "total_runs": 1,
+    "pass_rate": 1.0,
+    "average_latency_seconds": 5.057
+  },
+  {
+    "provider": "mimo",
+    "model": "mimo-pro",
+    "passed_runs": 1,
+    "total_runs": 1,
+    "pass_rate": 1.0,
+    "average_latency_seconds": 3.702
+  },
+  {
+    "provider": "openai",
+    "model": "openai-model",
+    "passed_runs": 1,
+    "total_runs": 1,
+    "pass_rate": 1.0,
+    "average_latency_seconds": 1.723
+  }
+]

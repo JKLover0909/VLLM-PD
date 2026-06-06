@@ -449,7 +449,7 @@ http://localhost:4000/v1
 | `auto` | `auto-model` | Ollama `gemma4:latest` |
 | `local` | `local-gemma` | Ollama `gemma4:latest` |
 | `mimo` | `mimo-pro` | `openai/mimo-v2.5-pro` |
-| `openai` | `openai-model` | `openai/gpt-4o-mini` |
+| `openai` | `openai-model` | `openai/gpt-5.4-mini` |
 | Coding Agent | `coding-model` | Ollama `gemma4:latest` |
 
 ### 13.2. Chuỗi fallback

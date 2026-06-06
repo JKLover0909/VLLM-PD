@@ -42,7 +42,7 @@ Trinh bay theo tang de nguoi nghe khong bi ngop vi danh sach cong nghe. Moi cong
 | Tu dong | auto-model | Gemma4 -> MiMo -> OpenAI |
 | Gemma4 Local | local-gemma | Ollama/Gemma4 tren May 1 |
 | MiMo 2.5 Pro | mimo-pro | Xiaomi MiMo API |
-| OpenAI | openai-model | GPT-4o mini |
+| OpenAI | openai-model | GPT-5.4 mini |
 | Agent | coding-model | Gemma4 -> OpenAI |
 
 Speaker notes:
