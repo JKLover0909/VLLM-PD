@@ -275,17 +275,17 @@ async def list_models():
             {
                 "id": "auto",
                 "name": "Tự động",
-                "description": "Ưu tiên Gemma4 local, fallback sang Mimo Pro rồi OpenAI.",
+                "description": "Ưu tiên MiMo Pro, fallback sang OpenAI rồi Gemma4 local.",
             },
             {
                 "id": "local",
                 "name": "Gemma4 Local",
-                "description": "Chạy trên Máy 1, dữ liệu không gửi tới cloud provider.",
+                "description": "Chạy trên Máy 1 cho tài liệu text; session có ảnh tự chuyển sang OpenAI Vision.",
             },
             {
                 "id": "mimo",
                 "name": "MiMo 2.5 Pro",
-                "description": "Phù hợp tổng hợp và nghiên cứu tài liệu.",
+                "description": "Phù hợp tổng hợp tài liệu text; session có ảnh tự chuyển sang OpenAI Vision.",
             },
             {
                 "id": "openai",

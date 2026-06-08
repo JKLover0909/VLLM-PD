@@ -41,7 +41,7 @@ Hệ thống hiện tuân theo các nguyên tắc chính sau:
 2. **Tách model vật lý khỏi ứng dụng:** mã nguồn chỉ gọi các tên model logic của LiteLLM.
 3. **Tách dữ liệu theo phiên:** mọi vector tài liệu có `session_id` và truy vấn Qdrant luôn lọc theo giá trị này.
 4. **Xử lý nặng ngoài event loop:** parse, embedding và thao tác Qdrant chính trong luồng upload/query được chuyển sang thread bằng `asyncio.to_thread`.
-5. **Ưu tiên mô hình local, có fallback cloud:** các route `auto-model` và `coding-model` có chuỗi dự phòng được cấu hình tại LiteLLM.
+5. **Định tuyến mô hình có fallback:** route web mặc định `auto-model` ưu tiên MiMo để tránh lỗi local generation bị cụt, còn `coding-model` giữ đường dự phòng qua OpenAI.
 6. **Giới hạn phạm vi công cụ Agent:** MCP filesystem và bộ công cụ fallback bị ràng buộc bởi `WORKSPACE_DIR`; Git MCP được gắn với `AGENT_REPOSITORY_DIR`.
 
 ## 3. Bố cục repository
@@ -446,7 +446,7 @@ http://localhost:4000/v1
 
 | Giá trị API | Model logic LiteLLM | Backend chính |
 |---|---|---|
-| `auto` | `auto-model` | Ollama `gemma4:latest` |
+| `auto` | `auto-model` | `openai/mimo-v2.5-pro` |
 | `local` | `local-gemma` | Ollama `gemma4:latest` |
 | `mimo` | `mimo-pro` | `openai/mimo-v2.5-pro` |
 | `openai` | `openai-model` | `openai/gpt-5.4-mini` |
@@ -456,8 +456,8 @@ http://localhost:4000/v1
 
 ```yaml
 auto-model:
-  - mimo-pro
   - openai-model
+  - local-gemma
 
 coding-model:
   - openai-model
@@ -465,9 +465,10 @@ coding-model:
 
 Ý nghĩa:
 
-- `auto`: Gemma4 local → MiMo → OpenAI.
+- `auto`: MiMo → OpenAI → Gemma4 local.
 - Agent: Gemma4 local → OpenAI.
 - `local`, `mimo` và `openai` không có fallback riêng trong cấu hình hiện tại.
+- Nếu session có file ảnh `.png`, `.jpg` hoặc `.jpeg`, RAG pipeline bắt buộc route sang `openai-model` và đính kèm ảnh base64 vào prompt để dùng Vision.
 - Router dùng `simple-shuffle`, retry một lần và timeout tổng quát 120 giây.
 
 ### 13.3. Điểm cần lưu ý
@@ -640,7 +641,7 @@ Khuyến nghị tối thiểu khi public:
 | Ollama | `OLLAMA_API_BASE`, `OLLAMA_MODEL` |
 | Provider cloud | `OPENAI_API_KEY`, `MIMO_API_KEY`, `MIMO_API_BASE` |
 | LiteLLM | `LITELLM_URL`, `LITELLM_MASTER_KEY` |
-| API public | `MACHINE2_API_HOST`, `MACHINE2_API_PORT`, `MACHINE2_API_PUBLIC_URL` |
+| API public | `MACHINE2_API_HOST`, `MACHINE2_API_PORT`, `MACHINE2_API_PUBLIC_URL`, `NGROK_RESERVED_DOMAIN` |
 | Qdrant | `QDRANT_HOST`, `QDRANT_PORT` |
 | Upload | `UPLOAD_DIR`, `MAX_UPLOAD_SIZE_MB` |
 | Rate limit | `QUERY_RATE_LIMIT_PER_MINUTE`, `UPLOAD_RATE_LIMIT_PER_HOUR` |

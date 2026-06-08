@@ -1,15 +1,14 @@
 model_list:
-  # Local Gemma4 served by Machine 1 through ngrok.
+  # Default web route. MiMo is primary because local Gemma4 can end generations
+  # early while still returning HTTP 200, which prevents LiteLLM error fallback.
   - model_name: auto-model
     litellm_params:
-      model: ollama/gemma4:latest
-      api_base: os.environ/OLLAMA_API_BASE
+      model: openai/mimo-v2.5-pro
+      api_key: os.environ/MIMO_API_KEY
+      api_base: os.environ/MIMO_API_BASE
       timeout: 120
-      stream: true
-    model_info:
-      max_input_tokens: 32768
-      max_output_tokens: 4096
 
+  # Local Gemma4 served by Machine 1 through ngrok.
   - model_name: local-gemma
     litellm_params:
       model: ollama/gemma4:latest
@@ -47,7 +46,7 @@ model_list:
 
 router_settings:
   fallbacks:
-    - auto-model: ["mimo-pro", "openai-model"]
+    - auto-model: ["openai-model", "local-gemma"]
     - coding-model: ["openai-model"]
   num_retries: 1
   timeout: 120

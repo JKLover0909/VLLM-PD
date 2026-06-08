@@ -13,6 +13,8 @@ from docling.document_converter import DocumentConverter
 
 logger = logging.getLogger(__name__)
 
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
+
 
 @dataclass
 class TextChunk:
@@ -69,6 +71,15 @@ class DocumentParser:
 
         # Tiến hành phân chunk dựa trên nội dung Markdown
         chunks = self._split_markdown(markdown_content, path.name, doc)
+        if path.suffix.lower() in IMAGE_EXTENSIONS:
+            for chunk in chunks:
+                chunk.content_type = "image"
+                chunk.metadata.update(
+                    {
+                        "source": "docling",
+                        "image_path": str(path.resolve()),
+                    }
+                )
         logger.info(f"Document '{path.name}' processed into {len(chunks)} chunks.")
         return chunks
 

@@ -2,21 +2,29 @@ import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import {
+  Activity,
   AlertCircle,
   BookOpen,
   Bot,
   CheckCircle2,
   ChevronDown,
+  Database,
   FileText,
+  FileUp,
   FlaskConical,
+  Layers3,
   Loader2,
   Menu,
   MessageSquare,
+  PanelRightClose,
+  PanelRightOpen,
   Paperclip,
   Plus,
+  RefreshCcw,
   Search,
   Send,
   Server,
+  ShieldCheck,
   Trash2,
   UploadCloud,
   X,
@@ -36,6 +44,26 @@ const QUICK_PROMPTS = {
   ],
 };
 
+const MODE_OPTIONS = {
+  chat: {
+    label: "Hỏi đáp",
+    title: "Hỏi đáp tài liệu",
+    icon: MessageSquare,
+  },
+  research: {
+    label: "Nghiên cứu",
+    title: "Nghiên cứu tài liệu",
+    icon: FlaskConical,
+  },
+};
+
+const MODEL_ACCENTS = {
+  auto: "accent-auto",
+  local: "accent-local",
+  mimo: "accent-mimo",
+  openai: "accent-openai",
+};
+
 async function api(path, options = {}) {
   const response = await fetch(path, options);
   if (!response.ok) {
@@ -44,7 +72,7 @@ async function api(path, options = {}) {
       const body = await response.json();
       message = body.detail || body.message || message;
     } catch {
-      message = await response.text() || message;
+      message = (await response.text()) || message;
     }
     const error = new Error(message);
     error.status = response.status;
@@ -82,7 +110,6 @@ async function streamQuery(payload, onEvent) {
         try {
           event = JSON.parse(line.slice(6));
         } catch {
-          // Ignore malformed SSE fragments and continue the stream.
           continue;
         }
         onEvent(event);
@@ -91,10 +118,41 @@ async function streamQuery(payload, onEvent) {
   }
 }
 
+function mergeFiles(currentFiles, incomingFiles) {
+  const known = new Set(currentFiles.map((file) => `${file.name}:${file.size}`));
+  const merged = [...currentFiles];
+  for (const file of incomingFiles) {
+    const key = `${file.name}:${file.size}`;
+    if (!known.has(key)) {
+      known.add(key);
+      merged.push(file);
+    }
+  }
+  return merged;
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 KB";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function shortSession(sessionId) {
+  if (!sessionId) return "no-session";
+  return sessionId.slice(0, 8);
+}
+
 function App() {
   const [sessionId, setSessionId] = useState("");
   const [files, setFiles] = useState([]);
   const [pendingFiles, setPendingFiles] = useState([]);
+  const [uploadSummary, setUploadSummary] = useState(null);
   const [messages, setMessages] = useState([]);
   const [models, setModels] = useState([]);
   const [model, setModel] = useState("auto");
@@ -104,8 +162,11 @@ function App() {
   const [health, setHealth] = useState("checking");
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 });
+  const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sourcePanelOpen, setSourcePanelOpen] = useState(true);
   const fileInputRef = useRef(null);
   const endRef = useRef(null);
 
@@ -113,6 +174,17 @@ function App() {
     () => models.find((item) => item.id === model),
     [models, model],
   );
+
+  const currentMode = MODE_OPTIONS[mode];
+  const ModeIcon = currentMode.icon;
+  const canAsk = Boolean(question.trim()) && !busy && Boolean(sessionId);
+  const pendingTotalSize = useMemo(
+    () => pendingFiles.reduce((total, file) => total + file.size, 0),
+    [pendingFiles],
+  );
+  const latestSources = sources.length
+    ? sources
+    : [...messages].reverse().find((item) => item.sources?.length)?.sources || [];
 
   useEffect(() => {
     async function bootstrap() {
@@ -124,6 +196,7 @@ function App() {
         await healthResponse.json();
         const modelData = await modelResponse.json();
         setModels(modelData.models || []);
+        setModel(modelData.default || "auto");
         setHealth("online");
 
         const stored = localStorage.getItem("vllm-pd-session");
@@ -163,19 +236,36 @@ function App() {
     localStorage.setItem("vllm-pd-session", data.session_id);
     setFiles([]);
     setPendingFiles([]);
+    setUploadSummary(null);
     setMessages([]);
     setSources([]);
     setSidebarOpen(false);
+  }
+
+  function addPendingFiles(fileList) {
+    const incoming = Array.from(fileList || []);
+    if (incoming.length === 0) return;
+    setPendingFiles((current) => mergeFiles(current, incoming));
+    setUploadSummary(null);
+  }
+
+  function removePendingFile(indexToRemove) {
+    setPendingFiles((current) =>
+      current.filter((_, index) => index !== indexToRemove),
+    );
   }
 
   async function uploadDocuments() {
     if (!sessionId || pendingFiles.length === 0) return;
     setUploading(true);
     setError("");
+    setUploadSummary(null);
+    setUploadProgress({ done: 0, total: pendingFiles.length });
     const uploaded = [];
+    let totalChunks = 0;
 
     try {
-      for (const file of pendingFiles) {
+      for (const [index, file] of pendingFiles.entries()) {
         const formData = new FormData();
         formData.append("file", file);
         const response = await api(`/sessions/${sessionId}/upload`, {
@@ -184,9 +274,15 @@ function App() {
         });
         const result = await response.json();
         uploaded.push(result.filename);
+        totalChunks += Number(result.num_chunks || 0);
+        setUploadProgress({ done: index + 1, total: pendingFiles.length });
       }
       setFiles((current) => [...new Set([...current, ...uploaded])]);
       setPendingFiles([]);
+      setUploadSummary({
+        files: uploaded.length,
+        chunks: totalChunks,
+      });
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (uploadError) {
       setError(uploadError.message);
@@ -224,6 +320,7 @@ function App() {
         content: "",
         model: selectedModel?.name || model,
         mode,
+        sources: [],
       },
     ]);
     setBusy(true);
@@ -248,6 +345,19 @@ function App() {
               ),
             );
           }
+          if (event.type === "meta") {
+            setMessages((current) =>
+              current.map((item) =>
+                item.id === assistantId
+                  ? {
+                      ...item,
+                      model: event.model || item.model,
+                      mode: event.mode || item.mode,
+                    }
+                  : item,
+              ),
+            );
+          }
           if (event.type === "token") {
             setMessages((current) =>
               current.map((item) =>
@@ -267,7 +377,10 @@ function App() {
       setMessages((current) =>
         current.map((item) =>
           item.id === assistantId && !item.content
-            ? { ...item, content: `Không thể hoàn tất yêu cầu: ${queryError.message}` }
+            ? {
+                ...item,
+                content: `Không thể hoàn tất yêu cầu: ${queryError.message}`,
+              }
             : item,
         ),
       );
@@ -281,12 +394,18 @@ function App() {
     sendMessage();
   }
 
+  function onDrop(event) {
+    event.preventDefault();
+    setDragActive(false);
+    addPendingFiles(event.dataTransfer.files);
+  }
+
   return (
     <div className="app-shell">
       <button
         className="mobile-menu icon-button"
         type="button"
-        title="Mở danh sách tài liệu"
+        title="Mở tài liệu"
         onClick={() => setSidebarOpen(true)}
       >
         <Menu size={20} />
@@ -296,17 +415,19 @@ function App() {
         <button
           className="sidebar-backdrop"
           type="button"
-          aria-label="Đóng danh sách tài liệu"
+          aria-label="Đóng tài liệu"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       <aside className={`document-sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="brand-row">
-          <div className="brand-mark"><BookOpen size={21} /></div>
+          <div className="brand-mark">
+            <BookOpen size={21} />
+          </div>
           <div>
             <strong>VLLM-PD</strong>
-            <span>Research Workspace</span>
+            <span>Document intelligence</span>
           </div>
           <button
             className="icon-button close-sidebar"
@@ -318,10 +439,20 @@ function App() {
           </button>
         </div>
 
-        <button className="new-session-button" type="button" onClick={resetSession}>
-          <Plus size={17} />
-          Phiên mới
-        </button>
+        <div className="session-strip">
+          <div>
+            <span>Phiên làm việc</span>
+            <code>{shortSession(sessionId)}</code>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            title="Tạo phiên mới"
+            onClick={resetSession}
+          >
+            <RefreshCcw size={17} />
+          </button>
+        </div>
 
         <section className="sidebar-section">
           <div className="section-heading">
@@ -335,25 +466,69 @@ function App() {
             type="file"
             multiple
             accept=".pdf,.docx,.xlsx,.pptx,.html,.png,.jpg,.jpeg"
-            onChange={(event) => setPendingFiles(Array.from(event.target.files || []))}
+            onChange={(event) => addPendingFiles(event.target.files)}
           />
+
           <button
-            className="upload-zone"
+            className={`upload-zone ${dragActive ? "dragging" : ""}`}
             type="button"
             onClick={() => fileInputRef.current?.click()}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              setDragActive(true);
+            }}
+            onDragOver={(event) => event.preventDefault()}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={onDrop}
           >
-            <UploadCloud size={22} />
+            <UploadCloud size={23} />
             <span>Chọn tài liệu</span>
-            <small>PDF, Office, HTML, ảnh</small>
+            <small>PDF, Office, HTML, PNG/JPG</small>
           </button>
 
           {pendingFiles.length > 0 && (
-            <div className="pending-upload">
-              <span>{pendingFiles.length} tệp đã chọn</span>
-              <button type="button" onClick={uploadDocuments} disabled={uploading}>
-                {uploading ? <Loader2 className="spin" size={16} /> : <Paperclip size={16} />}
-                {uploading ? "Đang index" : "Index"}
+            <div className="pending-panel">
+              <div className="pending-header">
+                <span>{pendingFiles.length} tệp</span>
+                <span>{formatBytes(pendingTotalSize)}</span>
+              </div>
+              <div className="pending-list">
+                {pendingFiles.map((file, index) => (
+                  <div className="pending-file" key={`${file.name}-${file.size}`}>
+                    <FileUp size={15} />
+                    <span title={file.name}>{file.name}</span>
+                    <button
+                      className="icon-button subtle"
+                      type="button"
+                      title={`Bỏ ${file.name}`}
+                      onClick={() => removePendingFile(index)}
+                      disabled={uploading}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                className="index-button"
+                type="button"
+                onClick={uploadDocuments}
+                disabled={uploading}
+              >
+                {uploading ? <Loader2 className="spin" size={16} /> : <Database size={16} />}
+                {uploading
+                  ? `Đang index ${uploadProgress.done}/${uploadProgress.total}`
+                  : "Index tài liệu"}
               </button>
+            </div>
+          )}
+
+          {uploadSummary && (
+            <div className="upload-summary">
+              <CheckCircle2 size={15} />
+              <span>
+                Đã index {uploadSummary.files} tệp, {uploadSummary.chunks} đoạn
+              </span>
             </div>
           )}
 
@@ -363,7 +538,7 @@ function App() {
                 <FileText size={17} />
                 <span title={filename}>{filename}</span>
                 <button
-                  className="icon-button subtle"
+                  className="icon-button subtle danger"
                   type="button"
                   title={`Xóa ${filename}`}
                   onClick={() => removeFile(filename)}
@@ -373,7 +548,10 @@ function App() {
               </div>
             ))}
             {files.length === 0 && (
-              <div className="empty-files">Chưa có tài liệu trong phiên</div>
+              <div className="empty-files">
+                <FileText size={20} />
+                <span>Chưa có tài liệu</span>
+              </div>
             )}
           </div>
         </section>
@@ -383,40 +561,64 @@ function App() {
             {health === "online" ? <CheckCircle2 size={15} /> : <Server size={15} />}
             <span>{health === "online" ? "Máy 2 online" : "Đang kiểm tra"}</span>
           </div>
-          <code>{sessionId ? sessionId.slice(0, 8) : "no-session"}</code>
+          <span className="security-chip">
+            <ShieldCheck size={14} />
+            RAG
+          </span>
         </div>
       </aside>
 
-      <main className="workspace">
+      <main className={`workspace ${sourcePanelOpen ? "" : "sources-collapsed"}`}>
         <header className="workspace-header">
-          <div className="mode-tabs" role="tablist">
-            <button
-              type="button"
-              className={mode === "chat" ? "active" : ""}
-              onClick={() => setMode("chat")}
-            >
-              <MessageSquare size={17} />
-              Hỏi đáp
-            </button>
-            <button
-              type="button"
-              className={mode === "research" ? "active research" : ""}
-              onClick={() => setMode("research")}
-            >
-              <FlaskConical size={17} />
-              Nghiên cứu
-            </button>
+          <div className="header-title">
+            <div className={`mode-mark ${mode}`}>
+              <ModeIcon size={20} />
+            </div>
+            <div>
+              <strong>{currentMode.title}</strong>
+              <span>{files.length} tài liệu trong phiên</span>
+            </div>
           </div>
 
-          <label className="model-select">
-            <Bot size={17} />
-            <select value={model} onChange={(event) => setModel(event.target.value)}>
-              {models.map((item) => (
-                <option key={item.id} value={item.id}>{item.name}</option>
-              ))}
-            </select>
-            <ChevronDown size={15} />
-          </label>
+          <div className="header-actions">
+            <div className="mode-tabs" role="tablist" aria-label="Chế độ hỏi đáp">
+              {Object.entries(MODE_OPTIONS).map(([key, option]) => {
+                const Icon = option.icon;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    className={mode === key ? `active ${key}` : ""}
+                    onClick={() => setMode(key)}
+                  >
+                    <Icon size={17} />
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <label className={`model-select ${MODEL_ACCENTS[model] || ""}`}>
+              <Bot size={17} />
+              <select value={model} onChange={(event) => setModel(event.target.value)}>
+                {models.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={15} />
+            </label>
+
+            <button
+              className="icon-button panel-toggle"
+              type="button"
+              title={sourcePanelOpen ? "Ẩn nguồn" : "Hiện nguồn"}
+              onClick={() => setSourcePanelOpen((open) => !open)}
+            >
+              {sourcePanelOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
+            </button>
+          </div>
         </header>
 
         <div className="workspace-body">
@@ -424,10 +626,18 @@ function App() {
             <div className="conversation-scroll">
               {messages.length === 0 ? (
                 <div className="empty-conversation">
-                  <div className={`empty-icon ${mode}`}>
-                    {mode === "chat" ? <MessageSquare size={30} /> : <FlaskConical size={30} />}
+                  <div className="empty-copy">
+                    <div className={`empty-icon ${mode}`}>
+                      <ModeIcon size={30} />
+                    </div>
+                    <h1>{currentMode.title}</h1>
+                    <p>
+                      {files.length > 0
+                        ? "Sẵn sàng truy vấn tài liệu đã index trong phiên này."
+                        : "Tải tài liệu lên hoặc hỏi trực tiếp để bắt đầu phiên làm việc."}
+                    </p>
                   </div>
-                  <h1>{mode === "chat" ? "Hỏi tài liệu" : "Nghiên cứu tài liệu"}</h1>
+
                   <div className="prompt-grid">
                     {QUICK_PROMPTS[mode].map((prompt) => (
                       <button
@@ -436,9 +646,27 @@ function App() {
                         onClick={() => sendMessage(prompt)}
                       >
                         <Search size={16} />
-                        {prompt}
+                        <span>{prompt}</span>
                       </button>
                     ))}
+                  </div>
+
+                  <div className="empty-metrics">
+                    <div>
+                      <Layers3 size={16} />
+                      <strong>{files.length}</strong>
+                      <span>Tài liệu</span>
+                    </div>
+                    <div>
+                      <Bot size={16} />
+                      <strong>{selectedModel?.name || "Đang tải"}</strong>
+                      <span>Model</span>
+                    </div>
+                    <div>
+                      <Activity size={16} />
+                      <strong>{health === "online" ? "Online" : "Offline"}</strong>
+                      <span>Trạng thái</span>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -452,7 +680,9 @@ function App() {
                         {message.role === "assistant" && (
                           <div className="message-meta">
                             <span>{message.model}</span>
-                            <span>{message.mode === "research" ? "Nghiên cứu" : "Hỏi đáp"}</span>
+                            <span>
+                              {message.mode === "research" ? "Nghiên cứu" : "Hỏi đáp"}
+                            </span>
                           </div>
                         )}
                         <ReactMarkdown>
@@ -484,7 +714,12 @@ function App() {
               <div className="error-banner">
                 <AlertCircle size={17} />
                 <span>{error}</span>
-                <button className="icon-button" type="button" title="Đóng" onClick={() => setError("")}>
+                <button
+                  className="icon-button"
+                  type="button"
+                  title="Đóng"
+                  onClick={() => setError("")}
+                >
                   <X size={16} />
                 </button>
               </div>
@@ -501,19 +736,29 @@ function App() {
                   }
                 }}
                 rows={2}
-                placeholder={mode === "research" ? "Nhập chủ đề nghiên cứu..." : "Đặt câu hỏi về tài liệu..."}
+                placeholder={
+                  mode === "research"
+                    ? "Nhập chủ đề nghiên cứu..."
+                    : "Đặt câu hỏi về tài liệu..."
+                }
                 disabled={busy}
               />
               <div className="composer-footer">
-                <span>{selectedModel?.description || "Đang tải danh sách model"}</span>
-                <button
-                  className="send-button"
-                  type="submit"
-                  title="Gửi"
-                  disabled={busy || !question.trim()}
-                >
-                  {busy ? <Loader2 className="spin" size={18} /> : <Send size={18} />}
-                </button>
+                <div className="composer-context">
+                  <span className={`model-dot ${MODEL_ACCENTS[model] || ""}`} />
+                  <span>{selectedModel?.description || "Đang tải danh sách model"}</span>
+                </div>
+                <div className="composer-actions">
+                  <span className="char-count">{question.length}/4000</span>
+                  <button
+                    className="send-button"
+                    type="submit"
+                    title="Gửi"
+                    disabled={!canAsk}
+                  >
+                    {busy ? <Loader2 className="spin" size={18} /> : <Send size={18} />}
+                  </button>
+                </div>
               </div>
             </form>
           </section>
@@ -521,23 +766,26 @@ function App() {
           <aside className="source-panel">
             <div className="source-header">
               <span>Nguồn tham chiếu</span>
-              <span>{sources.length}</span>
+              <span>{latestSources.length}</span>
             </div>
             <div className="source-list">
-              {sources.map((source, index) => (
-                <article className="source-item" key={`${source.file}-${source.page}-${index}`}>
+              {latestSources.map((source, index) => (
+                <article
+                  className="source-item"
+                  key={`${source.file}-${source.page}-${index}`}
+                >
                   <div className="source-title">
                     <FileText size={16} />
                     <strong>{source.file}</strong>
                   </div>
                   <div className="source-meta">
-                    <span>Trang {source.page}</span>
+                    <span>Trang {source.page || "?"}</span>
                     <span>{Math.round((source.score || 0) * 100)}%</span>
                   </div>
                   <p>{source.preview}</p>
                 </article>
               ))}
-              {sources.length === 0 && (
+              {latestSources.length === 0 && (
                 <div className="empty-sources">
                   <Search size={22} />
                   <span>Chưa có nguồn cho lượt trả lời này</span>

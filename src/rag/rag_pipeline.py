@@ -45,11 +45,15 @@ MODEL_ROUTES = {
     "openai": "openai-model",
 }
 
+LOCAL_MODEL_ALIASES = {"local-gemma", "coding-model"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
+
 
 def build_rag_prompt(
     question: str,
     search_results: List[SearchResult],
     mode: str = "chat",
+    image_paths: List[Path] | None = None,
 ) -> List[Dict[str, Any]]:
     """
     Tạo danh sách messages cho OpenAI client từ câu hỏi và context tìm được.
@@ -80,7 +84,7 @@ def build_rag_prompt(
         f"{instruction}"
     )
 
-    image_content = _build_image_content(search_results)
+    image_content = _build_image_content(search_results, image_paths=image_paths)
 
     if image_content:
         user_content = [{"type": "text", "text": user_message}] + image_content
@@ -96,20 +100,32 @@ def build_rag_prompt(
     ]
 
 
-def _build_image_content(search_results: List[SearchResult], max_images: int = 2) -> List[Dict[str, Any]]:
+def _build_image_content(
+    search_results: List[SearchResult],
+    max_images: int = 2,
+    image_paths: List[Path] | None = None,
+) -> List[Dict[str, Any]]:
     """
     Quét qua các metadata của search results để tải ảnh và chuyển đổi sang dạng base64 gửi cho VLM.
     """
     image_items = []
     seen_paths = set()
 
+    paths: List[Path] = []
+    if image_paths:
+        paths.extend(image_paths)
+
     for result in search_results:
         metadata = result.chunk.metadata
         image_path = metadata.get("image_path") if metadata else None
         if not image_path or image_path in seen_paths:
             continue
+        paths.append(Path(image_path))
 
-        path = Path(image_path)
+    for path in paths:
+        image_path = str(path)
+        if image_path in seen_paths:
+            continue
         if not path.exists():
             continue
 
@@ -178,8 +194,14 @@ class RAGPipeline:
             question,
             10 if mode == "research" else self.top_k,
         )
-        messages = build_rag_prompt(question, search_results, mode=mode)
-        routed_model = self._resolve_model(model)
+        image_paths = self._session_image_paths(session_id)
+        messages = build_rag_prompt(
+            question,
+            search_results,
+            mode=mode,
+            image_paths=image_paths,
+        )
+        routed_model = self._resolve_model(model, has_images=bool(image_paths))
 
         try:
             response = await self.openai_client.chat.completions.create(
@@ -187,6 +209,7 @@ class RAGPipeline:
                 messages=messages,
                 temperature=self.temperature,
                 max_tokens=1800 if mode == "research" else self.max_tokens,
+                **self._provider_options(routed_model),
             )
             answer = response.choices[0].message.content or ""
             return answer, search_results, routed_model
@@ -210,8 +233,14 @@ class RAGPipeline:
             question,
             10 if mode == "research" else self.top_k,
         )
-        messages = build_rag_prompt(question, search_results, mode=mode)
-        routed_model = self._resolve_model(model)
+        image_paths = self._session_image_paths(session_id)
+        messages = build_rag_prompt(
+            question,
+            search_results,
+            mode=mode,
+            image_paths=image_paths,
+        )
+        routed_model = self._resolve_model(model, has_images=bool(image_paths))
 
         try:
             response = await self.openai_client.chat.completions.create(
@@ -219,7 +248,8 @@ class RAGPipeline:
                 messages=messages,
                 temperature=self.temperature,
                 max_tokens=1800 if mode == "research" else self.max_tokens,
-                stream=True
+                stream=True,
+                **self._provider_options(routed_model),
             )
 
             async def token_generator():
@@ -252,12 +282,38 @@ class RAGPipeline:
         logger.info(f"Retrieved {len(results)} chunks for query: '{question[:50]}'")
         return results
 
-    def _resolve_model(self, model: str) -> str:
+    def _resolve_model(self, model: str, has_images: bool = False) -> str:
         """Ánh xạ lựa chọn từ UI sang model logic của LiteLLM."""
+        if has_images:
+            return "openai-model"
         try:
             return MODEL_ROUTES[model]
         except KeyError as exc:
             raise ValueError(f"Unsupported model option: {model}") from exc
+
+    def _session_image_paths(self, session_id: str) -> List[Path]:
+        """Return uploaded image paths for a session, if any."""
+        info = self.vector_store.get_session_info(session_id)
+        if not info:
+            return []
+
+        upload_dir = Path(os.getenv("UPLOAD_DIR", "./uploads"))
+        session_dir = upload_dir / session_id
+        paths = []
+        for filename in info.get("files", []):
+            path = session_dir / Path(filename).name
+            if path.suffix.lower() in IMAGE_EXTENSIONS and path.exists():
+                paths.append(path.resolve())
+        return paths
+
+    @staticmethod
+    def _provider_options(routed_model: str) -> Dict[str, Any]:
+        """Provider-specific safeguards for LiteLLM upstream models."""
+        if routed_model in LOCAL_MODEL_ALIASES:
+            # Gemma4 on Ollama may spend the whole generation budget in
+            # message.thinking, leaving message.content empty or truncated.
+            return {"extra_body": {"think": False}}
+        return {}
 
     def format_sources(self, results: List[SearchResult]) -> List[Dict[str, Any]]:
         """

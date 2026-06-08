@@ -12,15 +12,16 @@ fi
 
 NGROK_BIN="${NGROK_BIN:-/snap/bin/ngrok}"
 MACHINE2_API_PORT="${MACHINE2_API_PORT:-8001}"
+NGROK_RESERVED_DOMAIN="${NGROK_RESERVED_DOMAIN:-}"
 
 if [[ ! -x "$NGROK_BIN" ]]; then
   echo "ngrok binary not found or not executable: $NGROK_BIN" >&2
   exit 1
 fi
 
-if [[ -n "${MACHINE2_API_PUBLIC_URL:-}" ]]; then
+if [[ -n "$NGROK_RESERVED_DOMAIN" ]]; then
   exec "$NGROK_BIN" http "$MACHINE2_API_PORT" \
-    --url "$MACHINE2_API_PUBLIC_URL" \
+    --url "$NGROK_RESERVED_DOMAIN" \
     --log stdout \
     --log-format logfmt
 fi

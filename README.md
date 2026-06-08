@@ -17,6 +17,7 @@ VLLM-PD la he thong RAG va Coding Agent chay tren May 2. He thong hien tai phuc 
   - Gemma4 local tren May 1 qua Ollama/ngrok.
   - MiMo 2.5 Pro qua Xiaomi MiMo API.
   - OpenAI GPT-5.4 mini.
+- Session co file anh `.png/.jpg/.jpeg` tu dong route sang OpenAI Vision de doc noi dung anh.
 - Coding Agent: LangGraph + MCP tools, endpoint `/agent` duoc bao ve bang `AGENT_API_KEY`.
 
 ## Kien truc nhanh
@@ -37,7 +38,7 @@ May 2: FastAPI + React
         v
 May 2: LiteLLM, port 4000 noi bo
         |
-        |-- auto-model -> local Gemma4 -> fallback MiMo -> fallback OpenAI
+        |-- auto-model -> MiMo 2.5 Pro -> fallback OpenAI -> fallback local Gemma4
         |-- local-gemma -> Gemma4 local tren May 1
         |-- mimo-pro -> MiMo 2.5 Pro
         |-- openai-model -> GPT-5.4 mini
@@ -129,6 +130,7 @@ MACHINE2_API_HOST=0.0.0.0
 MACHINE2_API_PORT=8001
 MACHINE2_API_LOCAL_URL=http://localhost:8001
 MACHINE2_API_PUBLIC_URL=https://your-machine-2-ngrok-url
+NGROK_RESERVED_DOMAIN=
 
 QDRANT_HOST=localhost
 QDRANT_PORT=6333
@@ -196,17 +198,21 @@ May hien tai da bat `loginctl enable-linger`, nen user service co the chay sau k
 
 ### 4. Public bang ngrok
 
-Neu dung ngrok, expose port `8001`:
+Neu dung ngrok Free, de ngrok tu sinh URL random cho port `8001`:
 
 ```bash
 ngrok http 8001
 ```
 
-Sau do cap nhat:
+Sau do cap nhat URL duoc ngrok cap:
 
 ```env
 MACHINE2_API_PUBLIC_URL=https://your-ngrok-url
+NGROK_RESERVED_DOMAIN=
 ```
+
+Neu co reserved/static domain cua ngrok tra phi, dat `NGROK_RESERVED_DOMAIN`
+thay vi dua `MACHINE2_API_PUBLIC_URL` vao tham so `ngrok --url`.
 
 Chi can public port `8001`. Khong public LiteLLM port `4000` neu khong co ly do rieng.
 
@@ -287,11 +293,14 @@ LiteLLM aliases trong `litellm_config.yaml`:
 
 | UI/API option | LiteLLM model group | Backend |
 |---|---|---|
-| `auto` | `auto-model` | Gemma4 local, fallback MiMo, fallback OpenAI |
+| `auto` | `auto-model` | MiMo 2.5 Pro, fallback OpenAI, fallback Gemma4 local |
 | `local` | `local-gemma` | Ollama/Gemma4 tren May 1 |
 | `mimo` | `mimo-pro` | MiMo 2.5 Pro |
 | `openai` | `openai-model` | OpenAI GPT-5.4 mini |
 | Agent | `coding-model` | Gemma4 local, fallback OpenAI |
+
+Neu session co file anh `.png`, `.jpg` hoac `.jpeg`, backend bo qua lua chon
+model cua nguoi dung va route truy van sang `openai-model` de su dung Vision.
 
 ## Bao mat va gioi han
 
