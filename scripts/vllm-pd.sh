@@ -15,7 +15,7 @@ if [[ -f "$REPO_ROOT/.env" ]]; then
 fi
 
 API_PORT="${MACHINE2_API_PORT:-8001}"
-PUBLIC_URL="${MACHINE2_API_PUBLIC_URL:-}"
+NGROK_API_URL="${NGROK_API_URL:-http://localhost:4040/api/tunnels}"
 
 usage() {
   cat <<'EOF'
@@ -53,6 +53,27 @@ wait_for_url() {
   return 1
 }
 
+get_ngrok_url() {
+  local tries="${1:-30}"
+  local public_url=""
+
+  for ((i = 1; i <= tries; i++)); do
+    public_url="$(
+      curl -fsS "$NGROK_API_URL" 2>/dev/null \
+        | jq -r '.tunnels[]? | select(.proto == "https") | .public_url' \
+        | head -n 1 \
+        || true
+    )"
+    if [[ -n "$public_url" && "$public_url" != "null" ]]; then
+      printf '%s\n' "$public_url"
+      return 0
+    fi
+    sleep 2
+  done
+
+  return 1
+}
+
 start_system() {
   build_frontend_if_needed
 
@@ -68,15 +89,18 @@ start_system() {
   wait_for_url "LiteLLM" "http://localhost:4000/health/liveliness" 20 || true
   wait_for_url "Qdrant" "http://localhost:6333/healthz" 20 || true
 
-  if [[ -n "$PUBLIC_URL" ]]; then
-    wait_for_url "Public ngrok API" "${PUBLIC_URL%/}/health" 45 || true
+  local public_url=""
+  if public_url="$(get_ngrok_url 30)"; then
+    wait_for_url "Public ngrok API" "${public_url%/}/health" 30 || true
+  else
+    echo "Ngrok did not publish a URL in time." >&2
   fi
 
   echo
   echo "System started."
   echo "Local web:  http://localhost:${API_PORT}"
-  if [[ -n "$PUBLIC_URL" ]]; then
-    echo "Public web: ${PUBLIC_URL}"
+  if [[ -n "$public_url" ]]; then
+    echo "Public web: ${public_url}"
   fi
 }
 

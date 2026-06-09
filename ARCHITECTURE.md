@@ -83,7 +83,7 @@ Sơ đồ tổng thể:
 
 ```text
                          HTTPS, thường qua ngrok
-┌──────────────────┐    MACHINE2_API_PUBLIC_URL
+┌──────────────────┐    URL tạm do ngrok cấp lúc khởi động
 │ Người dùng/Máy 3 │ ─────────────────────────────────────────┐
 └──────────────────┘                                          │
                                                               ▼
@@ -641,7 +641,7 @@ Khuyến nghị tối thiểu khi public:
 | Ollama | `OLLAMA_API_BASE`, `OLLAMA_MODEL` |
 | Provider cloud | `OPENAI_API_KEY`, `MIMO_API_KEY`, `MIMO_API_BASE` |
 | LiteLLM | `LITELLM_URL`, `LITELLM_MASTER_KEY` |
-| API public | `MACHINE2_API_HOST`, `MACHINE2_API_PORT`, `MACHINE2_API_PUBLIC_URL`, `NGROK_RESERVED_DOMAIN` |
+| API public | `MACHINE2_API_HOST`, `MACHINE2_API_PORT`, `NGROK_RESERVED_DOMAIN` |
 | Qdrant | `QDRANT_HOST`, `QDRANT_PORT` |
 | Upload | `UPLOAD_DIR`, `MAX_UPLOAD_SIZE_MB` |
 | Rate limit | `QUERY_RATE_LIMIT_PER_MINUTE`, `UPLOAD_RATE_LIMIT_PER_HOUR` |

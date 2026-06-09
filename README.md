@@ -8,7 +8,7 @@ VLLM-PD la he thong RAG va Coding Agent chay tren May 2. He thong hien tai phuc 
 
 - Web cho nguoi dung: React SPA, duoc FastAPI phuc vu tai `/`.
 - API Gateway: FastAPI chay o port `8001`.
-- Public URL: dung `MACHINE2_API_PUBLIC_URL` trong `.env`, hien duoc expose bang ngrok port `8001`.
+- Public URL: ngrok expose port `8001`; script khoi dong tu lay va in URL moi ra terminal.
 - LiteLLM: chay noi bo o port `4000`, khong can public cho nguoi dung.
 - Qdrant: chay noi bo o port `6333`.
 - Embedding: `BAAI/bge-m3` chay tren May 2.
@@ -129,7 +129,6 @@ LITELLM_MASTER_KEY=sk-local
 MACHINE2_API_HOST=0.0.0.0
 MACHINE2_API_PORT=8001
 MACHINE2_API_LOCAL_URL=http://localhost:8001
-MACHINE2_API_PUBLIC_URL=https://your-machine-2-ngrok-url
 NGROK_RESERVED_DOMAIN=
 
 QDRANT_HOST=localhost
@@ -204,15 +203,8 @@ Neu dung ngrok Free, de ngrok tu sinh URL random cho port `8001`:
 ngrok http 8001
 ```
 
-Sau do cap nhat URL duoc ngrok cap:
-
-```env
-MACHINE2_API_PUBLIC_URL=https://your-ngrok-url
-NGROK_RESERVED_DOMAIN=
-```
-
 Neu co reserved/static domain cua ngrok tra phi, dat `NGROK_RESERVED_DOMAIN`
-thay vi dua `MACHINE2_API_PUBLIC_URL` vao tham so `ngrok --url`.
+de script dua domain nay vao tham so `ngrok --url`.
 
 Chi can public port `8001`. Khong public LiteLLM port `4000` neu khong co ly do rieng.
 
@@ -224,7 +216,7 @@ Mo:
 http://localhost:8001
 ```
 
-Hoac public URL trong `MACHINE2_API_PUBLIC_URL`.
+Hoac public URL duoc `./scripts/vllm-pd.sh start` in ra terminal.
 
 Nguoi dung co the:
 
@@ -334,7 +326,8 @@ conda run -n docmind npm run build
 curl -fsS http://localhost:8001/health | jq .
 
 # Public health
-PUBLIC_URL=$(sed -n 's/^MACHINE2_API_PUBLIC_URL=//p' ../.env)
+PUBLIC_URL=$(curl -fsS http://localhost:4040/api/tunnels \
+  | jq -r '.tunnels[] | select(.proto == "https") | .public_url')
 curl -fsS -H 'ngrok-skip-browser-warning: true' "$PUBLIC_URL/health" | jq .
 ```
 
@@ -393,7 +386,9 @@ journalctl --user -u vllm-pd-api -n 160 --no-pager
 
 ### Ngrok URL doi
 
-Cap nhat `MACHINE2_API_PUBLIC_URL` trong `.env`. Neu FastAPI chi doc bien nay de hien thi/ghi chu thi khong bat buoc restart, nhung client/test script can reload shell hoac source lai `.env`.
+Ngrok Free co the cap URL moi sau moi lan restart. Chay
+`./scripts/vllm-pd.sh restart`; script se tu lay URL hien tai tu ngrok API va
+in dong `Public web: ...` ra terminal. Khong can luu URL tam thoi trong `.env`.
 
 ## Ghi chu ve `docmind/`
 
