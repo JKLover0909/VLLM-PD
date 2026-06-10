@@ -29,9 +29,9 @@ Nguoi dung / May 3
         v
 May 2: FastAPI + React
         |
-        |-- Upload tai lieu -> Docling -> BGE-M3 -> Qdrant
+        |-- Hoi dap MKAC -> mkac_knowledge -> LiteLLM
         |
-        |-- Query RAG -> Qdrant -> LiteLLM
+        |-- Nghien cuu -> Upload -> Docling/OCR -> docmind_documents
         |
         |-- /agent -> LangGraph -> MCP filesystem/git -> LiteLLM
         |
@@ -63,6 +63,8 @@ Chi tiet hon xem [ARCHITECTURE.md](ARCHITECTURE.md).
 |       |-- graph.py         # LangGraph coding agent
 |       `-- mcp_client.py    # MCP filesystem/git tools
 |-- frontend/                # React + Vite web app
+|-- config/mkac_manifest.json
+|-- scripts/index_mkac_documents.py
 |-- docker-compose.yml       # Qdrant + LiteLLM
 |-- litellm_config.yaml      # Model aliases and fallback routing
 |-- requirements.txt         # Python dependencies for main system
@@ -138,6 +140,10 @@ NGROK_RESERVED_DOMAIN=
 
 QDRANT_HOST=localhost
 QDRANT_PORT=6333
+MKAC_COLLECTION_NAME=mkac_knowledge
+MKAC_SOURCE_DIR=documents/MKAC
+MKAC_MANIFEST_PATH=config/mkac_manifest.json
+MKAC_SCORE_THRESHOLD=0.38
 
 UPLOAD_DIR=./uploads
 MAX_UPLOAD_SIZE_MB=25
@@ -226,10 +232,30 @@ Hoac public URL duoc `./scripts/vllm-pd.sh start` in ra terminal.
 Nguoi dung co the:
 
 - Tao phien moi.
-- Upload PDF, DOCX, XLSX, PPTX, HTML, PNG, JPG, JPEG.
-- Chon mode `Hoi dap` hoac `Nghien cuu`.
-- Chon model `Tu dong`, `Gemma4 Local`, `MiMo 2.5 Pro`, `OpenAI`.
+- Chon `Hoi dap MKAC` de tra cuu kho tai lieu noi bo dung chung.
+- Chon `Nghien cuu` de upload PDF, DOCX, XLSX, PPTX, HTML, PNG, JPG, JPEG.
+- Chon model `Tu dong`, `Gemma4 Local`, `MiMo 2.5 Pro`, `OpenAI` hoac `Grok`.
 - Dat cau hoi va xem sources tu tai lieu.
+
+### Index kho tai lieu MKAC
+
+Tai lieu duoc quan ly boi `config/mkac_manifest.json` va index theo tung trang:
+
+```bash
+python scripts/index_mkac_documents.py --dry-run
+python scripts/index_mkac_documents.py
+```
+
+Chay lai mot file:
+
+```bash
+python scripts/index_mkac_documents.py \
+  --file "Quy định giờ làm thêm.pdf" \
+  --reindex
+```
+
+PDF scan duoc OCR theo trang, anh trang duoc luu trong `mkac_processed/` va
+khong commit Git.
 
 ## API endpoints
 
@@ -237,6 +263,7 @@ Nguoi dung co the:
 |---|---|---|
 | `GET` | `/health` | Kiem tra API va Qdrant config |
 | `GET` | `/models` | Danh sach model cho frontend |
+| `GET` | `/knowledge/mkac/status` | Trang thai kho tri thuc MKAC |
 | `POST` | `/sessions` | Tao session RAG |
 | `GET` | `/sessions/{session_id}` | Lay thong tin session |
 | `DELETE` | `/sessions/{session_id}` | Xoa session va file upload |
@@ -255,9 +282,9 @@ curl -fsS http://localhost:8001/query \
   -H 'Content-Type: application/json' \
   -d "{
     \"session_id\":\"$SESSION_ID\",
-    \"question\":\"Tai lieu nay noi ve gi?\",
-    \"model\":\"local\",
-    \"mode\":\"chat\",
+    \"question\":\"Quy dinh lam them gio tai MKAC nhu the nao?\",
+    \"model\":\"grok\",
+    \"mode\":\"mkac\",
     \"stream\":false
   }" | jq .
 ```
@@ -297,8 +324,13 @@ LiteLLM aliases trong `litellm_config.yaml`:
 | `grok` | `grok-model` | Grok 4.20 Reasoning qua Azure |
 | Agent | `coding-model` | Gemma4 local, fallback OpenAI |
 
-Neu session co file anh `.png`, `.jpg` hoac `.jpeg`, backend bo qua lua chon
-model cua nguoi dung, bao gom Grok, va route truy van sang `openai-model` de su dung Vision.
+Trong mode `mkac`, retrieval dung collection `mkac_knowledge`. Neu khong co
+chunk dat nguong, model tra loi bang kien thuc chung va response co
+`answer_scope="general"`; noi dung nay khong duoc coi la quy dinh MKAC.
+
+Neu cau hoi nhac den bang, hinh, so do hoac bieu do va chunk co anh trang,
+backend route sang `openai-model` de su dung Vision. Mode `research` van tu
+dong dung Vision cho file anh upload.
 
 ## Bao mat va gioi han
 

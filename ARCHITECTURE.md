@@ -17,11 +17,12 @@ VLLM-PD cung cấp hai nhóm chức năng độc lập nhưng dùng chung API Ga
 - Trích xuất nội dung bằng Docling.
 - Chia nội dung thành các đoạn nhỏ có chồng lấn.
 - Sinh vector embedding bằng `BAAI/bge-m3`.
-- Lưu và tìm kiếm vector trong Qdrant, có lọc theo `session_id`.
+- Lưu kho MKAC dùng chung trong collection `mkac_knowledge`.
+- Lưu tài liệu nghiên cứu theo phiên trong collection `docmind_documents`.
 - Tạo prompt RAG từ các đoạn liên quan.
 - Gọi mô hình ngôn ngữ thông qua LiteLLM.
 - Trả lời đồng bộ hoặc streaming bằng Server-Sent Events (SSE).
-- Cho phép chọn chế độ `Hỏi đáp` hoặc `Nghiên cứu`.
+- Cho phép chọn chế độ `Hỏi đáp MKAC` hoặc `Nghiên cứu`.
 - Cho phép chọn backend local, MiMo, OpenAI hoặc định tuyến tự động.
 
 ### 1.2. Coding Agent
@@ -39,7 +40,7 @@ Hệ thống hiện tuân theo các nguyên tắc chính sau:
 
 1. **Một cổng vào cho người dùng:** FastAPI phục vụ cả REST/SSE API và React SPA trên cổng `8001`.
 2. **Tách model vật lý khỏi ứng dụng:** mã nguồn chỉ gọi các tên model logic của LiteLLM.
-3. **Tách dữ liệu theo phiên:** mọi vector tài liệu có `session_id` và truy vấn Qdrant luôn lọc theo giá trị này.
+3. **Tách kho dữ liệu:** MKAC dùng khóa logic `session_id=mkac`; tài liệu nghiên cứu lọc theo UUID phiên.
 4. **Xử lý nặng ngoài event loop:** parse, embedding và thao tác Qdrant chính trong luồng upload/query được chuyển sang thread bằng `asyncio.to_thread`.
 5. **Định tuyến mô hình có fallback:** route web mặc định `auto-model` ưu tiên MiMo để tránh lỗi local generation bị cụt, còn `coding-model` giữ đường dự phòng qua OpenAI.
 6. **Giới hạn phạm vi công cụ Agent:** MCP filesystem và bộ công cụ fallback bị ràng buộc bởi `WORKSPACE_DIR`; Git MCP được gắn với `AGENT_REPOSITORY_DIR`.
@@ -188,6 +189,7 @@ Trách nhiệm:
 |---|---|---|---|
 | `GET` | `/health` | Trả trạng thái tiến trình và cấu hình Qdrant | Không |
 | `GET` | `/models` | Danh sách model cho UI | Không |
+| `GET` | `/knowledge/mkac/status` | Số tài liệu/chunk trong kho MKAC | Không |
 | `POST` | `/sessions` | Sinh UUID phiên mới | Không |
 | `GET` | `/sessions/{session_id}` | Tổng hợp file và chunk trong Qdrant | Không |
 | `DELETE` | `/sessions/{session_id}` | Xóa vector và thư mục upload của phiên | Không |
@@ -368,11 +370,14 @@ LiteLLM /v1/chat/completions
        └─ /query/stream -> SSE
 ```
 
-### 11.1. Chế độ `chat`
+### 11.1. Chế độ `mkac`
 
 - `top_k = 5`.
 - `max_tokens = 1024`.
-- Yêu cầu trả lời dựa trên tài liệu và trích dẫn nguồn.
+- Tìm trong collection `mkac_knowledge` với `session_id=mkac`.
+- Lọc phần đuôi kết quả có điểm thấp hơn nhiều so với kết quả tốt nhất.
+- Trả lời dựa trên tài liệu nội bộ và trích dẫn đúng trang.
+- Câu hỏi về bảng/hình/sơ đồ có thể đính kèm ảnh trang và route sang OpenAI Vision.
 
 ### 11.2. Chế độ `research`
 
@@ -385,15 +390,11 @@ LiteLLM /v1/chat/completions
   - Điểm chưa rõ.
   - Câu hỏi nghiên cứu tiếp theo.
 
-### 11.3. Khi không tìm thấy kết quả
+### 11.3. Khi không tìm thấy kết quả MKAC
 
-Pipeline vẫn gọi LLM với context:
-
-```text
-(Không tìm thấy đoạn tài liệu liên quan.)
-```
-
-System prompt yêu cầu mô hình nói rõ rằng không tìm thấy thông tin thay vì dùng kiến thức ngoài tài liệu.
+Pipeline gọi model không kèm context MKAC và bắt buộc mở đầu bằng thông báo
+không tìm thấy căn cứ nội bộ. Response/meta có `answer_scope=general`; sources
+rỗng để frontend phân biệt kiến thức chung với chính sách MKAC.
 
 ## 12. Giao thức SSE
 
@@ -410,7 +411,7 @@ Ví dụ:
 ```text
 data: {"type":"sources","sources":[...]}
 
-data: {"type":"meta","model":"auto-model","mode":"chat"}
+data: {"type":"meta","model":"auto-model","mode":"mkac","answer_scope":"mkac"}
 
 data: {"type":"token","content":"Nội"}
 
@@ -571,10 +572,10 @@ Chức năng chính:
 - Kiểm tra `/health` và tải `/models` khi khởi động.
 - Khôi phục UUID session từ `localStorage`.
 - Tạo phiên mới.
-- Chọn và upload nhiều file theo thứ tự.
-- Xóa file.
+- Trong chế độ `Hỏi đáp MKAC`, sử dụng kho tài liệu nội bộ dùng chung và không hiển thị upload.
+- Trong chế độ `Nghiên cứu`, chọn, upload và xóa nhiều file theo phiên.
 - Chọn model.
-- Chuyển giữa `Hỏi đáp` và `Nghiên cứu`.
+- Chuyển giữa `Hỏi đáp MKAC` và `Nghiên cứu`.
 - Gửi câu hỏi qua SSE.
 - Render Markdown.
 - Hiển thị nguồn ở panel desktop và trong từng tin nhắn.
@@ -723,7 +724,7 @@ curl -fsS \
   http://localhost:4000/v1/models
 ```
 
-### 18.6. Smoke test RAG
+### 18.6. Smoke test Hỏi đáp MKAC
 
 ```bash
 SESSION_ID=$(
@@ -731,20 +732,18 @@ SESSION_ID=$(
   jq -r .session_id
 )
 
-curl -fsS -X POST \
-  "http://localhost:8001/sessions/$SESSION_ID/upload" \
-  -F "file=@documents/test1.pdf" |
-  jq .
-
 curl -N -fsS http://localhost:8001/query/stream \
   -H 'Content-Type: application/json' \
   -d "{
     \"session_id\":\"$SESSION_ID\",
-    \"question\":\"Tóm tắt tài liệu này.\",
+    \"question\":\"Quy định nghỉ phép hàng năm của MKAC như thế nào?\",
     \"model\":\"auto\",
-    \"mode\":\"chat\"
+    \"mode\":\"mkac\"
   }"
 ```
+
+Để smoke test upload tài liệu ngoài, upload file vào session như trước rồi gửi
+query với `"mode":"research"`.
 
 ### 18.7. Smoke test Agent
 
@@ -830,9 +829,11 @@ systemctl --user restart vllm-pd-api
 
 Đây là hành vi hiện tại nếu session chưa có vector. Upload ít nhất một tài liệu rồi gọi lại `GET /sessions/{id}`.
 
-### 19.7. Nguồn luôn hiển thị trang 1
+### 19.7. OCR tài liệu MKAC
 
-Đây là giới hạn của parser hiện tại, không phải lỗi Qdrant hoặc frontend. Cần trích xuất provenance trang từ Docling và gán vào từng `TextChunk`.
+PDF được xử lý theo từng trang. Trang có text native dùng PyMuPDF; trang scan
+được render thành PNG rồi OCR bằng Docling. `TextChunk.page_number` giữ số
+trang thật và ảnh trang nằm trong `mkac_processed/pages`.
 
 ## 20. Khả năng mở rộng và điểm cải tiến
 

@@ -71,6 +71,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 # ──────────────────────────────────────────────
 embedder: Optional[Embedder] = None
 vector_store: Optional[VectorStore] = None
+mkac_vector_store: Optional[VectorStore] = None
 doc_parser: Optional[DocumentParser] = None
 rag_pipeline: Optional[RAGPipeline] = None
 rate_limit_events: Dict[str, Deque[float]] = defaultdict(deque)
@@ -146,12 +147,17 @@ async def lifespan(app: FastAPI):
     """
     Khởi tạo các mô hình và kết nối database khi ứng dụng bắt đầu.
     """
-    global embedder, vector_store, doc_parser, rag_pipeline
+    global embedder, vector_store, mkac_vector_store, doc_parser, rag_pipeline
 
     logger.info("🚀 Starting VLLM-PD API Gateway on Machine 2...")
     
     # Khởi tạo Vector DB trước
     vector_store = VectorStore(host=QDRANT_HOST, port=QDRANT_PORT)
+    mkac_vector_store = VectorStore(
+        host=QDRANT_HOST,
+        port=QDRANT_PORT,
+        collection_name=os.getenv("MKAC_COLLECTION_NAME", "mkac_knowledge"),
+    )
     
     # Khởi tạo local embedder (BGE-M3)
     embedder = Embedder()
@@ -162,7 +168,8 @@ async def lifespan(app: FastAPI):
     # Khởi tạo RAG Pipeline kết nối với LiteLLM
     rag_pipeline = RAGPipeline(
         embedder=embedder,
-        vector_store=vector_store
+        vector_store=vector_store,
+        mkac_vector_store=mkac_vector_store,
     )
 
     logger.info("✅ VLLM-PD API Gateway is fully operational.")
@@ -202,7 +209,7 @@ class QueryRequest(BaseModel):
     question: str
     stream: bool = True
     model: Literal["auto", "local", "mimo", "openai", "grok"] = "auto"
-    mode: Literal["chat", "research"] = "chat"
+    mode: Literal["mkac", "research"] = "mkac"
 
 
 class QueryResponse(BaseModel):
@@ -211,6 +218,7 @@ class QueryResponse(BaseModel):
     session_id: str
     model: str
     mode: str
+    answer_scope: str
 
 
 class SessionInfoResponse(BaseModel):
@@ -259,10 +267,34 @@ def message_text(message: Any) -> str:
 @app.get("/health")
 async def health():
     """Health check endpoint."""
+    mkac_info = (
+        mkac_vector_store.get_session_info("mkac")
+        if mkac_vector_store is not None
+        else None
+    )
     return {
         "status": "healthy",
         "qdrant_host": QDRANT_HOST,
         "qdrant_port": QDRANT_PORT,
+        "mkac_documents": (mkac_info or {}).get("num_files", 0),
+        "mkac_chunks": (mkac_info or {}).get("num_chunks", 0),
+    }
+
+
+@app.get("/knowledge/mkac/status")
+async def mkac_knowledge_status():
+    """Return the shared MKAC knowledge-base indexing status."""
+    info = (
+        mkac_vector_store.get_session_info("mkac")
+        if mkac_vector_store is not None
+        else None
+    )
+    return {
+        "ready": bool(info),
+        "collection": os.getenv("MKAC_COLLECTION_NAME", "mkac_knowledge"),
+        "num_documents": (info or {}).get("num_files", 0),
+        "num_chunks": (info or {}).get("num_chunks", 0),
+        "files": sorted((info or {}).get("files", [])),
     }
 
 
@@ -368,7 +400,11 @@ async def upload_document(
         logger.info(f"Uploaded file '{filename}' to session '{session_id}'")
 
         # Sử dụng Docling trích xuất cấu trúc văn bản
-        chunks = await asyncio.to_thread(doc_parser.process_file, file_path)
+        chunks = await asyncio.to_thread(
+            doc_parser.process_file,
+            file_path,
+            image_output_dir=session_dir / "_pages" / file_path.stem,
+        )
         if not chunks:
             raise HTTPException(
                 status_code=422,
@@ -411,7 +447,7 @@ async def query_documents(req: QueryRequest, request: Request):
     normalize_session_id(req.session_id)
 
     try:
-        answer, results, routed_model = await rag_pipeline.query(
+        answer, results, routed_model, answer_scope = await rag_pipeline.query(
             session_id=req.session_id,
             question=req.question,
             model=req.model,
@@ -423,6 +459,7 @@ async def query_documents(req: QueryRequest, request: Request):
             session_id=req.session_id,
             model=routed_model,
             mode=req.mode,
+            answer_scope=answer_scope,
         )
     except Exception as e:
         logger.error(f"RAG query error: {e}", exc_info=True)
@@ -440,17 +477,19 @@ async def query_stream(req: QueryRequest, request: Request):
     async def event_generator():
         import json
         try:
-            token_stream, results, routed_model = await rag_pipeline.query_stream(
+            token_stream, results, routed_model, answer_scope = (
+                await rag_pipeline.query_stream(
                 session_id=req.session_id,
                 question=req.question,
                 model=req.model,
                 mode=req.mode,
             )
+            )
             
             # Gửi nguồn trích dẫn (sources) trước
             sources = rag_pipeline.format_sources(results)
             yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
-            yield f"data: {json.dumps({'type': 'meta', 'model': routed_model, 'mode': req.mode})}\n\n"
+            yield f"data: {json.dumps({'type': 'meta', 'model': routed_model, 'mode': req.mode, 'answer_scope': answer_scope})}\n\n"
 
             # Stream từng token câu trả lời
             async for token in token_stream:
@@ -482,6 +521,9 @@ async def remove_file(session_id: str, filename: str):
     file_path = session_upload_dir(session_id) / safe_filename
     if file_path.exists():
         file_path.unlink()
+    page_dir = session_upload_dir(session_id) / "_pages" / Path(safe_filename).stem
+    if page_dir.exists():
+        shutil.rmtree(page_dir)
 
     return {
         "message": f"Successfully removed file '{safe_filename}' from session '{session_id}'",

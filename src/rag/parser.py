@@ -1,14 +1,12 @@
-"""
-src/rag/parser.py
------------------
-Xử lý tài liệu đa định dạng (PDF, DOCX, XLSX, hình ảnh) sử dụng Docling (IBM).
-Đầu ra là danh sách các TextChunk có giữ nguyên cấu trúc Markdown (đặc biệt là bảng biểu).
-"""
+"""Document parsing with page-aware PDF OCR and source metadata."""
 
 import logging
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List
+
+import fitz
 from docling.document_converter import DocumentConverter
 
 logger = logging.getLogger(__name__)
@@ -18,138 +16,226 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 
 @dataclass
 class TextChunk:
-    """Đoạn văn bản sau khi được trích xuất và phân nhỏ (chunked)."""
     text: str
     source_file: str
-    page_number: int          # 1-indexed (bắt đầu từ 1)
+    page_number: int
     chunk_index: int
-    content_type: str         # "text" | "table" | "mixed"
+    content_type: str
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __repr__(self):
         return (
-            f"TextChunk(file='{self.source_file}', "
-            f"page={self.page_number}, "
-            f"type='{self.content_type}', "
-            f"chars={len(self.text)})"
+            f"TextChunk(file='{self.source_file}', page={self.page_number}, "
+            f"type='{self.content_type}', chars={len(self.text)})"
         )
 
 
 class DocumentParser:
-    """
-    Sử dụng Docling để chuyển đổi tài liệu sang cấu trúc Markdown,
-    sau đó phân đoạn (chunking) một cách thông minh để giữ ngữ cảnh.
-    """
+    """Parse supported documents while preserving PDF page provenance."""
 
-    CHUNK_SIZE = 1000  # Ký tự (khoảng 200-250 từ)
-    CHUNK_OVERLAP = 200
+    CHUNK_SIZE = 1400
+    CHUNK_OVERLAP = 220
+    MIN_NATIVE_PAGE_CHARS = 80
+    MIN_CHUNK_CHARS = 20
 
     def __init__(self):
         logger.info("Initializing Docling DocumentConverter...")
-        # Docling tự động tải các mô hình layout và TableFormer trong lần chạy đầu tiên
         self.converter = DocumentConverter()
         logger.info("Docling DocumentConverter initialized.")
 
-    def process_file(self, file_path: str | Path) -> List[TextChunk]:
-        """
-        Xử lý tệp bất kỳ hỗ trợ bởi Docling và trả về danh sách TextChunk.
-        Hỗ trợ: PDF, DOCX, XLSX, PPTX, HTML, PNG, JPG, JPEG, v.v.
-        """
+    def process_file(
+        self,
+        file_path: str | Path,
+        *,
+        image_output_dir: str | Path | None = None,
+        document_metadata: Dict[str, Any] | None = None,
+    ) -> List[TextChunk]:
         path = Path(file_path)
         if not path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
-        logger.info(f"Converting document '{path.name}' using Docling...")
-        try:
-            conversion_result = self.converter.convert(path)
-            # Trích xuất dạng markdown
-            doc = conversion_result.document
-            markdown_content = doc.export_to_markdown()
-        except Exception as e:
-            logger.error(f"Error converting document {path.name} with Docling: {e}")
-            raise e
+        metadata = dict(document_metadata or {})
+        suffix = path.suffix.lower()
+        if suffix == ".pdf":
+            return self._process_pdf(path, image_output_dir, metadata)
+        return self._process_with_docling(path, metadata)
 
-        # Tiến hành phân chunk dựa trên nội dung Markdown
-        chunks = self._split_markdown(markdown_content, path.name, doc)
+    def _process_pdf(
+        self,
+        path: Path,
+        image_output_dir: str | Path | None,
+        document_metadata: Dict[str, Any],
+    ) -> List[TextChunk]:
+        output_dir = Path(image_output_dir) if image_output_dir else None
+        if output_dir:
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+        chunks: List[TextChunk] = []
+        chunk_index = 0
+        with fitz.open(path) as pdf:
+            for page_index, page in enumerate(pdf):
+                page_number = page_index + 1
+                native_text = page.get_text("text").strip()
+                use_ocr = len(native_text) < self.MIN_NATIVE_PAGE_CHARS
+                image_path = None
+
+                if use_ocr or output_dir:
+                    target = (
+                        output_dir / f"page-{page_number:04d}.png"
+                        if output_dir
+                        else None
+                    )
+                    page_image = self._render_pdf_page(page, target)
+                    if target:
+                        image_path = str(target.resolve())
+                    if use_ocr:
+                        native_text = self._ocr_image(page_image)
+                    if not target:
+                        page_image.unlink(missing_ok=True)
+
+                page_metadata = {
+                    **document_metadata,
+                    "source": "docling-ocr" if use_ocr else "pymupdf",
+                    "ocr_method": "docling" if use_ocr else "native",
+                    "ocr_chars": len(native_text),
+                }
+                if image_path:
+                    page_metadata["image_path"] = image_path
+
+                page_chunks = self._split_text(
+                    native_text,
+                    filename=path.name,
+                    page_number=page_number,
+                    start_index=chunk_index,
+                    metadata=page_metadata,
+                )
+                chunks.extend(page_chunks)
+                chunk_index += len(page_chunks)
+
+        logger.info(
+            "Document '%s' processed into %s page-aware chunks.",
+            path.name,
+            len(chunks),
+        )
+        return chunks
+
+    def _process_with_docling(
+        self,
+        path: Path,
+        document_metadata: Dict[str, Any],
+    ) -> List[TextChunk]:
+        try:
+            result = self.converter.convert(path)
+            markdown = result.document.export_to_markdown()
+        except Exception:
+            logger.exception("Error converting document %s with Docling", path.name)
+            raise
+
+        metadata = {**document_metadata, "source": "docling"}
+        chunks = self._split_text(
+            markdown,
+            filename=path.name,
+            page_number=1,
+            start_index=0,
+            metadata=metadata,
+        )
         if path.suffix.lower() in IMAGE_EXTENSIONS:
             for chunk in chunks:
                 chunk.content_type = "image"
-                chunk.metadata.update(
-                    {
-                        "source": "docling",
-                        "image_path": str(path.resolve()),
-                    }
-                )
-        logger.info(f"Document '{path.name}' processed into {len(chunks)} chunks.")
+                chunk.metadata["image_path"] = str(path.resolve())
         return chunks
 
-    def _split_markdown(self, markdown_text: str, filename: str, doc: Any) -> List[TextChunk]:
-        """
-        Phân mảnh nội dung Markdown thành các khối (chunks) hợp lý.
-        Nếu gặp bảng biểu hoặc khối dữ liệu lớn, cố gắng giữ nguyên trong cùng một chunk.
-        """
-        # Trích xuất các phân đoạn trang nếu có
-        # Đối với các tài liệu nhiều trang như PDF, Docling lưu trữ vị trí trang
-        # Ta tạm thời chia văn bản thành các dòng và nhóm lại
-        lines = markdown_text.split("\n")
-        
-        chunks = []
-        current_chunk_lines = []
-        current_char_count = 0
-        chunk_idx = 0
-        current_page = 1
+    def _render_pdf_page(self, page: fitz.Page, target: Path | None) -> Path:
+        if target is None:
+            handle = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            handle.close()
+            target = Path(handle.name)
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), alpha=False)
+        pixmap.save(target)
+        return target
 
-        # Cố gắng phát hiện số trang bằng các thẻ trang hoặc phân trang từ văn bản nếu có.
-        # Hoặc chia đều. Đối với Docling, ta cũng có thể truy xuất trang thông qua phần tử (elements).
-        # Cách đơn giản nhưng hiệu quả là parse theo dòng và kiểm soát độ dài.
-        
+    def _ocr_image(self, image_path: Path) -> str:
+        try:
+            result = self.converter.convert(image_path)
+            return result.document.export_to_markdown().strip()
+        except Exception:
+            logger.exception("OCR failed for %s", image_path)
+            return ""
+
+    def _split_text(
+        self,
+        text: str,
+        *,
+        filename: str,
+        page_number: int,
+        start_index: int,
+        metadata: Dict[str, Any],
+    ) -> List[TextChunk]:
+        cleaned = text.strip()
+        if len(cleaned) < self.MIN_CHUNK_CHARS:
+            return []
+
+        lines = cleaned.splitlines()
+        chunks: List[TextChunk] = []
+        current: List[str] = []
+        current_size = 0
+        chunk_index = start_index
+
         for line in lines:
-            line_len = len(line)
-            
-            # Cố gắng cập nhật trang hiện tại nếu thấy chỉ báo trang hoặc giữ mặc định
-            # (Thường trong markdown của Docling không tự sinh chỉ báo trang rõ ràng trừ khi ta tìm trong cấu trúc json)
-            # Tạm thời để page = 1 và cập nhật nếu cần hoặc xử lý đơn giản.
-            
-            if current_char_count + line_len > self.CHUNK_SIZE and current_chunk_lines:
-                chunk_text = "\n".join(current_chunk_lines)
-                
-                # Xác định xem chunk này chứa bảng biểu hay không
-                content_type = "text"
-                if "|" in chunk_text and "-|-" in chunk_text or "---|" in chunk_text:
-                    content_type = "table"
+            if current and current_size + len(line) + 1 > self.CHUNK_SIZE:
+                chunk_text = "\n".join(current).strip()
+                if len(chunk_text) >= self.MIN_CHUNK_CHARS:
+                    chunks.append(
+                        self._make_chunk(
+                            chunk_text,
+                            filename,
+                            page_number,
+                            chunk_index,
+                            metadata,
+                        )
+                    )
+                    chunk_index += 1
 
-                chunks.append(TextChunk(
-                    text=chunk_text,
-                    source_file=filename,
-                    page_number=current_page,
-                    chunk_index=chunk_idx,
-                    content_type=content_type,
-                    metadata={"source": "docling"}
-                ))
-                chunk_idx += 1
-                
-                # Giữ overlap: lấy khoảng 20% số dòng cuối cùng
-                overlap_lines_count = max(1, len(current_chunk_lines) // 5)
-                current_chunk_lines = current_chunk_lines[-overlap_lines_count:]
-                current_char_count = sum(len(l) for l in current_chunk_lines)
-            
-            current_chunk_lines.append(line)
-            current_char_count += line_len + 1  # Cộng thêm 1 cho ký tự newline
+                overlap: List[str] = []
+                overlap_size = 0
+                for previous in reversed(current):
+                    if overlap_size + len(previous) > self.CHUNK_OVERLAP:
+                        break
+                    overlap.insert(0, previous)
+                    overlap_size += len(previous) + 1
+                current = overlap
+                current_size = overlap_size
 
-        # Chunk cuối cùng
-        if current_chunk_lines:
-            chunk_text = "\n".join(current_chunk_lines)
-            content_type = "text"
-            if "|" in chunk_text and "-|-" in chunk_text or "---|" in chunk_text:
-                content_type = "table"
-                
-            chunks.append(TextChunk(
-                text=chunk_text,
-                source_file=filename,
-                page_number=current_page,
-                chunk_index=chunk_idx,
-                content_type=content_type,
-                metadata={"source": "docling"}
-            ))
+            current.append(line)
+            current_size += len(line) + 1
 
+        final_text = "\n".join(current).strip()
+        if len(final_text) >= self.MIN_CHUNK_CHARS:
+            chunks.append(
+                self._make_chunk(
+                    final_text,
+                    filename,
+                    page_number,
+                    chunk_index,
+                    metadata,
+                )
+            )
         return chunks
+
+    @staticmethod
+    def _make_chunk(
+        text: str,
+        filename: str,
+        page_number: int,
+        chunk_index: int,
+        metadata: Dict[str, Any],
+    ) -> TextChunk:
+        is_table = "|" in text and ("---|" in text or "|---" in text)
+        return TextChunk(
+            text=text,
+            source_file=filename,
+            page_number=page_number,
+            chunk_index=chunk_index,
+            content_type="table" if is_table else "text",
+            metadata=dict(metadata),
+        )

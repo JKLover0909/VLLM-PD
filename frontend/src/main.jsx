@@ -32,10 +32,10 @@ import {
 import "./styles.css";
 
 const QUICK_PROMPTS = {
-  chat: [
-    "Tóm tắt tài liệu theo các ý chính",
-    "Liệt kê các số liệu và kết luận quan trọng",
-    "Thông tin nào trong tài liệu còn chưa rõ?",
+  mkac: [
+    "Quy định làm thêm giờ tại MKAC như thế nào?",
+    "Chế độ công tác trong nước được quy định ra sao?",
+    "Chế độ thăm hỏi dành cho nhân viên gồm những gì?",
   ],
   research: [
     "Lập báo cáo nghiên cứu tổng hợp từ các tài liệu",
@@ -45,10 +45,10 @@ const QUICK_PROMPTS = {
 };
 
 const MODE_OPTIONS = {
-  chat: {
-    label: "Hỏi đáp",
-    title: "Hỏi đáp tài liệu",
-    icon: MessageSquare,
+  mkac: {
+    label: "Hỏi đáp MKAC",
+    title: "Hỏi đáp về MKAC",
+    icon: Database,
   },
   research: {
     label: "Nghiên cứu",
@@ -156,8 +156,14 @@ function App() {
   const [uploadSummary, setUploadSummary] = useState(null);
   const [messages, setMessages] = useState([]);
   const [models, setModels] = useState([]);
+  const [mkacStatus, setMkacStatus] = useState({
+    ready: false,
+    num_documents: 0,
+    num_chunks: 0,
+    files: [],
+  });
   const [model, setModel] = useState("auto");
-  const [mode, setMode] = useState("chat");
+  const [mode, setMode] = useState("mkac");
   const [question, setQuestion] = useState("");
   const [sources, setSources] = useState([]);
   const [health, setHealth] = useState("checking");
@@ -190,13 +196,16 @@ function App() {
   useEffect(() => {
     async function bootstrap() {
       try {
-        const [healthResponse, modelResponse] = await Promise.all([
+        const [healthResponse, modelResponse, mkacResponse] = await Promise.all([
           api("/health"),
           api("/models"),
+          api("/knowledge/mkac/status"),
         ]);
         await healthResponse.json();
         const modelData = await modelResponse.json();
+        const mkacData = await mkacResponse.json();
         setModels(modelData.models || []);
+        setMkacStatus(mkacData);
         setModel(modelData.default || "auto");
         setHealth("online");
 
@@ -321,6 +330,7 @@ function App() {
         content: "",
         model: selectedModel?.name || model,
         mode,
+        answerScope: mode === "mkac" ? "mkac" : "research",
         sources: [],
       },
     ]);
@@ -354,6 +364,7 @@ function App() {
                       ...item,
                       model: event.model || item.model,
                       mode: event.mode || item.mode,
+                      answerScope: event.answer_scope || item.answerScope,
                     }
                   : item,
               ),
@@ -457,38 +468,42 @@ function App() {
 
         <section className="sidebar-section">
           <div className="section-heading">
-            <span>Tài liệu</span>
-            <span className="count-badge">{files.length}</span>
+            <span>{mode === "mkac" ? "Kho tri thức MKAC" : "Tài liệu nghiên cứu"}</span>
+            <span className="count-badge">
+              {mode === "mkac" ? mkacStatus.num_documents : files.length}
+            </span>
           </div>
 
-          <input
-            ref={fileInputRef}
-            className="hidden-input"
-            type="file"
-            multiple
-            accept=".pdf,.docx,.xlsx,.pptx,.html,.png,.jpg,.jpeg"
-            onChange={(event) => addPendingFiles(event.target.files)}
-          />
+          {mode === "research" ? (
+            <>
+              <input
+                ref={fileInputRef}
+                className="hidden-input"
+                type="file"
+                multiple
+                accept=".pdf,.docx,.xlsx,.pptx,.html,.png,.jpg,.jpeg"
+                onChange={(event) => addPendingFiles(event.target.files)}
+              />
 
-          <button
-            className={`upload-zone ${dragActive ? "dragging" : ""}`}
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            onDragEnter={(event) => {
-              event.preventDefault();
-              setDragActive(true);
-            }}
-            onDragOver={(event) => event.preventDefault()}
-            onDragLeave={() => setDragActive(false)}
-            onDrop={onDrop}
-          >
-            <UploadCloud size={23} />
-            <span>Chọn tài liệu</span>
-            <small>PDF, Office, HTML, PNG/JPG</small>
-          </button>
+              <button
+                className={`upload-zone ${dragActive ? "dragging" : ""}`}
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                onDragEnter={(event) => {
+                  event.preventDefault();
+                  setDragActive(true);
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDragLeave={() => setDragActive(false)}
+                onDrop={onDrop}
+              >
+                <UploadCloud size={23} />
+                <span>Chọn tài liệu</span>
+                <small>PDF, Office, HTML, PNG/JPG</small>
+              </button>
 
-          {pendingFiles.length > 0 && (
-            <div className="pending-panel">
+              {pendingFiles.length > 0 && (
+                <div className="pending-panel">
               <div className="pending-header">
                 <span>{pendingFiles.length} tệp</span>
                 <span>{formatBytes(pendingTotalSize)}</span>
@@ -521,21 +536,21 @@ function App() {
                   ? `Đang index ${uploadProgress.done}/${uploadProgress.total}`
                   : "Index tài liệu"}
               </button>
-            </div>
-          )}
+                </div>
+              )}
 
-          {uploadSummary && (
-            <div className="upload-summary">
+              {uploadSummary && (
+                <div className="upload-summary">
               <CheckCircle2 size={15} />
               <span>
                 Đã index {uploadSummary.files} tệp, {uploadSummary.chunks} đoạn
               </span>
-            </div>
-          )}
+                </div>
+              )}
 
-          <div className="file-list">
-            {files.map((filename) => (
-              <div className="file-item" key={filename}>
+              <div className="file-list">
+                {files.map((filename) => (
+                  <div className="file-item" key={filename}>
                 <FileText size={17} />
                 <span title={filename}>{filename}</span>
                 <button
@@ -546,15 +561,32 @@ function App() {
                 >
                   <Trash2 size={15} />
                 </button>
-              </div>
-            ))}
-            {files.length === 0 && (
-              <div className="empty-files">
+                  </div>
+                ))}
+                {files.length === 0 && (
+                  <div className="empty-files">
                 <FileText size={20} />
                 <span>Chưa có tài liệu</span>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </>
+          ) : (
+            <div className="file-list">
+              {mkacStatus.files.map((filename) => (
+                <div className="file-item" key={filename}>
+                  <FileText size={17} />
+                  <span title={filename}>{filename}</span>
+                </div>
+              ))}
+              {!mkacStatus.ready && (
+                <div className="empty-files">
+                  <AlertCircle size={20} />
+                  <span>Kho MKAC chưa được index</span>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         <div className="sidebar-footer">
@@ -577,7 +609,11 @@ function App() {
             </div>
             <div>
               <strong>{currentMode.title}</strong>
-              <span>{files.length} tài liệu trong phiên</span>
+              <span>
+                {mode === "mkac"
+                  ? `${mkacStatus.num_documents} tài liệu nội bộ`
+                  : `${files.length} tài liệu trong phiên`}
+              </span>
             </div>
           </div>
 
@@ -633,9 +669,11 @@ function App() {
                     </div>
                     <h1>{currentMode.title}</h1>
                     <p>
-                      {files.length > 0
-                        ? "Sẵn sàng truy vấn tài liệu đã index trong phiên này."
-                        : "Tải tài liệu lên hoặc hỏi trực tiếp để bắt đầu phiên làm việc."}
+                      {mode === "mkac"
+                        ? "Tra cứu quy định nội bộ MKAC; câu hỏi ngoài kho sẽ dùng kiến thức chung."
+                        : files.length > 0
+                          ? "Sẵn sàng nghiên cứu tài liệu đã index trong phiên này."
+                          : "Tải tài liệu lên để bắt đầu nghiên cứu."}
                     </p>
                   </div>
 
@@ -655,8 +693,10 @@ function App() {
                   <div className="empty-metrics">
                     <div>
                       <Layers3 size={16} />
-                      <strong>{files.length}</strong>
-                      <span>Tài liệu</span>
+                      <strong>
+                        {mode === "mkac" ? mkacStatus.num_documents : files.length}
+                      </strong>
+                      <span>{mode === "mkac" ? "Tài liệu MKAC" : "Tài liệu"}</span>
                     </div>
                     <div>
                       <Bot size={16} />
@@ -682,7 +722,11 @@ function App() {
                           <div className="message-meta">
                             <span>{message.model}</span>
                             <span>
-                              {message.mode === "research" ? "Nghiên cứu" : "Hỏi đáp"}
+                              {message.answerScope === "general"
+                                ? "Kiến thức chung"
+                                : message.mode === "research"
+                                  ? "Nghiên cứu"
+                                  : "Nguồn MKAC"}
                             </span>
                           </div>
                         )}
@@ -740,7 +784,7 @@ function App() {
                 placeholder={
                   mode === "research"
                     ? "Nhập chủ đề nghiên cứu..."
-                    : "Đặt câu hỏi về tài liệu..."
+                    : "Đặt câu hỏi về MKAC..."
                 }
                 disabled={busy}
               />

@@ -22,5 +22,13 @@
     "total_runs": 1,
     "pass_rate": 1.0,
     "average_latency_seconds": 1.723
+  },
+  {
+    "provider": "grok",
+    "model": "grok-model",
+    "passed_runs": 1,
+    "total_runs": 1,
+    "pass_rate": 1.0,
+    "average_latency_seconds": 2.709
   }
 ]

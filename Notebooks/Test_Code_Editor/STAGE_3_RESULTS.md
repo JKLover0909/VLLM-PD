@@ -21,6 +21,10 @@ Validator thực hiện:
 8. Chạy `pytest` trong bản sao tạm.
 9. So hash workspace thật trước và sau.
 
+Kiểm tra zero guard chấp nhận các biểu thức tương đương `if b == 0`,
+`if b == 0.0` và `if not b`; tính đúng đắn cuối cùng vẫn được xác nhận bằng
+toàn bộ test trong bản sao tạm.
+
 `git apply --recount` được sử dụng để sửa lỗi đếm số dòng hunk của LLM. Context
 code vẫn phải khớp chính xác; validator không tự sửa nội dung patch.
 

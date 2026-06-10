@@ -1,0 +1,101 @@
+{
+  "knowledge_base": "MKAC",
+  "documents": [
+    {
+      "filename": "12. Quy trình đặt xe ô tô, grab, taxi update 20231218.pdf",
+      "title": "Quy trình đặt xe ô tô, Grab, Taxi",
+      "category": "transport",
+      "effective_date": "2023-12-18",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "14. Thông báo về việc bố trí nghỉ phép hàng năm.pdf",
+      "title": "Thông báo bố trí nghỉ phép hàng năm",
+      "category": "leave",
+      "effective_date": null,
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "19. Chế độ thăm hỏi update 102023.pdf",
+      "title": "Chế độ thăm hỏi trong nội bộ công ty",
+      "category": "employee_welfare",
+      "effective_date": "2023-10-01",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "21. [MKAC] Cập nhật Quy chế đối với CBNV đi làm việc tại nước ngoài áp dụng từ 1.7.2024.pdf",
+      "title": "Quy chế CBNV đi làm việc tại nước ngoài",
+      "category": "overseas_assignment",
+      "effective_date": "2024-07-01",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "3.3.QĐịnh tính lương OT và chuyên cần của MKAC.pdf",
+      "title": "Quy định tính OT và chuyên cần",
+      "category": "working_time",
+      "effective_date": null,
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "4. Noi quy lao dong_MKAC 12.7.2021.pdf",
+      "title": "Nội quy lao động MKAC",
+      "category": "labor_rules",
+      "effective_date": "2021-07-12",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "5. QĐ đăng ký thời gian làm việc trong tháng thay thế QĐ số 73 ký ngày 25.3.2020.pdf",
+      "title": "Quy định đăng ký thời gian làm việc trong tháng",
+      "category": "working_time",
+      "effective_date": null,
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "Quy chế quản lý, sử dụng máy tính và mạng máy tính.pdf",
+      "title": "Quy chế quản lý, sử dụng máy tính và mạng máy tính",
+      "category": "it_policy",
+      "effective_date": null,
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "Quy dinh do TUOI LAO DONG BO - ME.docx",
+      "title": "Quy định độ tuổi lao động và nghỉ hưu",
+      "category": "retirement",
+      "effective_date": "2021-01-01",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "Quy định công tác nước ngoài.pdf",
+      "title": "Quy định công tác nước ngoài",
+      "category": "business_travel",
+      "effective_date": null,
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "Quy định công tác trong nước.pdf",
+      "title": "Quy định công tác trong nước",
+      "category": "business_travel",
+      "effective_date": null,
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "Quy định giờ làm thêm.pdf",
+      "title": "Quy định giờ làm thêm",
+      "category": "working_time",
+      "effective_date": null,
+      "status": "active",
+      "access_level": "internal"
+    }
+  ]
+}

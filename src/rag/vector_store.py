@@ -30,11 +30,23 @@ class VectorStore:
     COLLECTION_NAME = "docmind_documents"
     EMBEDDING_DIM = 1024  # Kích thước vector của BGE-M3
 
-    def __init__(self, host: str = "localhost", port: int = 6333):
+    def __init__(
+        self,
+        host: str = "localhost",
+        port: int = 6333,
+        collection_name: str | None = None,
+    ):
         """
         Khởi tạo kết nối tới Qdrant Server.
         """
-        logger.info(f"Connecting to Qdrant at {host}:{port}...")
+        if collection_name:
+            self.COLLECTION_NAME = collection_name
+        logger.info(
+            "Connecting to Qdrant at %s:%s (collection=%s)...",
+            host,
+            port,
+            self.COLLECTION_NAME,
+        )
         self.client = QdrantClient(host=host, port=port)
         self._ensure_collection_exists()
 
@@ -59,6 +71,11 @@ class VectorStore:
                 self.client.create_payload_index(
                     collection_name=self.COLLECTION_NAME,
                     field_name="session_id",
+                    field_schema=models.PayloadSchemaType.KEYWORD,
+                )
+                self.client.create_payload_index(
+                    collection_name=self.COLLECTION_NAME,
+                    field_name="source_file",
                     field_schema=models.PayloadSchemaType.KEYWORD,
                 )
                 logger.info(f"Collection '{self.COLLECTION_NAME}' initialized successfully.")
@@ -251,3 +268,35 @@ class VectorStore:
         except Exception as e:
             logger.error(f"Error getting session info from Qdrant: {e}")
             return None
+
+    def get_file_metadata(self, session_id: str) -> Dict[str, Dict[str, Any]]:
+        """Return one metadata payload per indexed source file."""
+        result: Dict[str, Dict[str, Any]] = {}
+        offset = None
+        try:
+            while True:
+                points, offset = self.client.scroll(
+                    collection_name=self.COLLECTION_NAME,
+                    scroll_filter=models.Filter(
+                        must=[
+                            models.FieldCondition(
+                                key="session_id",
+                                match=models.MatchValue(value=session_id),
+                            )
+                        ]
+                    ),
+                    limit=256,
+                    offset=offset,
+                    with_payload=True,
+                    with_vectors=False,
+                )
+                for point in points:
+                    payload = point.payload or {}
+                    filename = payload.get("source_file")
+                    if filename and filename not in result:
+                        result[filename] = payload.get("metadata", {})
+                if offset is None:
+                    break
+        except Exception as exc:
+            logger.error("Error reading indexed file metadata: %s", exc)
+        return result

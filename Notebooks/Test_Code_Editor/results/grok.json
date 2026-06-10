@@ -1,0 +1,47 @@
+[
+  {
+    "passed": true,
+    "requested_model": "grok-model",
+    "actual_model": "grok-model",
+    "http_status": 200,
+    "latency_seconds": 2.709,
+    "finish_reason": "tool_calls",
+    "assistant_content": "",
+    "tool_call_count": 1,
+    "tool_name": "get_file_metadata",
+    "tool_arguments_raw": "{\"file_path\":\"calculator.py\"}",
+    "tool_arguments": {
+      "file_path": "calculator.py"
+    },
+    "arguments_error": null,
+    "checks": {
+      "has_tool_calls": true,
+      "exactly_one_tool_call": true,
+      "correct_tool_name": true,
+      "arguments_are_valid_json": true,
+      "has_file_path": true,
+      "targets_calculator_py": true
+    },
+    "usage": {
+      "completion_tokens": 14,
+      "prompt_tokens": 165,
+      "total_tokens": 406,
+      "completion_tokens_details": {
+        "accepted_prediction_tokens": 0,
+        "audio_tokens": 0,
+        "reasoning_tokens": 227,
+        "rejected_prediction_tokens": 0
+      },
+      "prompt_tokens_details": {
+        "audio_tokens": 0,
+        "cached_tokens": 64,
+        "text_tokens": 165,
+        "image_tokens": 0
+      },
+      "audio_prompt_tokens": 0,
+      "num_sources_used": 0
+    },
+    "run_number": 1,
+    "tested_at": "2026-06-10T08:48:51.853113+00:00"
+  }
+]

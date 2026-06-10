@@ -41,5 +41,19 @@
       "search_text",
       "read_file"
     ]
+  },
+  {
+    "provider": "grok",
+    "model": "grok-model",
+    "passed": true,
+    "inspection_iterations": 5,
+    "inspection_latency": 10.192,
+    "refusal_latency": 8.34,
+    "tools": [
+      "list_directory",
+      "read_file",
+      "search_text",
+      "read_file"
+    ]
   }
 ]

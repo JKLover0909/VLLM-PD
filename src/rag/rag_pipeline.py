@@ -18,15 +18,22 @@ from src.rag.vector_store import VectorStore, SearchResult
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """Bạn là trợ lý phân tích tài liệu thông minh, hỗ trợ cả tiếng Việt và tiếng Anh.
+MKAC_SYSTEM_PROMPT = """Bạn là trợ lý hỏi đáp nội bộ về Công ty MKAC.
 
 Nguyên tắc trả lời:
-1. Chỉ trả lời dựa trên các đoạn thông tin từ tài liệu và hình ảnh (nếu có) được cung cấp.
+1. Chỉ trả lời dựa trên các đoạn tài liệu MKAC và hình ảnh (nếu có) được cung cấp.
 2. Trả lời bằng ngôn ngữ của câu hỏi (nếu hỏi bằng tiếng Việt -> trả lời tiếng Việt, hỏi tiếng Anh -> trả lời tiếng Anh).
 3. Luôn trích dẫn tên tệp và số trang ở cuối phần thông tin liên quan, ví dụ: [Nguồn: file_name.pdf, trang 3].
-4. Nếu thông tin không xuất hiện trong tài liệu, hãy nói rõ: "Tôi không tìm thấy thông tin này trong tài liệu được cung cấp."
-5. Trình bày thông tin rõ ràng, có cấu trúc, sử dụng gạch đầu dòng khi cần thiết.
-6. Tuyệt đối không tự suy diễn hoặc bịa đặt thông tin nằm ngoài tài liệu."""
+4. Không biến kiến thức chung thành quy định nội bộ MKAC.
+5. Nếu các đoạn trích không đủ để kết luận, phải nói rõ giới hạn đó.
+6. Trình bày rõ ràng, có cấu trúc và không bịa đặt."""
+
+GENERAL_SYSTEM_PROMPT = """Bạn là trợ lý kiến thức chung, hỗ trợ tiếng Việt và tiếng Anh.
+
+Không tìm thấy căn cứ phù hợp trong kho tài liệu nội bộ MKAC cho câu hỏi này.
+Hãy trả lời bằng kiến thức chung hữu ích và chính xác. Bắt đầu bằng câu:
+"Không tìm thấy nội dung này trong tài liệu MKAC; dưới đây là thông tin tham khảo chung."
+Không được mô tả thông tin tham khảo như chính sách hoặc quy định chính thức của MKAC."""
 
 RESEARCH_SYSTEM_PROMPT = """Bạn là chuyên gia nghiên cứu tài liệu, hỗ trợ cả tiếng Việt và tiếng Anh.
 
@@ -53,7 +60,7 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 def build_rag_prompt(
     question: str,
     search_results: List[SearchResult],
-    mode: str = "chat",
+    mode: str = "mkac",
     image_paths: List[Path] | None = None,
 ) -> List[Dict[str, Any]]:
     """
@@ -73,9 +80,9 @@ def build_rag_prompt(
         context_text = "\n\n".join(context_parts)
 
     instruction = (
-        "Hãy lập báo cáo nghiên cứu dựa trên các đoạn tài liệu và hình ảnh đính kèm (nếu có)."
+        "Hãy lập báo cáo nghiên cứu dựa trên các đoạn tài liệu và hình ảnh đính kèm."
         if mode == "research"
-        else "Hãy trả lời câu hỏi dựa trên các đoạn tài liệu và hình ảnh đính kèm (nếu có) ở trên."
+        else "Hãy trả lời như trợ lý MKAC dựa trên các bằng chứng ở trên."
     )
     user_message = (
         f"Dưới đây là các đoạn trích từ tài liệu:\n\n"
@@ -95,7 +102,9 @@ def build_rag_prompt(
     return [
         {
             "role": "system",
-            "content": RESEARCH_SYSTEM_PROMPT if mode == "research" else SYSTEM_PROMPT,
+            "content": (
+                RESEARCH_SYSTEM_PROMPT if mode == "research" else MKAC_SYSTEM_PROMPT
+            ),
         },
         {"role": "user", "content": user_content},
     ]
@@ -160,6 +169,7 @@ class RAGPipeline:
         self,
         embedder: Embedder,
         vector_store: VectorStore,
+        mkac_vector_store: VectorStore | None = None,
         top_k: int = 5,
         score_threshold: float = 0.25,
         temperature: float = 0.3,
@@ -167,10 +177,14 @@ class RAGPipeline:
     ):
         self.embedder = embedder
         self.vector_store = vector_store
+        self.mkac_vector_store = mkac_vector_store
         self.top_k = top_k
         self.score_threshold = score_threshold
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.mkac_score_threshold = float(
+            os.getenv("MKAC_SCORE_THRESHOLD", "0.38")
+        )
 
         # Kết nối tới LiteLLM Proxy
         proxy_url = os.getenv("LITELLM_URL", "http://localhost:4000/v1")
@@ -184,23 +198,26 @@ class RAGPipeline:
         session_id: str,
         question: str,
         model: str = "auto",
-        mode: str = "chat",
-    ) -> Tuple[str, List[SearchResult], str]:
+        mode: str = "mkac",
+    ) -> Tuple[str, List[SearchResult], str, str]:
         """
         Non-streaming RAG query.
         """
-        search_results = await asyncio.to_thread(
-            self._retrieve,
+        search_results, image_paths, answer_scope = await asyncio.to_thread(
+            self._prepare_query_context,
             session_id,
             question,
-            10 if mode == "research" else self.top_k,
+            mode,
         )
-        image_paths = self._session_image_paths(session_id)
-        messages = build_rag_prompt(
-            question,
-            search_results,
-            mode=mode,
-            image_paths=image_paths,
+        messages = (
+            build_rag_prompt(
+                question,
+                search_results,
+                mode=mode,
+                image_paths=image_paths,
+            )
+            if answer_scope != "general"
+            else self._general_messages(question)
         )
         routed_model = self._resolve_model(model, has_images=bool(image_paths))
 
@@ -213,7 +230,7 @@ class RAGPipeline:
                 **self._provider_options(routed_model),
             )
             answer = response.choices[0].message.content or ""
-            return answer, search_results, routed_model
+            return answer, search_results, routed_model, answer_scope
         except Exception as e:
             logger.error(f"Error in RAG generation: {e}")
             raise e
@@ -223,23 +240,26 @@ class RAGPipeline:
         session_id: str,
         question: str,
         model: str = "auto",
-        mode: str = "chat",
-    ) -> Tuple[AsyncGenerator[str, None], List[SearchResult], str]:
+        mode: str = "mkac",
+    ) -> Tuple[AsyncGenerator[str, None], List[SearchResult], str, str]:
         """
         Streaming RAG query.
         """
-        search_results = await asyncio.to_thread(
-            self._retrieve,
+        search_results, image_paths, answer_scope = await asyncio.to_thread(
+            self._prepare_query_context,
             session_id,
             question,
-            10 if mode == "research" else self.top_k,
+            mode,
         )
-        image_paths = self._session_image_paths(session_id)
-        messages = build_rag_prompt(
-            question,
-            search_results,
-            mode=mode,
-            image_paths=image_paths,
+        messages = (
+            build_rag_prompt(
+                question,
+                search_results,
+                mode=mode,
+                image_paths=image_paths,
+            )
+            if answer_scope != "general"
+            else self._general_messages(question)
         )
         routed_model = self._resolve_model(model, has_images=bool(image_paths))
 
@@ -259,7 +279,7 @@ class RAGPipeline:
                     if content:
                         yield content
 
-            return token_generator(), search_results, routed_model
+            return token_generator(), search_results, routed_model, answer_scope
         except Exception as e:
             logger.error(f"Error in streaming RAG generation: {e}")
             raise e
@@ -282,6 +302,96 @@ class RAGPipeline:
         )
         logger.info(f"Retrieved {len(results)} chunks for query: '{question[:50]}'")
         return results
+
+    def _prepare_query_context(
+        self,
+        session_id: str,
+        question: str,
+        mode: str,
+    ) -> Tuple[List[SearchResult], List[Path], str]:
+        if mode == "mkac":
+            if self.mkac_vector_store is None:
+                logger.warning("MKAC vector store is not configured.")
+                return [], [], "general"
+            query_embedding = self.embedder.embed_query(question)
+            results = self.mkac_vector_store.search(
+                session_id="mkac",
+                query_embedding=query_embedding,
+                top_k=self.top_k,
+                score_threshold=self.mkac_score_threshold,
+            )
+            results = self._filter_relative_results(results)
+            logger.info(
+                "Retrieved %s MKAC chunks for query: '%s'",
+                len(results),
+                question[:50],
+            )
+            if not results:
+                return [], [], "general"
+            images = (
+                self._result_image_paths(results)
+                if self._question_needs_vision(question)
+                else []
+            )
+            return results, images, "mkac"
+
+        results = self._retrieve(session_id, question, 10)
+        images = self._session_image_paths(session_id)
+        if self._question_needs_vision(question):
+            images = list(
+                dict.fromkeys([*images, *self._result_image_paths(results)])
+            )[:2]
+        return results, images, "research"
+
+    @staticmethod
+    def _general_messages(question: str) -> List[Dict[str, str]]:
+        return [
+            {"role": "system", "content": GENERAL_SYSTEM_PROMPT},
+            {"role": "user", "content": question},
+        ]
+
+    @staticmethod
+    def _question_needs_vision(question: str) -> bool:
+        normalized = question.lower()
+        keywords = {
+            "ảnh",
+            "hình",
+            "sơ đồ",
+            "biểu đồ",
+            "bảng",
+            "chart",
+            "image",
+            "diagram",
+            "table",
+        }
+        return any(keyword in normalized for keyword in keywords)
+
+    @staticmethod
+    def _filter_relative_results(
+        results: List[SearchResult],
+        relative_floor: float = 0.85,
+    ) -> List[SearchResult]:
+        """Drop weak tail matches that are far below the best MKAC result."""
+        if not results:
+            return []
+        minimum = results[0].score * relative_floor
+        return [result for result in results if result.score >= minimum]
+
+    @staticmethod
+    def _result_image_paths(results: List[SearchResult]) -> List[Path]:
+        paths: List[Path] = []
+        seen = set()
+        for result in results:
+            image_path = (result.chunk.metadata or {}).get("image_path")
+            if not image_path or image_path in seen:
+                continue
+            path = Path(image_path)
+            if path.exists():
+                paths.append(path)
+                seen.add(image_path)
+            if len(paths) >= 2:
+                break
+        return paths
 
     def _resolve_model(self, model: str, has_images: bool = False) -> str:
         """Ánh xạ lựa chọn từ UI sang model logic của LiteLLM."""
@@ -326,7 +436,10 @@ class RAGPipeline:
                 "page": r.chunk.page_number,
                 "score": round(r.score, 4),
                 "type": r.chunk.content_type,
-                "preview": r.chunk.text[:200] + "..." if len(r.chunk.text) > 200 else r.chunk.text
+                "preview": r.chunk.text[:200] + "..." if len(r.chunk.text) > 200 else r.chunk.text,
+                "title": r.chunk.metadata.get("title"),
+                "category": r.chunk.metadata.get("category"),
+                "effective_date": r.chunk.metadata.get("effective_date"),
             }
             for r in results
         ]

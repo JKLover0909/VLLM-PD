@@ -21,5 +21,13 @@
     "passed": true,
     "iterations": 3,
     "latency_seconds": 3.909
+  },
+  {
+    "provider": "grok",
+    "model": "grok-model",
+    "status": "PASS",
+    "passed": true,
+    "iterations": 3,
+    "latency_seconds": 8.472
   }
 ]

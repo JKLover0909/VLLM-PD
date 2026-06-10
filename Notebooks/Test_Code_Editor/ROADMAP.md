@@ -19,6 +19,7 @@ Ba backend cần kiểm thử:
 | `local` | `local-gemma` | Gemma4 trên Máy 1 |
 | `mimo` | `mimo-pro` | Xiaomi MiMo 2.5 Pro |
 | `openai` | `openai-model` | OpenAI GPT-5.4 mini |
+| `grok` | `grok-model` | Grok 4.20 Reasoning qua Azure |
 | `auto` | `coding-model` | Gemma4, fallback OpenAI |
 
 > Lưu ý: khả năng chat tốt không đảm bảo model gọi tool đúng. Mỗi model phải vượt qua bài test tool-calling trước khi được cấp quyền sửa code.
