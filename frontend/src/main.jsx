@@ -414,69 +414,67 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
-      <button
-        className="mobile-menu icon-button"
-        type="button"
-        title="Mở tài liệu"
-        onClick={() => setSidebarOpen(true)}
-      >
-        <Menu size={20} />
-      </button>
-
-      {sidebarOpen && (
-        <button
-          className="sidebar-backdrop"
-          type="button"
-          aria-label="Đóng tài liệu"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      <aside className={`document-sidebar ${sidebarOpen ? "open" : ""}`}>
-        <div className="brand-row">
-          <div className="brand-mark">
-            <BookOpen size={21} />
-          </div>
-          <div>
-            <strong>VLLM-PD</strong>
-            <span>Document intelligence</span>
-          </div>
+    <div className={`app-shell ${mode === "mkac" ? "mkac-layout" : ""}`}>
+      {mode === "research" && (
+        <>
           <button
-            className="icon-button close-sidebar"
+            className="mobile-menu icon-button"
             type="button"
-            title="Đóng"
-            onClick={() => setSidebarOpen(false)}
+            title="Mở tài liệu"
+            onClick={() => setSidebarOpen(true)}
           >
-            <X size={18} />
+            <Menu size={20} />
           </button>
-        </div>
 
-        <div className="session-strip">
-          <div>
-            <span>Phiên làm việc</span>
-            <code>{shortSession(sessionId)}</code>
-          </div>
-          <button
-            className="icon-button"
-            type="button"
-            title="Tạo phiên mới"
-            onClick={resetSession}
-          >
-            <RefreshCcw size={17} />
-          </button>
-        </div>
+          {sidebarOpen && (
+            <button
+              className="sidebar-backdrop"
+              type="button"
+              aria-label="Đóng tài liệu"
+              onClick={() => setSidebarOpen(false)}
+            />
+          )}
 
-        <section className="sidebar-section">
-          <div className="section-heading">
-            <span>{mode === "mkac" ? "Kho tri thức MKAC" : "Tài liệu nghiên cứu"}</span>
-            <span className="count-badge">
-              {mode === "mkac" ? mkacStatus.num_documents : files.length}
-            </span>
-          </div>
+          <aside className={`document-sidebar ${sidebarOpen ? "open" : ""}`}>
+            <div className="brand-row">
+              <div className="brand-mark">
+                <BookOpen size={21} />
+              </div>
+              <div>
+                <strong>VLLM-PD</strong>
+                <span>Document intelligence</span>
+              </div>
+              <button
+                className="icon-button close-sidebar"
+                type="button"
+                title="Đóng"
+                onClick={() => setSidebarOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
 
-          {mode === "research" ? (
-            <>
+            <div className="session-strip">
+              <div>
+                <span>Phiên làm việc</span>
+                <code>{shortSession(sessionId)}</code>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                title="Tạo phiên mới"
+                onClick={resetSession}
+              >
+                <RefreshCcw size={17} />
+              </button>
+            </div>
+
+            <section className="sidebar-section">
+              <div className="section-heading">
+                <span>Tài liệu nghiên cứu</span>
+                <span className="count-badge">{files.length}</span>
+              </div>
+
               <input
                 ref={fileInputRef}
                 className="hidden-input"
@@ -505,102 +503,87 @@ function App() {
 
               {pendingFiles.length > 0 && (
                 <div className="pending-panel">
-              <div className="pending-header">
-                <span>{pendingFiles.length} tệp</span>
-                <span>{formatBytes(pendingTotalSize)}</span>
-              </div>
-              <div className="pending-list">
-                {pendingFiles.map((file, index) => (
-                  <div className="pending-file" key={`${file.name}-${file.size}`}>
-                    <FileUp size={15} />
-                    <span title={file.name}>{file.name}</span>
-                    <button
-                      className="icon-button subtle"
-                      type="button"
-                      title={`Bỏ ${file.name}`}
-                      onClick={() => removePendingFile(index)}
-                      disabled={uploading}
-                    >
-                      <X size={14} />
-                    </button>
+                  <div className="pending-header">
+                    <span>{pendingFiles.length} tệp</span>
+                    <span>{formatBytes(pendingTotalSize)}</span>
                   </div>
-                ))}
-              </div>
-              <button
-                className="index-button"
-                type="button"
-                onClick={uploadDocuments}
-                disabled={uploading}
-              >
-                {uploading ? <Loader2 className="spin" size={16} /> : <Database size={16} />}
-                {uploading
-                  ? `Đang index ${uploadProgress.done}/${uploadProgress.total}`
-                  : "Index tài liệu"}
-              </button>
+                  <div className="pending-list">
+                    {pendingFiles.map((file, index) => (
+                      <div className="pending-file" key={`${file.name}-${file.size}`}>
+                        <FileUp size={15} />
+                        <span title={file.name}>{file.name}</span>
+                        <button
+                          className="icon-button subtle"
+                          type="button"
+                          title={`Bỏ ${file.name}`}
+                          onClick={() => removePendingFile(index)}
+                          disabled={uploading}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    className="index-button"
+                    type="button"
+                    onClick={uploadDocuments}
+                    disabled={uploading}
+                  >
+                    {uploading ? <Loader2 className="spin" size={16} /> : <Database size={16} />}
+                    {uploading
+                      ? `Đang index ${uploadProgress.done}/${uploadProgress.total}`
+                      : "Index tài liệu"}
+                  </button>
                 </div>
               )}
 
               {uploadSummary && (
                 <div className="upload-summary">
-              <CheckCircle2 size={15} />
-              <span>
-                Đã index {uploadSummary.files} tệp, {uploadSummary.chunks} đoạn
-              </span>
+                  <CheckCircle2 size={15} />
+                  <span>
+                    Đã index {uploadSummary.files} tệp, {uploadSummary.chunks} đoạn
+                  </span>
                 </div>
               )}
 
               <div className="file-list">
                 {files.map((filename) => (
                   <div className="file-item" key={filename}>
-                <FileText size={17} />
-                <span title={filename}>{filename}</span>
-                <button
-                  className="icon-button subtle danger"
-                  type="button"
-                  title={`Xóa ${filename}`}
-                  onClick={() => removeFile(filename)}
-                >
-                  <Trash2 size={15} />
-                </button>
+                    <FileText size={17} />
+                    <span title={filename}>{filename}</span>
+                    <button
+                      className="icon-button subtle danger"
+                      type="button"
+                      title={`Xóa ${filename}`}
+                      onClick={() => removeFile(filename)}
+                    >
+                      <Trash2 size={15} />
+                    </button>
                   </div>
                 ))}
                 {files.length === 0 && (
                   <div className="empty-files">
-                <FileText size={20} />
-                <span>Chưa có tài liệu</span>
+                    <FileText size={20} />
+                    <span>Chưa có tài liệu</span>
                   </div>
                 )}
               </div>
-            </>
-          ) : (
-            <div className="file-list">
-              {mkacStatus.files.map((filename) => (
-                <div className="file-item" key={filename}>
-                  <FileText size={17} />
-                  <span title={filename}>{filename}</span>
-                </div>
-              ))}
-              {!mkacStatus.ready && (
-                <div className="empty-files">
-                  <AlertCircle size={20} />
-                  <span>Kho MKAC chưa được index</span>
-                </div>
-              )}
-            </div>
-          )}
-        </section>
+            </section>
 
-        <div className="sidebar-footer">
-          <div className={`service-state ${health}`}>
-            {health === "online" ? <CheckCircle2 size={15} /> : <Server size={15} />}
-            <span>{health === "online" ? "Máy 2 online" : "Đang kiểm tra"}</span>
-          </div>
-          <span className="security-chip">
-            <ShieldCheck size={14} />
-            RAG
-          </span>
-        </div>
-      </aside>
+            <div className="sidebar-footer">
+              <div className={`service-state ${health}`}>
+                {health === "online" ? <CheckCircle2 size={15} /> : <Server size={15} />}
+                <span>{health === "online" ? "Máy 2 online" : "Đang kiểm tra"}</span>
+              </div>
+              <span className="security-chip">
+                <ShieldCheck size={14} />
+                RAG
+              </span>
+            </div>
+          </aside>
+        </>
+      )}
 
       <main className={`workspace ${sourcePanelOpen ? "" : "sources-collapsed"}`}>
         <header className="workspace-header">
@@ -724,7 +707,7 @@ function App() {
                             <span>{message.model}</span>
                             <span>
                               {message.answerScope === "general"
-                                ? "Kiến thức chung"
+                                ? "Không có kết quả"
                                 : message.answerScope === "web"
                                   ? "Tìm kiếm web"
                                 : message.mode === "research"

@@ -327,8 +327,10 @@ LiteLLM aliases trong `litellm_config.yaml`:
 Trong mode `mkac`, retrieval dung collection `mkac_knowledge`. Neu khong co
 chunk dat nguong, backend tim tren web voi cau hoi gan them ngu canh MKAC.
 Ket qua co `answer_scope="web"` va kem URL de kiem chung; thong tin nay khong
-duoc coi la quy dinh noi bo MKAC. Neu tim web cung khong co ket qua hoac bi
-loi, model moi tra loi bang kien thuc chung voi `answer_scope="general"`.
+duoc coi la quy dinh noi bo MKAC. Cau tra loi web di thang vao noi dung, khong
+lap lai thong bao dai rang kho noi bo khong co du lieu. Neu tim web cung khong
+co ket qua hoac bi loi, he thong chi thong bao ngan gon rang chua tim thay
+thong tin, khong tu bo sung kien thuc chung.
 
 Tim web dung `ddgs` va khong can API key. Co the tat hoac dieu chinh trong
 `.env` bang `MKAC_WEB_SEARCH_ENABLED`, `MKAC_WEB_SEARCH_CONTEXT`,

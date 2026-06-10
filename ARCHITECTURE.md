@@ -394,11 +394,12 @@ LiteLLM /v1/chat/completions
 
 Pipeline tìm kiếm web với câu hỏi được gắn thêm ngữ cảnh MKAC. Khi có kết quả,
 model chỉ tổng hợp từ snippet, dẫn URL và response/meta có `answer_scope=web`.
-Thông tin web luôn được phân biệt với chính sách nội bộ MKAC.
+Thông tin web luôn được phân biệt với chính sách nội bộ MKAC bằng metadata và
+nguồn liên kết; câu trả lời không thêm câu mở đầu cảnh báo lặp lại.
 
 Nếu tìm web không có kết quả hoặc gặp lỗi, pipeline mới gọi model không kèm
-context và dùng `answer_scope=general`; sources rỗng để frontend phân biệt
-kiến thức chung với chính sách MKAC.
+context và dùng `answer_scope=general`; model chỉ thông báo ngắn gọn rằng chưa
+tìm thấy thông tin, không trả lời bằng kiến thức chung.
 
 ## 12. Giao thức SSE
 

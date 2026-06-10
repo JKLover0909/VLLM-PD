@@ -2,6 +2,7 @@ from pathlib import Path
 
 from src.rag.parser import DocumentParser, TextChunk
 from src.rag.rag_pipeline import RAGPipeline
+from src.rag.rag_pipeline import GENERAL_SYSTEM_PROMPT, WEB_SYSTEM_PROMPT
 from src.rag.vector_store import SearchResult
 from scripts.index_mkac_documents import build_embedding_text
 
@@ -29,6 +30,16 @@ class FakeWebSearcher:
     def search(self, question):
         self.questions.append(question)
         return self.results
+
+
+def test_web_prompt_answers_directly_without_repeated_fallback_banner():
+    assert "Bắt đầu bằng câu" not in WEB_SYSTEM_PROMPT
+    assert (
+        "Không tìm thấy nội dung này trong tài liệu nội bộ MKAC; dưới đây"
+        not in WEB_SYSTEM_PROMPT
+    )
+    assert "Chưa tìm thấy thông tin phù hợp về nội dung này." in GENERAL_SYSTEM_PROMPT
+    assert "Không bổ sung kiến thức chung" in GENERAL_SYSTEM_PROMPT
 
 
 def test_split_text_preserves_page_and_metadata():
@@ -78,6 +89,43 @@ def test_mkac_retrieval_question_removes_company_name_from_policy_question():
     )
     identity_question = "MKAC là viết tắt của công ty nào?"
     assert RAGPipeline._mkac_retrieval_question(identity_question) == identity_question
+
+
+def test_company_profile_question_uses_legal_documents_and_lower_threshold():
+    legal = SearchResult(
+        TextChunk(
+            "Ngành nghề đăng ký",
+            "investment.pdf",
+            2,
+            0,
+            "text",
+            {"category": "investment_registration"},
+        ),
+        score=0.47,
+    )
+    unrelated = SearchResult(
+        TextChunk(
+            "Quy định làm thêm",
+            "overtime.pdf",
+            1,
+            0,
+            "text",
+            {"category": "working_time"},
+        ),
+        score=0.46,
+    )
+    pipeline = RAGPipeline(
+        embedder=FakeEmbedder(),
+        vector_store=FakeStore(),
+        mkac_vector_store=FakeStore([legal, unrelated]),
+    )
+    question = "MKAC có những lĩnh vực hoạt động nào theo hồ sơ đăng ký?"
+
+    results, _, scope = pipeline._prepare_query_context("ignored", question, "mkac")
+
+    assert pipeline._mkac_retrieval_threshold(question) == 0.42
+    assert results == [legal]
+    assert scope == "mkac"
 
 
 def test_mkac_query_uses_general_fallback_without_relevant_chunks():

@@ -45,6 +45,10 @@ button:disabled {
   min-height: 100vh;
 }
 
+.app-shell.mkac-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .document-sidebar {
   position: sticky;
   top: 0;
@@ -1082,6 +1086,10 @@ button:disabled {
 
   .workspace-header {
     padding-left: 58px;
+  }
+
+  .app-shell.mkac-layout .workspace-header {
+    padding-left: 22px;
   }
 
   .workspace-body,
