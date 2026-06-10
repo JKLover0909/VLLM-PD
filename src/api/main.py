@@ -32,6 +32,7 @@ from src.rag.parser import DocumentParser
 from src.rag.embedder import Embedder
 from src.rag.vector_store import VectorStore
 from src.rag.rag_pipeline import RAGPipeline
+from src.rag.web_search import WebSearcher
 from src.agent.graph import agent_executor
 
 # ──────────────────────────────────────────────
@@ -74,6 +75,7 @@ vector_store: Optional[VectorStore] = None
 mkac_vector_store: Optional[VectorStore] = None
 doc_parser: Optional[DocumentParser] = None
 rag_pipeline: Optional[RAGPipeline] = None
+web_searcher: Optional[WebSearcher] = None
 rate_limit_events: Dict[str, Deque[float]] = defaultdict(deque)
 rate_limit_lock = asyncio.Lock()
 
@@ -148,6 +150,7 @@ async def lifespan(app: FastAPI):
     Khởi tạo các mô hình và kết nối database khi ứng dụng bắt đầu.
     """
     global embedder, vector_store, mkac_vector_store, doc_parser, rag_pipeline
+    global web_searcher
 
     logger.info("🚀 Starting VLLM-PD API Gateway on Machine 2...")
     
@@ -164,12 +167,14 @@ async def lifespan(app: FastAPI):
     
     # Khởi tạo bộ phân tích tài liệu Docling
     doc_parser = DocumentParser()
+    web_searcher = WebSearcher()
     
     # Khởi tạo RAG Pipeline kết nối với LiteLLM
     rag_pipeline = RAGPipeline(
         embedder=embedder,
         vector_store=vector_store,
         mkac_vector_store=mkac_vector_store,
+        web_searcher=web_searcher,
     )
 
     logger.info("✅ VLLM-PD API Gateway is fully operational.")
@@ -278,6 +283,7 @@ async def health():
         "qdrant_port": QDRANT_PORT,
         "mkac_documents": (mkac_info or {}).get("num_files", 0),
         "mkac_chunks": (mkac_info or {}).get("num_chunks", 0),
+        "mkac_web_search": bool(web_searcher and web_searcher.enabled),
     }
 
 

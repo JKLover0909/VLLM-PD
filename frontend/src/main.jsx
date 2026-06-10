@@ -12,6 +12,7 @@ import {
   FileText,
   FileUp,
   FlaskConical,
+  Globe2,
   Layers3,
   Loader2,
   Menu,
@@ -670,7 +671,7 @@ function App() {
                     <h1>{currentMode.title}</h1>
                     <p>
                       {mode === "mkac"
-                        ? "Tra cứu quy định nội bộ MKAC; câu hỏi ngoài kho sẽ dùng kiến thức chung."
+                        ? "Tra cứu quy định nội bộ MKAC; nếu chưa có dữ liệu, hệ thống sẽ tìm nguồn trên web."
                         : files.length > 0
                           ? "Sẵn sàng nghiên cứu tài liệu đã index trong phiên này."
                           : "Tải tài liệu lên để bắt đầu nghiên cứu."}
@@ -724,6 +725,8 @@ function App() {
                             <span>
                               {message.answerScope === "general"
                                 ? "Kiến thức chung"
+                                : message.answerScope === "web"
+                                  ? "Tìm kiếm web"
                                 : message.mode === "research"
                                   ? "Nghiên cứu"
                                   : "Nguồn MKAC"}
@@ -738,8 +741,16 @@ function App() {
                             <summary>{message.sources.length} nguồn tham chiếu</summary>
                             {message.sources.map((source, index) => (
                               <div key={`${source.file}-${source.page}-${index}`}>
-                                <strong>{source.file}</strong>
-                                <span>Trang {source.page}</span>
+                                {source.url ? (
+                                  <a href={source.url} target="_blank" rel="noreferrer">
+                                    <strong>{source.file}</strong>
+                                  </a>
+                                ) : (
+                                  <strong>{source.file}</strong>
+                                )}
+                                <span>
+                                  {source.url ? "Nguồn web" : `Trang ${source.page}`}
+                                </span>
                               </div>
                             ))}
                           </details>
@@ -820,11 +831,17 @@ function App() {
                   key={`${source.file}-${source.page}-${index}`}
                 >
                   <div className="source-title">
-                    <FileText size={16} />
-                    <strong>{source.file}</strong>
+                    {source.url ? <Globe2 size={16} /> : <FileText size={16} />}
+                    {source.url ? (
+                      <a href={source.url} target="_blank" rel="noreferrer">
+                        <strong>{source.file}</strong>
+                      </a>
+                    ) : (
+                      <strong>{source.file}</strong>
+                    )}
                   </div>
                   <div className="source-meta">
-                    <span>Trang {source.page || "?"}</span>
+                    <span>{source.url ? "Nguồn web" : `Trang ${source.page || "?"}`}</span>
                     <span>{Math.round((source.score || 0) * 100)}%</span>
                   </div>
                   <p>{source.preview}</p>

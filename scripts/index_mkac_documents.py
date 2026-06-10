@@ -42,6 +42,23 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def build_embedding_text(chunk, metadata: dict) -> str:
+    """Add curated document identity to OCR text used for semantic retrieval."""
+    organization = metadata.get("organization", {})
+    identity = [
+        f"Kho tri thức: {metadata.get('knowledge_base', 'MKAC')}",
+        f"Tài liệu: {metadata.get('title', chunk.source_file)}",
+        f"Nhóm: {metadata.get('category', '')}",
+        f"Tên viết tắt công ty: {organization.get('short_name', '')}",
+        f"Tên pháp lý tiếng Việt: {organization.get('legal_name_vi', '')}",
+        f"Tên pháp lý tiếng Anh: {organization.get('legal_name_en', '')}",
+        f"Mã số doanh nghiệp: {organization.get('enterprise_id', '')}",
+    ]
+    return "\n".join(item for item in identity if item.rsplit(": ", 1)[-1]) + (
+        f"\n\n{chunk.text}"
+    )
+
+
 def main() -> int:
     os.chdir(REPO_ROOT)
     load_dotenv(REPO_ROOT / ".env")
@@ -124,6 +141,7 @@ def main() -> int:
                 **item,
                 "checksum": checksum,
                 "knowledge_base": manifest.get("knowledge_base", "MKAC"),
+                "organization": manifest.get("organization", {}),
                 "indexed_at": datetime.now(timezone.utc).isoformat(),
             }
             page_dir = image_root / checksum[:16]
@@ -135,7 +153,9 @@ def main() -> int:
             if not chunks:
                 raise RuntimeError("Parser returned no indexable chunks")
 
-            embeddings = embedder.embed_documents([chunk.text for chunk in chunks])
+            embeddings = embedder.embed_documents(
+                [build_embedding_text(chunk, metadata) for chunk in chunks]
+            )
             store.remove_file(MKAC_SESSION_ID, path.name)
             store.add_chunks(MKAC_SESSION_ID, chunks, embeddings)
             total_chars = sum(len(chunk.text) for chunk in chunks)

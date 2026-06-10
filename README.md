@@ -325,8 +325,15 @@ LiteLLM aliases trong `litellm_config.yaml`:
 | Agent | `coding-model` | Gemma4 local, fallback OpenAI |
 
 Trong mode `mkac`, retrieval dung collection `mkac_knowledge`. Neu khong co
-chunk dat nguong, model tra loi bang kien thuc chung va response co
-`answer_scope="general"`; noi dung nay khong duoc coi la quy dinh MKAC.
+chunk dat nguong, backend tim tren web voi cau hoi gan them ngu canh MKAC.
+Ket qua co `answer_scope="web"` va kem URL de kiem chung; thong tin nay khong
+duoc coi la quy dinh noi bo MKAC. Neu tim web cung khong co ket qua hoac bi
+loi, model moi tra loi bang kien thuc chung voi `answer_scope="general"`.
+
+Tim web dung `ddgs` va khong can API key. Co the tat hoac dieu chinh trong
+`.env` bang `MKAC_WEB_SEARCH_ENABLED`, `MKAC_WEB_SEARCH_CONTEXT`,
+`MKAC_WEB_SEARCH_REGION`, `MKAC_WEB_SEARCH_MAX_RESULTS` va
+`MKAC_WEB_SEARCH_TIMEOUT`.
 
 Neu cau hoi nhac den bang, hinh, so do hoac bieu do va chunk co anh trang,
 backend route sang `openai-model` de su dung Vision. Mode `research` van tu

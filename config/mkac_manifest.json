@@ -1,6 +1,44 @@
 {
   "knowledge_base": "MKAC",
+  "organization": {
+    "short_name": "MKAC",
+    "legal_name_vi": "Công ty Cổ phần Meiko Automation",
+    "legal_name_en": "Meiko Automation Joint Stock Company",
+    "enterprise_id": "0108918123"
+  },
   "documents": [
+    {
+      "filename": "1. Dang ky doanh nghiep _MKAC.pdf",
+      "title": "Giấy chứng nhận đăng ký doanh nghiệp MKAC",
+      "category": "corporate_identity",
+      "effective_date": null,
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "2. Giay CNDKDT _MKAC.pdf",
+      "title": "Giấy chứng nhận đăng ký đầu tư MKAC",
+      "category": "investment_registration",
+      "effective_date": null,
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "3. Giấy xác nhận thay đổi nội dung đăng ký kinh doanh.pdf",
+      "title": "Giấy xác nhận thay đổi nội dung đăng ký doanh nghiệp MKAC",
+      "category": "corporate_identity",
+      "effective_date": null,
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "5. Chung nhan ISO_MKAC28052020.pdf",
+      "title": "Chứng nhận ISO MKAC",
+      "category": "certification",
+      "effective_date": "2020-05-28",
+      "status": "active",
+      "access_level": "internal"
+    },
     {
       "filename": "12. Quy trình đặt xe ô tô, grab, taxi update 20231218.pdf",
       "title": "Quy trình đặt xe ô tô, Grab, Taxi",

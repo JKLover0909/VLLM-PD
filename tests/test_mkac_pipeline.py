@@ -3,6 +3,7 @@ from pathlib import Path
 from src.rag.parser import DocumentParser, TextChunk
 from src.rag.rag_pipeline import RAGPipeline
 from src.rag.vector_store import SearchResult
+from scripts.index_mkac_documents import build_embedding_text
 
 
 class FakeEmbedder:
@@ -20,6 +21,16 @@ class FakeStore:
         return self.results
 
 
+class FakeWebSearcher:
+    def __init__(self, results=None):
+        self.results = results or []
+        self.questions = []
+
+    def search(self, question):
+        self.questions.append(question)
+        return self.results
+
+
 def test_split_text_preserves_page_and_metadata():
     parser = DocumentParser.__new__(DocumentParser)
     chunks = parser._split_text(
@@ -34,6 +45,39 @@ def test_split_text_preserves_page_and_metadata():
     assert chunks[0].page_number == 7
     assert chunks[0].chunk_index == 3
     assert chunks[0].metadata["category"] == "working_time"
+
+
+def test_embedding_text_includes_curated_company_identity():
+    chunk = TextChunk("Nội dung OCR", "registration.pdf", 1, 0, "text")
+    text = build_embedding_text(
+        chunk,
+        {
+            "knowledge_base": "MKAC",
+            "title": "Giấy chứng nhận đăng ký doanh nghiệp",
+            "category": "corporate_identity",
+            "organization": {
+                "short_name": "MKAC",
+                "legal_name_vi": "Công ty Cổ phần Meiko Automation",
+                "legal_name_en": "Meiko Automation Joint Stock Company",
+                "enterprise_id": "0108918123",
+            },
+        },
+    )
+
+    assert "Công ty Cổ phần Meiko Automation" in text
+    assert "0108918123" in text
+    assert text.endswith("Nội dung OCR")
+
+
+def test_mkac_retrieval_question_removes_company_name_from_policy_question():
+    assert (
+        RAGPipeline._mkac_retrieval_question(
+            "Nhân viên MKAC làm thêm giờ được tính như thế nào?"
+        )
+        == "Nhân viên làm thêm giờ được tính như thế nào?"
+    )
+    identity_question = "MKAC là viết tắt của công ty nào?"
+    assert RAGPipeline._mkac_retrieval_question(identity_question) == identity_question
 
 
 def test_mkac_query_uses_general_fallback_without_relevant_chunks():
@@ -85,6 +129,73 @@ def test_mkac_query_uses_shared_store_and_page_image(tmp_path):
     assert images == [Path(image)]
     assert scope == "mkac"
     assert mkac_store.calls[0]["session_id"] == "mkac"
+
+
+def test_mkac_query_uses_web_fallback_when_internal_store_has_no_match():
+    web_result = SearchResult(
+        TextChunk(
+            text="Thông tin công khai về MKAC",
+            source_file="MKAC public page",
+            page_number=0,
+            chunk_index=0,
+            content_type="web",
+            metadata={"url": "https://example.com/mkac"},
+        ),
+        score=0.9,
+    )
+    web_searcher = FakeWebSearcher([web_result])
+    pipeline = RAGPipeline(
+        embedder=FakeEmbedder(),
+        vector_store=FakeStore(),
+        mkac_vector_store=FakeStore(),
+        web_searcher=web_searcher,
+    )
+
+    results, images, scope = pipeline._prepare_query_context(
+        "ignored-session",
+        "MKAC có những sản phẩm nào?",
+        "mkac",
+    )
+
+    assert results == [web_result]
+    assert images == []
+    assert scope == "web"
+    assert web_searcher.questions == ["MKAC có những sản phẩm nào?"]
+    assert pipeline.format_sources(results)[0]["url"] == "https://example.com/mkac"
+
+
+def test_mkac_query_rejects_weak_internal_match_before_web_fallback():
+    weak_internal_result = SearchResult(
+        TextChunk("MKAC footer", "internal.pdf", 1, 0, "text"),
+        score=0.43,
+    )
+    web_result = SearchResult(
+        TextChunk(
+            "Website MKAC",
+            "MKAC website",
+            0,
+            0,
+            "web",
+            {"url": "https://example.com/mkac"},
+        ),
+        score=0.9,
+    )
+    pipeline = RAGPipeline(
+        embedder=FakeEmbedder(),
+        vector_store=FakeStore(),
+        mkac_vector_store=FakeStore([weak_internal_result]),
+        web_searcher=FakeWebSearcher([web_result]),
+    )
+    pipeline.mkac_score_threshold = 0.48
+
+    results, _, scope = pipeline._prepare_query_context(
+        "ignored-session",
+        "Website chính thức của MKAC là gì?",
+        "mkac",
+    )
+
+    assert results == [web_result]
+    assert scope == "web"
 
 
 def test_relative_filter_removes_weak_tail_results():

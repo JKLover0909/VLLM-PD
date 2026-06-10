@@ -392,9 +392,13 @@ LiteLLM /v1/chat/completions
 
 ### 11.3. Khi không tìm thấy kết quả MKAC
 
-Pipeline gọi model không kèm context MKAC và bắt buộc mở đầu bằng thông báo
-không tìm thấy căn cứ nội bộ. Response/meta có `answer_scope=general`; sources
-rỗng để frontend phân biệt kiến thức chung với chính sách MKAC.
+Pipeline tìm kiếm web với câu hỏi được gắn thêm ngữ cảnh MKAC. Khi có kết quả,
+model chỉ tổng hợp từ snippet, dẫn URL và response/meta có `answer_scope=web`.
+Thông tin web luôn được phân biệt với chính sách nội bộ MKAC.
+
+Nếu tìm web không có kết quả hoặc gặp lỗi, pipeline mới gọi model không kèm
+context và dùng `answer_scope=general`; sources rỗng để frontend phân biệt
+kiến thức chung với chính sách MKAC.
 
 ## 12. Giao thức SSE
 
