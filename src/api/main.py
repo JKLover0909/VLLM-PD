@@ -201,7 +201,7 @@ class QueryRequest(BaseModel):
     session_id: str
     question: str
     stream: bool = True
-    model: Literal["auto", "local", "mimo", "openai"] = "auto"
+    model: Literal["auto", "local", "mimo", "openai", "grok"] = "auto"
     mode: Literal["chat", "research"] = "chat"
 
 
@@ -291,6 +291,11 @@ async def list_models():
                 "id": "openai",
                 "name": "OpenAI GPT-5.4 mini",
                 "description": "Dùng GPT-5.4 mini cho coding, tool calling và truy vấn khó.",
+            },
+            {
+                "id": "grok",
+                "name": "Grok 4.20 Reasoning",
+                "description": "Suy luận chuyên sâu qua Azure; session có ảnh tự chuyển sang OpenAI Vision.",
             },
         ],
     }

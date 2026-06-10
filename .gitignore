@@ -46,6 +46,7 @@ logs/
 qdrant_storage/
 *.pid
 *.log
+documents/
 
 # DocMind is treated as a separate demo/runtime area
 docmind/backend/uploads/

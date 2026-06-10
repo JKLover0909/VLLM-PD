@@ -33,6 +33,13 @@ model_list:
       api_key: os.environ/OPENAI_API_KEY
       timeout: 120
 
+  - model_name: grok-model
+    litellm_params:
+      model: openai/grok-4-20-reasoning
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+      api_base: os.environ/AZURE_OPENAI_ENDPOINT
+      timeout: 120
+
   # Coding Agent keeps a stable logical name.
   - model_name: coding-model
     litellm_params:

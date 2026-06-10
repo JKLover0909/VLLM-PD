@@ -62,6 +62,7 @@ const MODEL_ACCENTS = {
   local: "accent-local",
   mimo: "accent-mimo",
   openai: "accent-openai",
+  grok: "accent-grok",
 };
 
 async function api(path, options = {}) {

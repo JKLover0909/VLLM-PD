@@ -43,6 +43,7 @@ MODEL_ROUTES = {
     "local": "local-gemma",
     "mimo": "mimo-pro",
     "openai": "openai-model",
+    "grok": "grok-model",
 }
 
 LOCAL_MODEL_ALIASES = {"local-gemma", "coding-model"}

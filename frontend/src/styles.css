@@ -499,6 +499,10 @@ button:disabled {
   border-left-color: #626ee3;
 }
 
+.model-select.accent-grok {
+  border-left-color: #b8652d;
+}
+
 .model-select select {
   flex: 1;
   min-width: 0;
@@ -863,6 +867,10 @@ button:disabled {
 
 .model-dot.accent-openai {
   background: #626ee3;
+}
+
+.model-dot.accent-grok {
+  background: #b8652d;
 }
 
 .composer-actions {

@@ -450,6 +450,7 @@ http://localhost:4000/v1
 | `local` | `local-gemma` | Ollama `gemma4:latest` |
 | `mimo` | `mimo-pro` | `openai/mimo-v2.5-pro` |
 | `openai` | `openai-model` | `openai/gpt-5.4-mini` |
+| `grok` | `grok-model` | Azure `grok-4-20-reasoning` |
 | Coding Agent | `coding-model` | Ollama `gemma4:latest` |
 
 ### 13.2. Chuỗi fallback
@@ -467,7 +468,7 @@ coding-model:
 
 - `auto`: MiMo → OpenAI → Gemma4 local.
 - Agent: Gemma4 local → OpenAI.
-- `local`, `mimo` và `openai` không có fallback riêng trong cấu hình hiện tại.
+- `local`, `mimo`, `openai` và `grok` không có fallback riêng trong cấu hình hiện tại.
 - Nếu session có file ảnh `.png`, `.jpg` hoặc `.jpeg`, RAG pipeline bắt buộc route sang `openai-model` và đính kèm ảnh base64 vào prompt để dùng Vision.
 - Router dùng `simple-shuffle`, retry một lần và timeout tổng quát 120 giây.
 

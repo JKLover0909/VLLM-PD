@@ -42,6 +42,7 @@ May 2: LiteLLM, port 4000 noi bo
         |-- local-gemma -> Gemma4 local tren May 1
         |-- mimo-pro -> MiMo 2.5 Pro
         |-- openai-model -> GPT-5.4 mini
+        |-- grok-model -> Grok 4.20 Reasoning qua Azure
         |-- coding-model -> Gemma4 local -> fallback OpenAI
 ```
 
@@ -122,6 +123,10 @@ OLLAMA_MODEL=gemma4:latest
 OPENAI_API_KEY=...
 MIMO_API_KEY=...
 MIMO_API_BASE=https://token-plan-sgp.xiaomimimo.com/v1
+
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_ENDPOINT=https://your-resource-name.openai.azure.com/openai/v1
+AZURE_OPENAI_DEPLOYMENT=grok-4-20-reasoning
 
 LITELLM_URL=http://localhost:4000/v1
 LITELLM_MASTER_KEY=sk-local
@@ -289,10 +294,11 @@ LiteLLM aliases trong `litellm_config.yaml`:
 | `local` | `local-gemma` | Ollama/Gemma4 tren May 1 |
 | `mimo` | `mimo-pro` | MiMo 2.5 Pro |
 | `openai` | `openai-model` | OpenAI GPT-5.4 mini |
+| `grok` | `grok-model` | Grok 4.20 Reasoning qua Azure |
 | Agent | `coding-model` | Gemma4 local, fallback OpenAI |
 
 Neu session co file anh `.png`, `.jpg` hoac `.jpeg`, backend bo qua lua chon
-model cua nguoi dung va route truy van sang `openai-model` de su dung Vision.
+model cua nguoi dung, bao gom Grok, va route truy van sang `openai-model` de su dung Vision.
 
 ## Bao mat va gioi han
 
