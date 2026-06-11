@@ -28,7 +28,11 @@ from dotenv import load_dotenv
 # Load biến môi trường từ .env
 load_dotenv()
 
-from src.rag.parser import DocumentParser
+from src.rag.parser import (
+    DocumentLimitError,
+    DocumentParser,
+    DocumentProcessingTimeout,
+)
 from src.rag.embedder import Embedder
 from src.rag.vector_store import VectorStore
 from src.rag.rag_pipeline import RAGPipeline
@@ -49,6 +53,10 @@ MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "25"))
 MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 QUERY_RATE_LIMIT = int(os.getenv("QUERY_RATE_LIMIT_PER_MINUTE", "15"))
 UPLOAD_RATE_LIMIT = int(os.getenv("UPLOAD_RATE_LIMIT_PER_HOUR", "10"))
+UPLOAD_PROCESSING_CONCURRENCY = max(
+    1, int(os.getenv("UPLOAD_PROCESSING_CONCURRENCY", "1"))
+)
+UPLOAD_QUEUE_SIZE = max(0, int(os.getenv("UPLOAD_QUEUE_SIZE", "4")))
 ALLOWED_UPLOAD_EXTENSIONS = {
     ".pdf",
     ".docx",
@@ -78,6 +86,10 @@ rag_pipeline: Optional[RAGPipeline] = None
 web_searcher: Optional[WebSearcher] = None
 rate_limit_events: Dict[str, Deque[float]] = defaultdict(deque)
 rate_limit_lock = asyncio.Lock()
+upload_processing_semaphore = asyncio.Semaphore(UPLOAD_PROCESSING_CONCURRENCY)
+upload_admission_lock = asyncio.Lock()
+upload_active = 0
+upload_waiting = 0
 
 
 def normalize_session_id(session_id: str) -> str:
@@ -111,6 +123,14 @@ def safe_upload_filename(filename: Optional[str]) -> str:
     return safe_name
 
 
+def cleanup_failed_upload(file_path: Path, page_dir: Path) -> None:
+    """Remove partial upload artifacts after parsing or indexing fails."""
+    if file_path.exists():
+        file_path.unlink()
+    if page_dir.exists():
+        shutil.rmtree(page_dir)
+
+
 def client_ip(request: Request) -> str:
     forwarded_for = request.headers.get("x-forwarded-for", "")
     if forwarded_for:
@@ -142,6 +162,44 @@ async def enforce_rate_limit(
                 headers={"Retry-After": str(retry_after)},
             )
         events.append(now)
+
+
+@asynccontextmanager
+async def upload_processing_slot():
+    """Bound expensive parsing/indexing work and reject an overloaded queue."""
+    global upload_active, upload_waiting
+
+    async with upload_admission_lock:
+        capacity = UPLOAD_PROCESSING_CONCURRENCY + UPLOAD_QUEUE_SIZE
+        if upload_active + upload_waiting >= capacity:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "The document processing queue is full. "
+                    "Please retry in a few minutes."
+                ),
+                headers={"Retry-After": "30"},
+            )
+        upload_waiting += 1
+
+    acquired = False
+    try:
+        await upload_processing_semaphore.acquire()
+        acquired = True
+        async with upload_admission_lock:
+            upload_waiting -= 1
+            upload_active += 1
+        yield
+    except BaseException:
+        if not acquired:
+            async with upload_admission_lock:
+                upload_waiting -= 1
+        raise
+    finally:
+        if acquired:
+            async with upload_admission_lock:
+                upload_active -= 1
+            upload_processing_semaphore.release()
 
 
 @asynccontextmanager
@@ -284,6 +342,15 @@ async def health():
         "mkac_documents": (mkac_info or {}).get("num_files", 0),
         "mkac_chunks": (mkac_info or {}).get("num_chunks", 0),
         "mkac_web_search": bool(web_searcher and web_searcher.enabled),
+        "document_processing": {
+            "active": upload_active,
+            "waiting": upload_waiting,
+            "concurrency": UPLOAD_PROCESSING_CONCURRENCY,
+            "queue_size": UPLOAD_QUEUE_SIZE,
+            "embedding_device": getattr(embedder, "device", None),
+            "embedding_dtype": getattr(embedder, "dtype", None),
+            "ocr_device": getattr(doc_parser, "ocr_device", None),
+        },
     }
 
 
@@ -390,6 +457,7 @@ async def upload_document(
     session_dir = session_upload_dir(session_id)
     session_dir.mkdir(parents=True, exist_ok=True)
     file_path = session_dir / filename
+    page_dir = session_dir / "_pages" / file_path.stem
     uploaded_bytes = 0
 
     try:
@@ -405,25 +473,28 @@ async def upload_document(
 
         logger.info(f"Uploaded file '{filename}' to session '{session_id}'")
 
-        # Sử dụng Docling trích xuất cấu trúc văn bản
-        chunks = await asyncio.to_thread(
-            doc_parser.process_file,
-            file_path,
-            image_output_dir=session_dir / "_pages" / file_path.stem,
-        )
-        if not chunks:
-            raise HTTPException(
-                status_code=422,
-                detail="Could not extract any content from the file."
+        async with upload_processing_slot():
+            chunks = await asyncio.to_thread(
+                doc_parser.process_file,
+                file_path,
+                image_output_dir=page_dir,
             )
+            if not chunks:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Could not extract any content from the file.",
+                )
 
-        # Chuyển đổi văn bản sang vector embeddings (BGE-M3)
-        texts = [c.text for c in chunks]
-        embeddings = await asyncio.to_thread(embedder.embed_documents, texts)
+            texts = [c.text for c in chunks]
+            embeddings = await asyncio.to_thread(embedder.embed_documents, texts)
 
-        # Lưu trữ vào Qdrant với payload chứa thông tin session
-        await asyncio.to_thread(vector_store.remove_file, session_id, filename)
-        await asyncio.to_thread(vector_store.add_chunks, session_id, chunks, embeddings)
+            await asyncio.to_thread(vector_store.remove_file, session_id, filename)
+            await asyncio.to_thread(
+                vector_store.add_chunks,
+                session_id,
+                chunks,
+                embeddings,
+            )
 
         return {
             "filename": filename,
@@ -432,15 +503,18 @@ async def upload_document(
             "message": f"Successfully parsed and indexed {len(chunks)} chunks into Qdrant."
         }
 
+    except DocumentLimitError as e:
+        cleanup_failed_upload(file_path, page_dir)
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except DocumentProcessingTimeout as e:
+        cleanup_failed_upload(file_path, page_dir)
+        raise HTTPException(status_code=408, detail=str(e)) from e
     except HTTPException:
-        if file_path.exists():
-            file_path.unlink()
+        cleanup_failed_upload(file_path, page_dir)
         raise
     except Exception as e:
         logger.error(f"Error processing upload for file '{filename}': {e}", exc_info=True)
-        # Cleanup file lỗi
-        if file_path.exists():
-            file_path.unlink()
+        cleanup_failed_upload(file_path, page_dir)
         raise HTTPException(status_code=500, detail=f"Indexing failed: {str(e)}")
 
 

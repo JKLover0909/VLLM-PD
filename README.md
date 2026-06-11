@@ -147,8 +147,20 @@ MKAC_SCORE_THRESHOLD=0.38
 
 UPLOAD_DIR=./uploads
 MAX_UPLOAD_SIZE_MB=25
+MAX_DOCUMENT_PAGES=100
+DOCUMENT_PROCESSING_TIMEOUT_SECONDS=300
+UPLOAD_PROCESSING_CONCURRENCY=1
+UPLOAD_QUEUE_SIZE=4
 QUERY_RATE_LIMIT_PER_MINUTE=15
 UPLOAD_RATE_LIMIT_PER_HOUR=10
+
+EMBEDDING_DEVICE=cuda
+EMBEDDING_DTYPE=float16
+EMBEDDING_BATCH_SIZE=8
+DOCLING_DEVICE=cuda
+DOCLING_NUM_THREADS=4
+DOCLING_OCR_LANGUAGES=vi,en
+MKAC_INDEX_EMBEDDING_DEVICE=cpu
 
 AGENT_API_KEY=replace_with_a_long_random_secret
 WORKSPACE_DIR=/home/jkl0909/Code/llm
@@ -185,6 +197,20 @@ npm run build
 ```
 
 FastAPI chi mount web khi `frontend/dist` ton tai.
+
+### Gioi han tai GPU va upload
+
+- BGE-M3 chay tren GPU bang FP16, batch mac dinh `8`.
+- Docling/EasyOCR chay tren GPU de upload tai lieu scan phan hoi nhanh hon.
+- Mot tai lieu duoc parse/index tai mot thoi diem; toi da bon upload khac cho.
+- Batch OCR/layout/table va concurrency deu bang `1` de tranh cac dot VRAM chong nhau.
+- Khi hang doi day, API tra `503` va header `Retry-After`.
+- PDF vuot `MAX_DOCUMENT_PAGES` bi tu choi truoc khi OCR.
+- `GET /health` hien `active`, `waiting`, device va dtype dang su dung.
+
+Script `scripts/index_mkac_documents.py` mac dinh embed tren CPU de khong nap
+them mot ban BGE-M3 vao GPU khi API dang chay. Chi dat
+`MKAC_INDEX_EMBEDDING_DEVICE=cuda` khi da dung `vllm-pd-api`.
 
 ### 3. Chay FastAPI port 8001
 
@@ -234,6 +260,9 @@ Nguoi dung co the:
 - Tao phien moi.
 - Chon `Hoi dap MKAC` de tra cuu kho tai lieu noi bo dung chung.
 - Chon `Nghien cuu` de upload PDF, DOCX, XLSX, PPTX, HTML, PNG, JPG, JPEG.
+- Hai che do dung session va lich su hoi dap rieng. Khi chuyen tab, frontend
+  chuyen sang UUID cua che do do; tai lieu upload chi gan voi session
+  `Nghien cuu`.
 - Chon model `Tu dong`, `Gemma4 Local`, `MiMo 2.5 Pro`, `OpenAI` hoac `Grok`.
 - Dat cau hoi va xem sources tu tai lieu.
 

@@ -1,17 +1,34 @@
 """Document parsing with page-aware PDF OCR and source metadata."""
 
 import logging
+import os
 import tempfile
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List
 
 import fitz
-from docling.document_converter import DocumentConverter
+from docling.datamodel.accelerator_options import AcceleratorOptions
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import EasyOcrOptions, PdfPipelineOptions
+from docling.document_converter import (
+    DocumentConverter,
+    ImageFormatOption,
+    PdfFormatOption,
+)
 
 logger = logging.getLogger(__name__)
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
+
+
+class DocumentLimitError(ValueError):
+    """Raised when an uploaded document exceeds a configured safety limit."""
+
+
+class DocumentProcessingTimeout(TimeoutError):
+    """Raised when document parsing exceeds its configured time budget."""
 
 
 @dataclass
@@ -39,8 +56,49 @@ class DocumentParser:
     MIN_CHUNK_CHARS = 20
 
     def __init__(self):
-        logger.info("Initializing Docling DocumentConverter...")
-        self.converter = DocumentConverter()
+        self.max_pdf_pages = int(os.getenv("MAX_DOCUMENT_PAGES", "100"))
+        self.processing_timeout = float(
+            os.getenv("DOCUMENT_PROCESSING_TIMEOUT_SECONDS", "300")
+        )
+        self.ocr_device = os.getenv("DOCLING_DEVICE", "cuda").lower()
+        self.ocr_threads = int(os.getenv("DOCLING_NUM_THREADS", "4"))
+        self.ocr_languages = [
+            language.strip()
+            for language in os.getenv("DOCLING_OCR_LANGUAGES", "vi,en").split(",")
+            if language.strip()
+        ]
+
+        logger.info(
+            "Initializing Docling on device=%s threads=%s languages=%s...",
+            self.ocr_device,
+            self.ocr_threads,
+            ",".join(self.ocr_languages),
+        )
+        accelerator_options = AcceleratorOptions(
+            device=self.ocr_device,
+            num_threads=self.ocr_threads,
+        )
+        pipeline_options = PdfPipelineOptions(
+            accelerator_options=accelerator_options,
+            document_timeout=self.processing_timeout,
+            ocr_options=EasyOcrOptions(
+                lang=self.ocr_languages,
+                use_gpu=self.ocr_device.startswith("cuda"),
+            ),
+            ocr_batch_size=1,
+            layout_batch_size=1,
+            table_batch_size=1,
+        )
+        self.converter = DocumentConverter(
+            format_options={
+                InputFormat.PDF: PdfFormatOption(
+                    pipeline_options=pipeline_options,
+                ),
+                InputFormat.IMAGE: ImageFormatOption(
+                    pipeline_options=pipeline_options,
+                ),
+            }
+        )
         logger.info("Docling DocumentConverter initialized.")
 
     def process_file(
@@ -72,8 +130,20 @@ class DocumentParser:
 
         chunks: List[TextChunk] = []
         chunk_index = 0
+        deadline = (
+            time.monotonic() + self.processing_timeout
+            if self.processing_timeout > 0
+            else None
+        )
         with fitz.open(path) as pdf:
+            if self.max_pdf_pages > 0 and pdf.page_count > self.max_pdf_pages:
+                raise DocumentLimitError(
+                    f"PDF has {pdf.page_count} pages; the limit is "
+                    f"{self.max_pdf_pages} pages."
+                )
+
             for page_index, page in enumerate(pdf):
+                self._check_deadline(deadline, path.name)
                 page_number = page_index + 1
                 native_text = page.get_text("text").strip()
                 use_ocr = len(native_text) < self.MIN_NATIVE_PAGE_CHARS
@@ -90,6 +160,7 @@ class DocumentParser:
                         image_path = str(target.resolve())
                     if use_ocr:
                         native_text = self._ocr_image(page_image)
+                        self._check_deadline(deadline, path.name)
                     if not target:
                         page_image.unlink(missing_ok=True)
 
@@ -118,6 +189,13 @@ class DocumentParser:
             len(chunks),
         )
         return chunks
+
+    @staticmethod
+    def _check_deadline(deadline: float | None, filename: str) -> None:
+        if deadline is not None and time.monotonic() >= deadline:
+            raise DocumentProcessingTimeout(
+                f"Processing '{filename}' exceeded the configured time limit."
+            )
 
     def _process_with_docling(
         self,

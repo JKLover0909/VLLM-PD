@@ -152,9 +152,11 @@ FastAPI dùng `lifespan` để tạo bốn singleton theo thứ tự:
    - Tạo collection và payload index nếu chưa tồn tại.
 2. `Embedder`
    - Nạp `BAAI/bge-m3`.
-   - Chọn CUDA nếu `torch.cuda.is_available()`, nếu không dùng CPU.
+   - Mặc định dùng CUDA FP16 và batch 8.
+   - Khóa các lệnh `encode()` dùng chung model để tránh nhiều batch CUDA chồng nhau.
 3. `DocumentParser`
    - Khởi tạo `DocumentConverter` của Docling.
+   - Mặc định dùng CUDA để OCR tài liệu scan nhanh hơn, batch nội bộ bằng 1.
 4. `RAGPipeline`
    - Giữ tham chiếu đến embedder và vector store.
    - Khởi tạo `AsyncOpenAI` trỏ đến LiteLLM.
@@ -177,6 +179,8 @@ Trách nhiệm:
 - Validate UUID công khai.
 - Kiểm tra tên và phần mở rộng file.
 - Giới hạn dung lượng upload.
+- Giới hạn số trang PDF và thời gian xử lý tài liệu.
+- Admission control cho parse/index: một tác vụ chạy, tối đa bốn tác vụ chờ.
 - Rate limit query/upload theo IP trong bộ nhớ.
 - Điều phối upload, parse, embedding và index.
 - Cung cấp query đồng bộ và streaming.
@@ -201,13 +205,22 @@ Trách nhiệm:
 
 ### 7.2. Lưu ý về health check
 
-`GET /health` hiện chỉ trả:
+`GET /health` trả trạng thái dịch vụ, kho MKAC và tải xử lý tài liệu:
 
 ```json
 {
   "status": "healthy",
   "qdrant_host": "localhost",
-  "qdrant_port": 6333
+  "qdrant_port": 6333,
+  "document_processing": {
+    "active": 0,
+    "waiting": 0,
+    "concurrency": 1,
+    "queue_size": 4,
+    "embedding_device": "cuda",
+    "embedding_dtype": "float16",
+    "ocr_device": "cuda"
+  }
 }
 ```
 
@@ -575,12 +588,14 @@ Frontend là React 18 SPA build bằng Vite.
 Chức năng chính:
 
 - Kiểm tra `/health` và tải `/models` khi khởi động.
-- Khôi phục UUID session từ `localStorage`.
+- Khôi phục UUID session riêng cho từng chế độ từ `localStorage`.
 - Tạo phiên mới.
 - Trong chế độ `Hỏi đáp MKAC`, sử dụng kho tài liệu nội bộ dùng chung và không hiển thị upload.
 - Trong chế độ `Nghiên cứu`, chọn, upload và xóa nhiều file theo phiên.
 - Chọn model.
 - Chuyển giữa `Hỏi đáp MKAC` và `Nghiên cứu`.
+- Mỗi chế độ giữ UUID, lịch sử hội thoại và nguồn tham chiếu riêng; session cũ
+  dùng một khóa được migrate sang chế độ `Nghiên cứu`.
 - Gửi câu hỏi qua SSE.
 - Render Markdown.
 - Hiển thị nguồn ở panel desktop và trong từng tin nhắn.
@@ -609,6 +624,9 @@ Frontend dùng URL tương đối nên web và API có thể chạy cùng origin
 | Path traversal qua tên file | So sánh filename với `Path(filename).name` |
 | File không hỗ trợ | Allowlist phần mở rộng |
 | File quá lớn | Đọc theo block và giới hạn `MAX_UPLOAD_SIZE_MB` |
+| PDF quá nhiều trang | Từ chối trước OCR bằng `MAX_DOCUMENT_PAGES` |
+| Upload đồng thời làm tăng VRAM/RAM | Semaphore và hàng đợi có giới hạn |
+| OCR chiếm VRAM | Docling batch 1 và toàn bộ upload được giới hạn concurrency 1 |
 | Session ID không hợp lệ | Parse bằng `uuid.UUID` |
 | Lạm dụng query/upload | Rate limit trong bộ nhớ theo IP |
 | Truy cập Agent | So sánh API key bằng `secrets.compare_digest` |
@@ -650,7 +668,9 @@ Khuyến nghị tối thiểu khi public:
 | LiteLLM | `LITELLM_URL`, `LITELLM_MASTER_KEY` |
 | API public | `MACHINE2_API_HOST`, `MACHINE2_API_PORT`, `NGROK_RESERVED_DOMAIN` |
 | Qdrant | `QDRANT_HOST`, `QDRANT_PORT` |
-| Upload | `UPLOAD_DIR`, `MAX_UPLOAD_SIZE_MB` |
+| Upload | `UPLOAD_DIR`, `MAX_UPLOAD_SIZE_MB`, `MAX_DOCUMENT_PAGES`, `DOCUMENT_PROCESSING_TIMEOUT_SECONDS`, `UPLOAD_PROCESSING_CONCURRENCY`, `UPLOAD_QUEUE_SIZE` |
+| Embedding | `EMBEDDING_DEVICE`, `EMBEDDING_DTYPE`, `EMBEDDING_BATCH_SIZE` |
+| OCR | `DOCLING_DEVICE`, `DOCLING_NUM_THREADS`, `DOCLING_OCR_LANGUAGES` |
 | Rate limit | `QUERY_RATE_LIMIT_PER_MINUTE`, `UPLOAD_RATE_LIMIT_PER_HOUR` |
 | Agent | `AGENT_API_KEY`, `WORKSPACE_DIR`, `AGENT_REPOSITORY_DIR` |
 | Log | `LOG_LEVEL` |
@@ -667,6 +687,11 @@ Không commit `.env`. File này chứa provider key, LiteLLM master key và Agen
 | `LITELLM_URL` | `http://localhost:4000/v1` |
 | `LITELLM_MASTER_KEY` | `sk-local` |
 | `MAX_UPLOAD_SIZE_MB` | `25` |
+| `MAX_DOCUMENT_PAGES` | `100` |
+| Upload processing concurrency | `1` |
+| Upload queue size | `4` |
+| Embedding | CUDA, FP16, batch `8` |
+| Docling/EasyOCR | CUDA, batch 1 |
 | Query rate limit | `15` request/IP/phút |
 | Upload rate limit | `10` request/IP/giờ |
 
@@ -838,7 +863,10 @@ systemctl --user restart vllm-pd-api
 
 PDF được xử lý theo từng trang. Trang có text native dùng PyMuPDF; trang scan
 được render thành PNG rồi OCR bằng Docling. `TextChunk.page_number` giữ số
-trang thật và ảnh trang nằm trong `mkac_processed/pages`.
+trang thật và ảnh trang nằm trong `mkac_processed/pages`. OCR mặc định chạy CUDA
+để cải thiện thời gian upload ở chế độ Nghiên cứu. Batch Docling và concurrency
+upload đều bằng 1 để tránh nhiều tác vụ chiếm VRAM cùng lúc. Script index MKAC
+vẫn mặc định embed trên CPU; có thể chuyển sang CUDA khi API đã dừng.
 
 ## 20. Khả năng mở rộng và điểm cải tiến
 
@@ -847,29 +875,33 @@ Các hướng ưu tiên theo tác động:
 1. **Xác thực và phân quyền session**
    - Gắn session với user/tenant.
    - Kiểm tra quyền trên upload, query và delete.
-2. **Parser có provenance chính xác**
+2. **Tách worker xử lý tài liệu**
+   - Thay hàng đợi trong RAM bằng Redis/Celery hoặc worker tương đương.
+   - Dành worker embedding GPU riêng, ưu tiên query và hỗ trợ dynamic batching.
+   - Dành worker OCR GPU concurrency 1 riêng và theo dõi tiến độ job.
+3. **Parser có provenance chính xác**
    - Dùng cấu trúc document của Docling thay vì chỉ `export_to_markdown()`.
    - Lưu page, bounding box, heading và loại phần tử.
-3. **Chunking tốt hơn**
+4. **Chunking tốt hơn**
    - Chunk theo token và cấu trúc tài liệu.
    - Giữ bảng, heading và đoạn văn theo ngữ nghĩa.
-4. **Vision pipeline hoàn chỉnh**
+5. **Vision pipeline hoàn chỉnh**
    - Trích xuất/lưu ảnh.
    - Tạo `metadata.image_path`.
    - Chỉ route request có ảnh đến model hỗ trợ vision.
-5. **Session registry**
+6. **Session registry**
    - Lưu session độc lập với vector.
    - Hỗ trợ phiên rỗng, TTL và cleanup job.
-6. **Health/readiness chuyên sâu**
+7. **Health/readiness chuyên sâu**
    - Ping Qdrant, LiteLLM và model upstream.
    - Tách liveness và readiness.
-7. **Rate limit phân tán**
+8. **Rate limit phân tán**
    - Redis, API gateway hoặc reverse proxy.
-8. **Quan sát hệ thống**
+9. **Quan sát hệ thống**
    - Structured logging, request ID, latency từng stage, token usage và tracing.
-9. **Agent bền vững và an toàn hơn**
+10. **Agent bền vững và an toàn hơn**
    - Checkpoint, timeout, recursion limit, approval gate cho thao tác ghi/chạy lệnh.
-10. **Triển khai nhiều instance**
+11. **Triển khai nhiều instance**
     - Đưa upload sang object storage.
     - Dùng session/auth store dùng chung.
     - Loại bỏ state chỉ tồn tại trong RAM.

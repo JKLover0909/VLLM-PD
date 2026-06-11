@@ -133,7 +133,15 @@ def main() -> int:
         pending.append((position, item, path, checksum))
 
     parser = DocumentParser() if pending else None
-    embedder = Embedder() if pending else None
+    # The API keeps its own BGE-M3 instance resident on Machine 2. Defaulting
+    # offline indexing to CPU prevents this process from loading a second copy
+    # into the same 16 GB GPU while the web service is live.
+    index_embedding_device = os.getenv("MKAC_INDEX_EMBEDDING_DEVICE", "cpu")
+    embedder = (
+        Embedder(device=index_embedding_device)
+        if pending
+        else None
+    )
     for position, item, path, checksum in pending:
         print(f"[{position}/{len(documents)}] INDEX {path.name}")
         try:

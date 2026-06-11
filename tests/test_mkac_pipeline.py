@@ -1,6 +1,9 @@
 from pathlib import Path
 
-from src.rag.parser import DocumentParser, TextChunk
+import fitz
+import pytest
+
+from src.rag.parser import DocumentLimitError, DocumentParser, TextChunk
 from src.rag.rag_pipeline import RAGPipeline
 from src.rag.rag_pipeline import GENERAL_SYSTEM_PROMPT, WEB_SYSTEM_PROMPT
 from src.rag.vector_store import SearchResult
@@ -56,6 +59,22 @@ def test_split_text_preserves_page_and_metadata():
     assert chunks[0].page_number == 7
     assert chunks[0].chunk_index == 3
     assert chunks[0].metadata["category"] == "working_time"
+
+
+def test_pdf_page_limit_is_checked_before_ocr(tmp_path):
+    pdf_path = tmp_path / "too-many-pages.pdf"
+    document = fitz.open()
+    document.new_page()
+    document.new_page()
+    document.save(pdf_path)
+    document.close()
+
+    parser = DocumentParser.__new__(DocumentParser)
+    parser.max_pdf_pages = 1
+    parser.processing_timeout = 300
+
+    with pytest.raises(DocumentLimitError, match="2 pages"):
+        parser._process_pdf(pdf_path, None, {})
 
 
 def test_embedding_text_includes_curated_company_identity():

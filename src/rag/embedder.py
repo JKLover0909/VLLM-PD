@@ -4,11 +4,14 @@ src/rag/embedder.py
 Wrapper cho BAAI/bge-m3 embedding model chạy cục bộ trên GPU của Máy 2.
 """
 
+import logging
+import os
+import threading
+from typing import List, Optional, Union
+
 import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
-from typing import Optional, Union, List
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -17,27 +20,68 @@ class Embedder:
     MODEL_NAME = "BAAI/bge-m3"
     EMBEDDING_DIM = 1024  # bge-m3 output dimension
 
-    def __init__(self, device: Optional[str] = None):
+    def __init__(
+        self,
+        device: Optional[str] = None,
+        batch_size: Optional[int] = None,
+        dtype: Optional[str] = None,
+    ):
         """
         Khởi tạo bge-m3 model.
         Tự động chọn GPU nếu khả dụng.
         """
         if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            device = os.getenv(
+                "EMBEDDING_DEVICE",
+                "cuda" if torch.cuda.is_available() else "cpu",
+            )
+        if device.startswith("cuda") and not torch.cuda.is_available():
+            logger.warning("CUDA is unavailable; falling back to CPU embeddings.")
+            device = "cpu"
+
         self.device = device
-        logger.info(f"Loading {self.MODEL_NAME} on device: {device}...")
+        self.batch_size = batch_size or int(os.getenv("EMBEDDING_BATCH_SIZE", "8"))
+        self.dtype = (
+            dtype
+            or os.getenv(
+                "EMBEDDING_DTYPE",
+                "float16" if device.startswith("cuda") else "float32",
+            )
+        ).lower()
+        if self.dtype not in {"float16", "bfloat16", "float32"}:
+            raise ValueError(
+                "EMBEDDING_DTYPE must be float16, bfloat16, or float32."
+            )
+        if not device.startswith("cuda") and self.dtype == "float16":
+            logger.warning("float16 embeddings are not suitable for CPU; using float32.")
+            self.dtype = "float32"
+
+        self._encode_lock = threading.Lock()
+        model_kwargs = {"dtype": self.dtype}
+        logger.info(
+            "Loading %s on device=%s dtype=%s batch_size=%s...",
+            self.MODEL_NAME,
+            self.device,
+            self.dtype,
+            self.batch_size,
+        )
 
         try:
             self.model = SentenceTransformer(
                 self.MODEL_NAME,
-                device=device,
+                device=self.device,
+                model_kwargs=model_kwargs,
             )
             logger.info("Embedder BGE-M3 loaded successfully.")
         except Exception as e:
             logger.error(f"Error loading embedding model: {e}")
-            raise e
+            raise
 
-    def embed(self, texts: Union[str, List[str]], batch_size: int = 32) -> np.ndarray:
+    def embed(
+        self,
+        texts: Union[str, List[str]],
+        batch_size: Optional[int] = None,
+    ) -> np.ndarray:
         """
         Encode text(s) thành vector embeddings.
 
@@ -54,13 +98,17 @@ class Embedder:
         if not texts:
             return np.empty((0, self.EMBEDDING_DIM), dtype=np.float32)
 
-        embeddings = self.model.encode(
-            texts,
-            batch_size=batch_size,
-            normalize_embeddings=True,  # L2 normalize -> dot product = cosine similarity
-            show_progress_bar=len(texts) > 10,
-            convert_to_numpy=True,
-        )
+        # SentenceTransformer/PyTorch inference is not guaranteed to be safe when
+        # several request threads share one CUDA model. Serializing encode calls
+        # also prevents concurrent batches from producing a VRAM spike.
+        with self._encode_lock, torch.inference_mode():
+            embeddings = self.model.encode(
+                texts,
+                batch_size=batch_size or self.batch_size,
+                normalize_embeddings=True,
+                show_progress_bar=False,
+                convert_to_numpy=True,
+            )
         return embeddings.astype(np.float32)
 
     def embed_query(self, query: str) -> List[float]:

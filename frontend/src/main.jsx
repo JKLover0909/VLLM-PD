@@ -74,6 +74,12 @@ const WAITING_MESSAGES = [
   "Sắp có kết quả rồi...",
 ];
 
+const SESSION_STORAGE_KEYS = {
+  mkac: "vllm-pd-session-mkac",
+  research: "vllm-pd-session-research",
+};
+const LEGACY_SESSION_STORAGE_KEY = "vllm-pd-session";
+
 async function api(path, options = {}) {
   const response = await fetch(path, options);
   if (!response.ok) {
@@ -159,11 +165,14 @@ function shortSession(sessionId) {
 }
 
 function App() {
-  const [sessionId, setSessionId] = useState("");
+  const [sessionIds, setSessionIds] = useState({ mkac: "", research: "" });
   const [files, setFiles] = useState([]);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [uploadSummary, setUploadSummary] = useState(null);
-  const [messages, setMessages] = useState([]);
+  const [messagesByMode, setMessagesByMode] = useState({
+    mkac: [],
+    research: [],
+  });
   const [models, setModels] = useState([]);
   const [mkacStatus, setMkacStatus] = useState({
     ready: false,
@@ -174,7 +183,10 @@ function App() {
   const [model, setModel] = useState("auto");
   const [mode, setMode] = useState("mkac");
   const [question, setQuestion] = useState("");
-  const [sources, setSources] = useState([]);
+  const [sourcesByMode, setSourcesByMode] = useState({
+    mkac: [],
+    research: [],
+  });
   const [health, setHealth] = useState("checking");
   const [busy, setBusy] = useState(false);
   const [pendingAssistantId, setPendingAssistantId] = useState("");
@@ -195,6 +207,9 @@ function App() {
 
   const currentMode = MODE_OPTIONS[mode];
   const ModeIcon = currentMode.icon;
+  const sessionId = sessionIds[mode];
+  const messages = messagesByMode[mode];
+  const sources = sourcesByMode[mode];
   const canAsk = Boolean(question.trim()) && !busy && Boolean(sessionId);
   const pendingTotalSize = useMemo(
     () => pendingFiles.reduce((total, file) => total + file.size, 0),
@@ -220,24 +235,45 @@ function App() {
         setModel(modelData.default || "auto");
         setHealth("online");
 
-        const stored = localStorage.getItem("vllm-pd-session");
-        if (stored) {
-          try {
-            const infoResponse = await api(`/sessions/${stored}`);
-            const info = await infoResponse.json();
-            setSessionId(stored);
-            setFiles(info.files || []);
-            return;
-          } catch (sessionError) {
-            if (sessionError.status === 404) {
-              setSessionId(stored);
-              setFiles([]);
-              return;
+        const legacySession = localStorage.getItem(LEGACY_SESSION_STORAGE_KEY);
+        const storedSessions = {
+          mkac: localStorage.getItem(SESSION_STORAGE_KEYS.mkac),
+          research:
+            localStorage.getItem(SESSION_STORAGE_KEYS.research) || legacySession,
+        };
+        const resolvedSessions = {};
+
+        await Promise.all(
+          Object.keys(MODE_OPTIONS).map(async (workspaceMode) => {
+            const storedSession = storedSessions[workspaceMode];
+            if (storedSession) {
+              try {
+                const infoResponse = await api(`/sessions/${storedSession}`);
+                const info = await infoResponse.json();
+                resolvedSessions[workspaceMode] = storedSession;
+                if (workspaceMode === "research") {
+                  setFiles(info.files || []);
+                }
+                return;
+              } catch (sessionError) {
+                if (sessionError.status === 404) {
+                  resolvedSessions[workspaceMode] = storedSession;
+                  return;
+                }
+                localStorage.removeItem(SESSION_STORAGE_KEYS[workspaceMode]);
+              }
             }
-            localStorage.removeItem("vllm-pd-session");
-          }
-        }
-        await resetSession();
+
+            const session = await createSession();
+            resolvedSessions[workspaceMode] = session.session_id;
+          }),
+        );
+
+        setSessionIds(resolvedSessions);
+        Object.entries(resolvedSessions).forEach(([workspaceMode, id]) => {
+          localStorage.setItem(SESSION_STORAGE_KEYS[workspaceMode], id);
+        });
+        localStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
       } catch (bootstrapError) {
         setHealth("offline");
         setError(bootstrapError.message);
@@ -265,17 +301,51 @@ function App() {
     return () => window.clearInterval(timer);
   }, [busy, pendingAssistantId]);
 
-  async function resetSession() {
+  function setModeMessages(workspaceMode, updater) {
+    setMessagesByMode((current) => ({
+      ...current,
+      [workspaceMode]:
+        typeof updater === "function"
+          ? updater(current[workspaceMode])
+          : updater,
+    }));
+  }
+
+  function setModeSources(workspaceMode, updater) {
+    setSourcesByMode((current) => ({
+      ...current,
+      [workspaceMode]:
+        typeof updater === "function"
+          ? updater(current[workspaceMode])
+          : updater,
+    }));
+  }
+
+  async function resetSession(workspaceMode = mode) {
     setError("");
     const data = await createSession();
-    setSessionId(data.session_id);
-    localStorage.setItem("vllm-pd-session", data.session_id);
-    setFiles([]);
-    setPendingFiles([]);
-    setUploadSummary(null);
-    setMessages([]);
-    setSources([]);
+    setSessionIds((current) => ({
+      ...current,
+      [workspaceMode]: data.session_id,
+    }));
+    localStorage.setItem(SESSION_STORAGE_KEYS[workspaceMode], data.session_id);
+    if (workspaceMode === "research") {
+      setFiles([]);
+      setPendingFiles([]);
+      setUploadSummary(null);
+    }
+    setModeMessages(workspaceMode, []);
+    setModeSources(workspaceMode, []);
     setSidebarOpen(false);
+  }
+
+  function switchMode(nextMode) {
+    if (nextMode === mode || busy || uploading) return;
+    setMode(nextMode);
+    setQuestion("");
+    setError("");
+    setSidebarOpen(false);
+    setPendingAssistantId("");
   }
 
   function addPendingFiles(fileList) {
@@ -343,11 +413,13 @@ function App() {
     const cleanQuestion = prompt.trim();
     if (!cleanQuestion || busy || !sessionId) return;
 
+    const requestMode = mode;
+    const requestSessionId = sessionId;
     const assistantId = crypto.randomUUID();
     setQuestion("");
     setError("");
-    setSources([]);
-    setMessages((current) => [
+    setModeSources(requestMode, []);
+    setModeMessages(requestMode, (current) => [
       ...current,
       { id: crypto.randomUUID(), role: "user", content: cleanQuestion },
       {
@@ -355,8 +427,8 @@ function App() {
         role: "assistant",
         content: "",
         model: selectedModel?.name || model,
-        mode,
-        answerScope: mode === "mkac" ? "mkac" : "research",
+        mode: requestMode,
+        answerScope: requestMode === "mkac" ? "mkac" : "research",
         sources: [],
       },
     ]);
@@ -367,16 +439,16 @@ function App() {
     try {
       await streamQuery(
         {
-          session_id: sessionId,
+          session_id: requestSessionId,
           question: cleanQuestion,
           stream: true,
           model,
-          mode,
+          mode: requestMode,
         },
         (event) => {
           if (event.type === "sources") {
-            setSources(event.sources || []);
-            setMessages((current) =>
+            setModeSources(requestMode, event.sources || []);
+            setModeMessages(requestMode, (current) =>
               current.map((item) =>
                 item.id === assistantId
                   ? { ...item, sources: event.sources || [] }
@@ -385,7 +457,7 @@ function App() {
             );
           }
           if (event.type === "meta") {
-            setMessages((current) =>
+            setModeMessages(requestMode, (current) =>
               current.map((item) =>
                 item.id === assistantId
                   ? {
@@ -400,7 +472,7 @@ function App() {
           }
           if (event.type === "token") {
             setPendingAssistantId("");
-            setMessages((current) =>
+            setModeMessages(requestMode, (current) =>
               current.map((item) =>
                 item.id === assistantId
                   ? { ...item, content: item.content + (event.content || "") }
@@ -415,7 +487,7 @@ function App() {
       );
     } catch (queryError) {
       setError(queryError.message);
-      setMessages((current) =>
+      setModeMessages(requestMode, (current) =>
         current.map((item) =>
           item.id === assistantId && !item.content
             ? {
@@ -492,7 +564,8 @@ function App() {
                 className="icon-button"
                 type="button"
                 title="Tạo phiên mới"
-                onClick={resetSession}
+                onClick={() => resetSession("research")}
+                disabled={busy || uploading}
               >
                 <RefreshCcw size={17} />
               </button>
@@ -639,7 +712,8 @@ function App() {
                     key={key}
                     type="button"
                     className={mode === key ? `active ${key}` : ""}
-                    onClick={() => setMode(key)}
+                    onClick={() => switchMode(key)}
+                    disabled={busy || uploading}
                   >
                     <Icon size={17} />
                     {option.label}
