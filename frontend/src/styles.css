@@ -765,8 +765,34 @@ button:disabled {
   border-radius: 7px;
 }
 
-.inline-loader {
+.waiting-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 28px;
+  color: #53606d;
+  font-size: 13px;
+}
+
+.waiting-status svg {
+  flex: 0 0 auto;
   color: #0b8b7f;
+}
+
+.waiting-status span {
+  animation: waiting-message-in 220ms ease-out;
+}
+
+@keyframes waiting-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .message-sources {

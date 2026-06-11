@@ -66,6 +66,14 @@ const MODEL_ACCENTS = {
   grok: "accent-grok",
 };
 
+const WAITING_MESSAGES = [
+  "Đã nhận câu hỏi, đang suy luận...",
+  "Tôi hiểu rồi, bạn chờ một chút nhé...",
+  "Đang đối chiếu các nguồn phù hợp...",
+  "Đang tổng hợp câu trả lời...",
+  "Sắp có kết quả rồi...",
+];
+
 async function api(path, options = {}) {
   const response = await fetch(path, options);
   if (!response.ok) {
@@ -169,6 +177,8 @@ function App() {
   const [sources, setSources] = useState([]);
   const [health, setHealth] = useState("checking");
   const [busy, setBusy] = useState(false);
+  const [pendingAssistantId, setPendingAssistantId] = useState("");
+  const [waitingMessageIndex, setWaitingMessageIndex] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 });
   const [dragActive, setDragActive] = useState(false);
@@ -239,6 +249,21 @@ function App() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
+
+  useEffect(() => {
+    if (!busy || !pendingAssistantId) {
+      setWaitingMessageIndex(0);
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      setWaitingMessageIndex(
+        (current) => (current + 1) % WAITING_MESSAGES.length,
+      );
+    }, 2400);
+
+    return () => window.clearInterval(timer);
+  }, [busy, pendingAssistantId]);
 
   async function resetSession() {
     setError("");
@@ -335,6 +360,8 @@ function App() {
         sources: [],
       },
     ]);
+    setWaitingMessageIndex(0);
+    setPendingAssistantId(assistantId);
     setBusy(true);
 
     try {
@@ -372,6 +399,7 @@ function App() {
             );
           }
           if (event.type === "token") {
+            setPendingAssistantId("");
             setMessages((current) =>
               current.map((item) =>
                 item.id === assistantId
@@ -398,6 +426,7 @@ function App() {
         ),
       );
     } finally {
+      setPendingAssistantId("");
       setBusy(false);
     }
   }
@@ -716,9 +745,20 @@ function App() {
                             </span>
                           </div>
                         )}
-                        <ReactMarkdown>
-                          {message.content || (busy ? "Đang phân tích tài liệu..." : "")}
-                        </ReactMarkdown>
+                        {message.content ? (
+                          <ReactMarkdown>{message.content}</ReactMarkdown>
+                        ) : message.id === pendingAssistantId ? (
+                          <div
+                            className="waiting-status"
+                            role="status"
+                            aria-live="polite"
+                          >
+                            <Loader2 className="spin" size={17} />
+                            <span key={waitingMessageIndex}>
+                              {WAITING_MESSAGES[waitingMessageIndex]}
+                            </span>
+                          </div>
+                        ) : null}
                         {message.role === "assistant" && message.sources?.length > 0 && (
                           <details className="message-sources">
                             <summary>{message.sources.length} nguồn tham chiếu</summary>
@@ -737,9 +777,6 @@ function App() {
                               </div>
                             ))}
                           </details>
-                        )}
-                        {message.role === "assistant" && busy && !message.content && (
-                          <Loader2 className="spin inline-loader" size={17} />
                         )}
                       </div>
                     </article>
