@@ -599,6 +599,15 @@ Chức năng chính:
 - Gửi câu hỏi qua SSE.
 - Render Markdown.
 - Hiển thị nguồn ở panel desktop và trong từng tin nhắn.
+- Cho phép dừng câu trả lời streaming, sao chép phản hồi và xem nhãn AI với
+  model/phạm vi nguồn.
+- Panel nguồn dùng progressive disclosure: mặc định thu gọn và hiển thị số
+  nguồn của câu trả lời mới nhất trên nút mở panel.
+- Hỗ trợ giao diện `Sáng`, `Tối` và `Theo hệ thống`; lựa chọn được lưu bằng
+  khóa `vllm-pd-theme` trong `localStorage`. Chế độ hệ thống theo dõi
+  `prefers-color-scheme` và cập nhật ngay khi thiết lập hệ điều hành thay đổi.
+- Script nhỏ trong `frontend/index.html` áp dụng theme trước khi React mount để
+  tránh nháy nền sáng khi mở dark mode.
 
 Production:
 

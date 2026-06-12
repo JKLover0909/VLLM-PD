@@ -6,8 +6,10 @@ import {
   AlertCircle,
   BookOpen,
   Bot,
+  Check,
   CheckCircle2,
   ChevronDown,
+  Copy,
   Database,
   FileText,
   FileUp,
@@ -16,7 +18,6 @@ import {
   Layers3,
   Loader2,
   Menu,
-  MessageSquare,
   PanelRightClose,
   PanelRightOpen,
   Paperclip,
@@ -25,6 +26,11 @@ import {
   Send,
   Server,
   ShieldCheck,
+  Sparkles,
+  Square,
+  Sun,
+  Moon,
+  Monitor,
   Trash2,
   UploadCloud,
   X,
@@ -78,6 +84,31 @@ const SESSION_STORAGE_KEYS = {
   research: "vllm-pd-session-research",
 };
 const LEGACY_SESSION_STORAGE_KEY = "vllm-pd-session";
+const THEME_STORAGE_KEY = "vllm-pd-theme";
+const THEME_OPTIONS = ["system", "light", "dark"];
+const THEME_META = {
+  system: {
+    label: "Theo hệ thống",
+    icon: Monitor,
+  },
+  light: {
+    label: "Sáng",
+    icon: Sun,
+  },
+  dark: {
+    label: "Tối",
+    icon: Moon,
+  },
+};
+
+function storedTheme() {
+  try {
+    const value = localStorage.getItem(THEME_STORAGE_KEY);
+    return THEME_OPTIONS.includes(value) ? value : "system";
+  } catch {
+    return "system";
+  }
+}
 
 async function api(path, options = {}) {
   const response = await fetch(path, options);
@@ -101,11 +132,12 @@ async function createSession() {
   return response.json();
 }
 
-async function streamQuery(payload, onEvent) {
+async function streamQuery(payload, onEvent, signal) {
   const response = await api("/query/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    signal,
   });
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -164,6 +196,7 @@ function shortSession(sessionId) {
 }
 
 function App() {
+  const [theme, setTheme] = useState(storedTheme);
   const [sessionIds, setSessionIds] = useState({ mkac: "", research: "" });
   const [files, setFiles] = useState([]);
   const [pendingFiles, setPendingFiles] = useState([]);
@@ -191,13 +224,19 @@ function App() {
   const [pendingAssistantId, setPendingAssistantId] = useState("");
   const [waitingMessageIndex, setWaitingMessageIndex] = useState(0);
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 });
+  const [uploadProgress, setUploadProgress] = useState({
+    done: 0,
+    total: 0,
+    current: "",
+  });
+  const [copiedMessageId, setCopiedMessageId] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sourcePanelOpen, setSourcePanelOpen] = useState(false);
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
+  const generationControllerRef = useRef(null);
   const endRef = useRef(null);
 
   const selectedModel = useMemo(
@@ -207,6 +246,7 @@ function App() {
 
   const currentMode = MODE_OPTIONS[mode];
   const ModeIcon = currentMode.icon;
+  const ThemeIcon = THEME_META[theme].icon;
   const sessionId = sessionIds[mode];
   const messages = messagesByMode[mode];
   const sources = sourcesByMode[mode];
@@ -217,9 +257,12 @@ function App() {
     () => pendingFiles.reduce((total, file) => total + file.size, 0),
     [pendingFiles],
   );
+  const latestAssistantMessage = [...messages]
+    .reverse()
+    .find((item) => item.role === "assistant");
   const latestSources = sources.length
     ? sources
-    : [...messages].reverse().find((item) => item.sources?.length)?.sources || [];
+    : latestAssistantMessage?.sources || [];
 
   useEffect(() => {
     async function bootstrap() {
@@ -287,6 +330,28 @@ function App() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      const resolvedTheme =
+        theme === "system" ? (mediaQuery.matches ? "dark" : "light") : theme;
+      document.documentElement.dataset.theme = resolvedTheme;
+      document.documentElement.style.colorScheme = resolvedTheme;
+      document
+        .querySelector('meta[name="theme-color"]')
+        ?.setAttribute("content", resolvedTheme === "dark" ? "#15191f" : "#f4f6f8");
+    };
+
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // Theme still works for the current page when storage is unavailable.
+    }
+    applyTheme();
+    mediaQuery.addEventListener("change", applyTheme);
+    return () => mediaQuery.removeEventListener("change", applyTheme);
+  }, [theme]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -366,6 +431,47 @@ function App() {
     setSourcePanelOpen(false);
   }
 
+  function onModeTabKeyDown(event, currentModeKey) {
+    const modeKeys = Object.keys(MODE_OPTIONS);
+    const currentIndex = modeKeys.indexOf(currentModeKey);
+    let nextIndex = currentIndex;
+
+    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % modeKeys.length;
+    else if (event.key === "ArrowLeft") {
+      nextIndex = (currentIndex - 1 + modeKeys.length) % modeKeys.length;
+    } else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = modeKeys.length - 1;
+    else return;
+
+    event.preventDefault();
+    const nextMode = modeKeys[nextIndex];
+    switchMode(nextMode);
+    document.querySelector(`[data-mode="${nextMode}"]`)?.focus();
+  }
+
+  async function copyAnswer(message) {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopiedMessageId(message.id);
+      window.setTimeout(() => {
+        setCopiedMessageId((current) => (current === message.id ? "" : current));
+      }, 1800);
+    } catch {
+      setError("Không thể sao chép câu trả lời.");
+    }
+  }
+
+  function stopGeneration() {
+    generationControllerRef.current?.abort();
+  }
+
+  function cycleTheme() {
+    setTheme((current) => {
+      const currentIndex = THEME_OPTIONS.indexOf(current);
+      return THEME_OPTIONS[(currentIndex + 1) % THEME_OPTIONS.length];
+    });
+  }
+
   function addPendingFiles(fileList) {
     const incoming = Array.from(fileList || []);
     if (incoming.length === 0) return;
@@ -385,12 +491,17 @@ function App() {
     setUploading(true);
     setError("");
     setUploadSummary(null);
-    setUploadProgress({ done: 0, total: pendingFiles.length });
+    setUploadProgress({ done: 0, total: pendingFiles.length, current: "" });
     const uploaded = [];
     let totalChunks = 0;
 
     try {
       for (const [index, file] of pendingFiles.entries()) {
+        setUploadProgress({
+          done: index,
+          total: pendingFiles.length,
+          current: file.name,
+        });
         const formData = new FormData();
         formData.append("file", file);
         const response = await api(`/sessions/${sessionId}/upload`, {
@@ -400,7 +511,11 @@ function App() {
         const result = await response.json();
         uploaded.push(result.filename);
         totalChunks += Number(result.num_chunks || 0);
-        setUploadProgress({ done: index + 1, total: pendingFiles.length });
+        setUploadProgress({
+          done: index + 1,
+          total: pendingFiles.length,
+          current: file.name,
+        });
       }
       setFiles((current) => [...new Set([...current, ...uploaded])]);
       setPendingFiles([]);
@@ -435,9 +550,12 @@ function App() {
     const requestMode = mode;
     const requestSessionId = sessionId;
     const assistantId = crypto.randomUUID();
+    const controller = new AbortController();
+    generationControllerRef.current = controller;
     setQuestion("");
     setError("");
     setModeSources(requestMode, []);
+    setSourcePanelOpen(false);
     setModeMessages(requestMode, (current) => [
       ...current,
       { id: crypto.randomUUID(), role: "user", content: cleanQuestion },
@@ -467,9 +585,6 @@ function App() {
         (event) => {
           if (event.type === "sources") {
             setModeSources(requestMode, event.sources || []);
-            if ((event.sources || []).length > 0) {
-              setSourcePanelOpen(true);
-            }
             setModeMessages(requestMode, (current) =>
               current.map((item) =>
                 item.id === assistantId
@@ -506,20 +621,28 @@ function App() {
             throw new Error(event.message || "Không thể tạo phản hồi.");
           }
         },
+        controller.signal,
       );
     } catch (queryError) {
-      setError(queryError.message);
+      const wasStopped = queryError.name === "AbortError";
+      if (!wasStopped) setError(queryError.message);
       setModeMessages(requestMode, (current) =>
         current.map((item) =>
-          item.id === assistantId && !item.content
+          item.id === assistantId
             ? {
                 ...item,
-                content: `Không thể hoàn tất yêu cầu: ${queryError.message}`,
+                content:
+                  item.content ||
+                  (wasStopped
+                    ? "Đã dừng phản hồi."
+                    : `Không thể hoàn tất yêu cầu: ${queryError.message}`),
+                stopped: wasStopped,
               }
             : item,
         ),
       );
     } finally {
+      generationControllerRef.current = null;
       setPendingAssistantId("");
       setBusy(false);
     }
@@ -659,6 +782,19 @@ function App() {
                       ? `Đang index ${uploadProgress.done}/${uploadProgress.total}`
                       : "Index tài liệu"}
                   </button>
+                  {uploading && (
+                    <div className="upload-progress" role="status" aria-live="polite">
+                      <div className="upload-progress-copy">
+                        <span>Đang xử lý</span>
+                        <strong title={uploadProgress.current}>
+                          {uploadProgress.current}
+                        </strong>
+                      </div>
+                      <div className="upload-progress-track" aria-hidden="true">
+                        <span />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -733,11 +869,15 @@ function App() {
                   <button
                     key={key}
                     type="button"
+                    data-mode={key}
                     className={mode === key ? `active ${key}` : ""}
                     onClick={() => switchMode(key)}
+                    onKeyDown={(event) => onModeTabKeyDown(event, key)}
                     disabled={busy || uploading}
                     role="tab"
                     aria-selected={mode === key}
+                    aria-controls={`${key}-conversation`}
+                    tabIndex={mode === key ? 0 : -1}
                   >
                     <Icon size={17} />
                     {option.label}
@@ -763,13 +903,23 @@ function App() {
             </label>
 
             <button
+              className="icon-button header-tool theme-toggle"
+              type="button"
+              title={`Giao diện: ${THEME_META[theme].label}. Nhấn để chuyển chế độ.`}
+              aria-label={`Giao diện hiện tại: ${THEME_META[theme].label}`}
+              onClick={cycleTheme}
+            >
+              <ThemeIcon size={18} />
+            </button>
+
+            <button
               className="icon-button header-tool"
               type="button"
               title="Xóa hội thoại hiện tại"
               onClick={clearConversation}
               disabled={busy || messages.length === 0}
             >
-              <MessageSquare size={18} />
+              <Trash2 size={18} />
             </button>
 
             <button
@@ -777,14 +927,26 @@ function App() {
               type="button"
               title={sourcePanelOpen ? "Ẩn nguồn" : "Hiện nguồn"}
               onClick={() => setSourcePanelOpen((open) => !open)}
+              disabled={latestSources.length === 0}
+              aria-controls="source-panel"
+              aria-expanded={sourcePanelOpen}
             >
               {sourcePanelOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
+              {latestSources.length > 0 && (
+                <span className="panel-count">{latestSources.length}</span>
+              )}
             </button>
           </div>
         </header>
 
         <div className="workspace-body">
-          <section className="conversation">
+          <section
+            id={`${mode}-conversation`}
+            className="conversation"
+            role="tabpanel"
+            aria-label={currentMode.title}
+            aria-busy={busy}
+          >
             <div className="conversation-scroll">
               {messages.length === 0 ? (
                 <div className="empty-conversation">
@@ -847,7 +1009,12 @@ function App() {
                   </div>
                 </div>
               ) : (
-                <div className="message-list">
+                <div
+                  className="message-list"
+                  role="log"
+                  aria-live="polite"
+                  aria-relevant="additions text"
+                >
                   {messages.map((message) => (
                     <article className={`message ${message.role}`} key={message.id}>
                       <div className="message-avatar">
@@ -857,6 +1024,7 @@ function App() {
                         {message.role === "assistant" && (
                           <div className="message-meta">
                             <span>{message.model}</span>
+                            {message.stopped && <span>Đã dừng</span>}
                             <span>
                               {message.answerScope === "general"
                                 ? "Không có kết quả"
@@ -882,6 +1050,43 @@ function App() {
                             </span>
                           </div>
                         ) : null}
+                        {message.role === "assistant" && message.content && (
+                          <div className="message-actions">
+                            <details className="ai-disclosure">
+                              <summary title="Thông tin phản hồi AI">
+                                <Sparkles size={14} />
+                                <span>AI</span>
+                              </summary>
+                              <div>
+                                <strong>{message.model}</strong>
+                                <span>
+                                  {message.answerScope === "web"
+                                    ? "Tổng hợp từ nguồn web"
+                                    : message.answerScope === "research"
+                                      ? "Dựa trên tài liệu nghiên cứu"
+                                      : message.answerScope === "mkac"
+                                        ? "Dựa trên kho MKAC"
+                                        : "Không có nguồn đối chiếu"}
+                                </span>
+                              </div>
+                            </details>
+                            <button
+                              className="message-action-button"
+                              type="button"
+                              title="Sao chép câu trả lời"
+                              onClick={() => copyAnswer(message)}
+                            >
+                              {copiedMessageId === message.id ? (
+                                <Check size={14} />
+                              ) : (
+                                <Copy size={14} />
+                              )}
+                              <span>
+                                {copiedMessageId === message.id ? "Đã sao chép" : "Sao chép"}
+                              </span>
+                            </button>
+                          </div>
+                        )}
                         {message.role === "assistant" && message.sources?.length > 0 && (
                           <details className="message-sources">
                             <summary>{message.sources.length} nguồn tham chiếu</summary>
@@ -948,6 +1153,11 @@ function App() {
                 }}
                 rows={2}
                 maxLength={4000}
+                aria-label={
+                  mode === "research"
+                    ? "Câu hỏi nghiên cứu"
+                    : "Câu hỏi về MKAC"
+                }
                 placeholder={
                   mode === "research"
                     ? researchReady
@@ -966,18 +1176,23 @@ function App() {
                   <span className="char-count">{question.length}/4000</span>
                   <button
                     className="send-button"
-                    type="submit"
-                    title="Gửi"
-                    disabled={!canAsk}
+                    type={busy ? "button" : "submit"}
+                    title={busy ? "Dừng trả lời" : "Gửi"}
+                    onClick={busy ? stopGeneration : undefined}
+                    disabled={busy ? false : !canAsk}
                   >
-                    {busy ? <Loader2 className="spin" size={18} /> : <Send size={18} />}
+                    {busy ? <Square size={16} fill="currentColor" /> : <Send size={18} />}
                   </button>
                 </div>
               </div>
             </form>
           </section>
 
-          <aside className="source-panel">
+          <aside
+            id="source-panel"
+            className="source-panel"
+            aria-label="Nguồn tham chiếu"
+          >
             <div className="source-header">
               <span>Nguồn tham chiếu</span>
               <span>{latestSources.length}</span>

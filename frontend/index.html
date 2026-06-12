@@ -3,12 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#171917" />
+    <meta name="theme-color" content="#f4f6f8" />
     <meta
       name="description"
       content="Không gian hỏi đáp và nghiên cứu tài liệu VLLM-PD"
     />
     <title>VLLM-PD Research</title>
+    <script>
+      (() => {
+        let preference = "system";
+        try {
+          preference = localStorage.getItem("vllm-pd-theme") || "system";
+        } catch {
+          // Fall back to the operating system preference.
+        }
+        const resolved =
+          preference === "system"
+            ? window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light"
+            : preference;
+        document.documentElement.dataset.theme = resolved;
+        document.documentElement.style.colorScheme = resolved;
+        document
+          .querySelector('meta[name="theme-color"]')
+          .setAttribute("content", resolved === "dark" ? "#15191f" : "#f4f6f8");
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

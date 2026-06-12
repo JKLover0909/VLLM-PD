@@ -107,6 +107,10 @@ npm install
 npm run build
 ```
 
+Giao dien web co ba che do mau: `Sang`, `Toi` va `Theo he thong`. Nhan nut
+theme tren thanh cong cu de chuyen che do; lua chon duoc luu trong
+`localStorage` cua trinh duyet.
+
 ## Cau hinh `.env`
 
 Tao file `.env`:
@@ -265,7 +269,8 @@ Nguoi dung co the:
   `Nghien cuu`.
 - Che do `Nghien cuu` yeu cau co tai lieu da index truoc khi hoi; co the them
   tai lieu tu nut chinh giua man hinh, thanh ben hoac nut dinh kem canh o nhap.
-- Panel nguon mac dinh thu gon va tu mo khi cau tra loi co trich dan.
+- Panel nguon mac dinh thu gon; nut nguon hien so trich dan cua cau tra loi moi
+  nhat va chi mo khi nguoi dung can doi chieu.
 - Chon model `Tu dong`, `Gemma4 Local`, `MiMo 2.5 Pro`, `OpenAI` hoac `Grok`.
 - Dat cau hoi va xem sources tu tai lieu.
 
