@@ -84,6 +84,7 @@ const SESSION_STORAGE_KEYS = {
   research: "vllm-pd-session-research",
 };
 const LEGACY_SESSION_STORAGE_KEY = "vllm-pd-session";
+const SESSION_TITLE_STORAGE_KEY = "vllm-pd-session-titles";
 const THEME_STORAGE_KEY = "vllm-pd-theme";
 const THEME_OPTIONS = ["system", "light", "dark"];
 const THEME_META = {
@@ -190,14 +191,48 @@ function formatBytes(bytes) {
   return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-function shortSession(sessionId) {
-  if (!sessionId) return "no-session";
-  return sessionId.slice(0, 8);
+function defaultSessionTitle(workspaceMode) {
+  return workspaceMode === "research"
+    ? "Phiên nghiên cứu mới"
+    : "Hỏi đáp MKAC mới";
+}
+
+function sessionTitleFromQuestion(question) {
+  const normalized = question
+    .replace(/\s+/g, " ")
+    .replace(/[?.!,;:]+$/g, "")
+    .trim();
+  const words = normalized.split(" ");
+  const title = words.slice(0, 9).join(" ");
+  return words.length > 9 ? `${title}...` : title;
+}
+
+function storedSessionTitles() {
+  try {
+    return JSON.parse(localStorage.getItem(SESSION_TITLE_STORAGE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function persistSessionTitle(sessionId, title) {
+  if (!sessionId || !title) return;
+  try {
+    const titles = storedSessionTitles();
+    titles[sessionId] = title;
+    localStorage.setItem(SESSION_TITLE_STORAGE_KEY, JSON.stringify(titles));
+  } catch {
+    // The title remains available in React state when storage is unavailable.
+  }
 }
 
 function App() {
   const [theme, setTheme] = useState(storedTheme);
   const [sessionIds, setSessionIds] = useState({ mkac: "", research: "" });
+  const [sessionTitles, setSessionTitles] = useState({
+    mkac: defaultSessionTitle("mkac"),
+    research: defaultSessionTitle("research"),
+  });
   const [files, setFiles] = useState([]);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [uploadSummary, setUploadSummary] = useState(null);
@@ -234,8 +269,10 @@ function App() {
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sourcePanelOpen, setSourcePanelOpen] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
+  const modelSelectRef = useRef(null);
   const generationControllerRef = useRef(null);
   const endRef = useRef(null);
 
@@ -315,6 +352,14 @@ function App() {
         );
 
         setSessionIds(resolvedSessions);
+        const savedTitles = storedSessionTitles();
+        setSessionTitles({
+          mkac:
+            savedTitles[resolvedSessions.mkac] || defaultSessionTitle("mkac"),
+          research:
+            savedTitles[resolvedSessions.research] ||
+            defaultSessionTitle("research"),
+        });
         Object.entries(resolvedSessions).forEach(([workspaceMode, id]) => {
           localStorage.setItem(SESSION_STORAGE_KEYS[workspaceMode], id);
         });
@@ -361,6 +406,29 @@ function App() {
   }, [question]);
 
   useEffect(() => {
+    if (!modelMenuOpen) return undefined;
+
+    function closeModelMenu(event) {
+      if (event.key === "Escape") {
+        setModelMenuOpen(false);
+        modelSelectRef.current?.querySelector(".model-select-trigger")?.focus();
+      } else if (
+        event.type === "pointerdown" &&
+        !modelSelectRef.current?.contains(event.target)
+      ) {
+        setModelMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", closeModelMenu);
+    document.addEventListener("keydown", closeModelMenu);
+    return () => {
+      document.removeEventListener("pointerdown", closeModelMenu);
+      document.removeEventListener("keydown", closeModelMenu);
+    };
+  }, [modelMenuOpen]);
+
+  useEffect(() => {
     if (!busy || !pendingAssistantId) {
       setWaitingMessageIndex(0);
       return undefined;
@@ -403,6 +471,10 @@ function App() {
       [workspaceMode]: data.session_id,
     }));
     localStorage.setItem(SESSION_STORAGE_KEYS[workspaceMode], data.session_id);
+    setSessionTitles((current) => ({
+      ...current,
+      [workspaceMode]: defaultSessionTitle(workspaceMode),
+    }));
     if (workspaceMode === "research") {
       setFiles([]);
       setPendingFiles([]);
@@ -549,6 +621,11 @@ function App() {
 
     const requestMode = mode;
     const requestSessionId = sessionId;
+    if (messages.length === 0) {
+      const title = sessionTitleFromQuestion(cleanQuestion);
+      setSessionTitles((current) => ({ ...current, [requestMode]: title }));
+      persistSessionTitle(requestSessionId, title);
+    }
     const assistantId = crypto.randomUUID();
     const controller = new AbortController();
     generationControllerRef.current = controller;
@@ -703,7 +780,9 @@ function App() {
             <div className="session-strip">
               <div>
                 <span>Phiên làm việc</span>
-                <code>{shortSession(sessionId)}</code>
+                <strong className="session-title" title={sessionTitles.research}>
+                  {sessionTitles.research}
+                </strong>
               </div>
               <button
                 className="icon-button"
@@ -886,21 +965,50 @@ function App() {
               })}
             </div>
 
-            <label className={`model-select ${MODEL_ACCENTS[model] || ""}`}>
+            <div
+              ref={modelSelectRef}
+              className={`model-select ${MODEL_ACCENTS[model] || ""}`}
+            >
               <Bot size={17} />
-              <select
-                value={model}
+              <button
+                className="model-select-trigger"
+                type="button"
                 aria-label="Chọn mô hình"
-                onChange={(event) => setModel(event.target.value)}
+                aria-haspopup="listbox"
+                aria-expanded={modelMenuOpen}
+                onClick={() => setModelMenuOpen((open) => !open)}
               >
-                {models.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={15} />
-            </label>
+                <span>{selectedModel?.name || "Đang tải model"}</span>
+                <ChevronDown
+                  className={modelMenuOpen ? "model-chevron open" : "model-chevron"}
+                  size={15}
+                />
+              </button>
+              {modelMenuOpen && (
+                <div className="model-menu" role="listbox" aria-label="Danh sách mô hình">
+                  {models.map((item) => (
+                    <button
+                      key={item.id}
+                      className={model === item.id ? "selected" : ""}
+                      type="button"
+                      role="option"
+                      aria-selected={model === item.id}
+                      onClick={() => {
+                        setModel(item.id);
+                        setModelMenuOpen(false);
+                      }}
+                    >
+                      <span className={`model-dot ${MODEL_ACCENTS[item.id] || ""}`} />
+                      <span className="model-option-copy">
+                        <strong>{item.name}</strong>
+                        <small>{item.description}</small>
+                      </span>
+                      {model === item.id && <Check size={16} />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <button
               className="icon-button header-tool theme-toggle"
