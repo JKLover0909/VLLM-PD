@@ -15,6 +15,7 @@ body,
 #root {
   min-width: 320px;
   min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
 }
 
@@ -39,10 +40,20 @@ button:disabled {
   opacity: 0.55;
 }
 
+button:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+  outline: 3px solid rgba(13, 127, 115, 0.25);
+  outline-offset: 2px;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 304px minmax(0, 1fr);
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .app-shell.mkac-layout {
@@ -55,6 +66,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   min-width: 0;
   padding: 18px 16px;
   color: #eef2f0;
@@ -520,12 +532,14 @@ button:disabled {
   outline: 0;
 }
 
+.header-tool,
 .panel-toggle {
   color: #404955;
   background: #ffffff;
   border: 1px solid #d8dee5;
 }
 
+.header-tool:hover,
 .panel-toggle:hover {
   background: #f5f7f9;
 }
@@ -534,6 +548,7 @@ button:disabled {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
   height: calc(100vh - 72px);
+  height: calc(100dvh - 72px);
   min-height: 0;
   transition: grid-template-columns 180ms ease;
 }
@@ -601,6 +616,26 @@ button:disabled {
   line-height: 1.55;
 }
 
+.empty-upload-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  margin-top: 18px;
+  padding: 0 15px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+  background: #8a5a0a;
+  border: 0;
+  border-radius: 8px;
+}
+
+.empty-upload-button:hover {
+  background: #724805;
+}
+
 .prompt-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 210px));
@@ -627,6 +662,12 @@ button:disabled {
 .prompt-grid button:hover {
   color: #0b5a52;
   border-color: #8bd8d0;
+}
+
+.prompt-grid button:disabled {
+  color: #8c96a1;
+  background: #f2f4f6;
+  border-color: #e2e6ea;
 }
 
 .prompt-grid svg {
@@ -816,12 +857,12 @@ button:disabled {
 
 .error-banner span {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
 }
 
 .composer {
+  position: relative;
   width: min(840px, calc(100% - 36px));
   margin: 0 auto 18px;
   background: #ffffff;
@@ -843,11 +884,30 @@ button:disabled {
   min-height: 74px;
   max-height: 190px;
   padding: 14px 14px 8px;
-  resize: vertical;
+  overflow-y: auto;
+  resize: none;
   color: #232a34;
   background: transparent;
   border: 0;
   outline: 0;
+}
+
+.composer:has(.composer-attach) textarea {
+  padding-left: 48px;
+}
+
+.composer-attach {
+  position: absolute;
+  top: 10px;
+  left: 9px;
+  color: #65717e;
+  background: #f1f4f6;
+  z-index: 1;
+}
+
+.composer-attach:hover {
+  color: #0b5a52;
+  background: #e5f5f2;
 }
 
 .composer-footer {
@@ -1128,6 +1188,10 @@ button:disabled {
     display: none;
   }
 
+  .panel-toggle {
+    display: none;
+  }
+
   .message-sources {
     display: block;
     margin-top: 12px;
@@ -1193,6 +1257,7 @@ button:disabled {
 
   .workspace-body {
     height: calc(100vh - 138px);
+    height: calc(100dvh - 138px);
   }
 
   .message-list {
@@ -1242,6 +1307,7 @@ button:disabled {
 
   .workspace-body {
     height: calc(100vh - 154px);
+    height: calc(100dvh - 154px);
   }
 
   .header-title strong {

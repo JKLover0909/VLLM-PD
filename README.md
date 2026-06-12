@@ -263,6 +263,9 @@ Nguoi dung co the:
 - Hai che do dung session va lich su hoi dap rieng. Khi chuyen tab, frontend
   chuyen sang UUID cua che do do; tai lieu upload chi gan voi session
   `Nghien cuu`.
+- Che do `Nghien cuu` yeu cau co tai lieu da index truoc khi hoi; co the them
+  tai lieu tu nut chinh giua man hinh, thanh ben hoac nut dinh kem canh o nhap.
+- Panel nguon mac dinh thu gon va tu mo khi cau tra loi co trich dan.
 - Chon model `Tu dong`, `Gemma4 Local`, `MiMo 2.5 Pro`, `OpenAI` hoac `Grok`.
 - Dat cau hoi va xem sources tu tai lieu.
 

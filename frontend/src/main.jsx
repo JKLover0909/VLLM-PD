@@ -20,7 +20,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Paperclip,
-  Plus,
   RefreshCcw,
   Search,
   Send,
@@ -196,8 +195,9 @@ function App() {
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sourcePanelOpen, setSourcePanelOpen] = useState(true);
+  const [sourcePanelOpen, setSourcePanelOpen] = useState(false);
   const fileInputRef = useRef(null);
+  const textareaRef = useRef(null);
   const endRef = useRef(null);
 
   const selectedModel = useMemo(
@@ -210,7 +210,9 @@ function App() {
   const sessionId = sessionIds[mode];
   const messages = messagesByMode[mode];
   const sources = sourcesByMode[mode];
-  const canAsk = Boolean(question.trim()) && !busy && Boolean(sessionId);
+  const researchReady = mode !== "research" || files.length > 0;
+  const canAsk =
+    Boolean(question.trim()) && !busy && Boolean(sessionId) && researchReady;
   const pendingTotalSize = useMemo(
     () => pendingFiles.reduce((total, file) => total + file.size, 0),
     [pendingFiles],
@@ -287,6 +289,13 @@ function App() {
   }, [messages, busy]);
 
   useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 190)}px`;
+  }, [question]);
+
+  useEffect(() => {
     if (!busy || !pendingAssistantId) {
       setWaitingMessageIndex(0);
       return undefined;
@@ -345,7 +354,16 @@ function App() {
     setQuestion("");
     setError("");
     setSidebarOpen(false);
+    setSourcePanelOpen(false);
     setPendingAssistantId("");
+  }
+
+  function clearConversation() {
+    setModeMessages(mode, []);
+    setModeSources(mode, []);
+    setQuestion("");
+    setError("");
+    setSourcePanelOpen(false);
   }
 
   function addPendingFiles(fileList) {
@@ -353,6 +371,7 @@ function App() {
     if (incoming.length === 0) return;
     setPendingFiles((current) => mergeFiles(current, incoming));
     setUploadSummary(null);
+    setSidebarOpen(true);
   }
 
   function removePendingFile(indexToRemove) {
@@ -448,6 +467,9 @@ function App() {
         (event) => {
           if (event.type === "sources") {
             setModeSources(requestMode, event.sources || []);
+            if ((event.sources || []).length > 0) {
+              setSourcePanelOpen(true);
+            }
             setModeMessages(requestMode, (current) =>
               current.map((item) =>
                 item.id === assistantId
@@ -641,7 +663,7 @@ function App() {
               )}
 
               {uploadSummary && (
-                <div className="upload-summary">
+                <div className="upload-summary" role="status" aria-live="polite">
                   <CheckCircle2 size={15} />
                   <span>
                     Đã index {uploadSummary.files} tệp, {uploadSummary.chunks} đoạn
@@ -714,6 +736,8 @@ function App() {
                     className={mode === key ? `active ${key}` : ""}
                     onClick={() => switchMode(key)}
                     disabled={busy || uploading}
+                    role="tab"
+                    aria-selected={mode === key}
                   >
                     <Icon size={17} />
                     {option.label}
@@ -724,7 +748,11 @@ function App() {
 
             <label className={`model-select ${MODEL_ACCENTS[model] || ""}`}>
               <Bot size={17} />
-              <select value={model} onChange={(event) => setModel(event.target.value)}>
+              <select
+                value={model}
+                aria-label="Chọn mô hình"
+                onChange={(event) => setModel(event.target.value)}
+              >
                 {models.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
@@ -733,6 +761,16 @@ function App() {
               </select>
               <ChevronDown size={15} />
             </label>
+
+            <button
+              className="icon-button header-tool"
+              type="button"
+              title="Xóa hội thoại hiện tại"
+              onClick={clearConversation}
+              disabled={busy || messages.length === 0}
+            >
+              <MessageSquare size={18} />
+            </button>
 
             <button
               className="icon-button panel-toggle"
@@ -762,6 +800,16 @@ function App() {
                           ? "Sẵn sàng nghiên cứu tài liệu đã index trong phiên này."
                           : "Tải tài liệu lên để bắt đầu nghiên cứu."}
                     </p>
+                    {mode === "research" && files.length === 0 && (
+                      <button
+                        className="empty-upload-button"
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <UploadCloud size={17} />
+                        Chọn tài liệu để bắt đầu
+                      </button>
+                    )}
                   </div>
 
                   <div className="prompt-grid">
@@ -770,6 +818,7 @@ function App() {
                         key={prompt}
                         type="button"
                         onClick={() => sendMessage(prompt)}
+                        disabled={!researchReady}
                       >
                         <Search size={16} />
                         <span>{prompt}</span>
@@ -861,7 +910,7 @@ function App() {
             </div>
 
             {error && (
-              <div className="error-banner">
+              <div className="error-banner" role="alert">
                 <AlertCircle size={17} />
                 <span>{error}</span>
                 <button
@@ -876,7 +925,19 @@ function App() {
             )}
 
             <form className="composer" onSubmit={onSubmit}>
+              {mode === "research" && (
+                <button
+                  className="composer-attach icon-button"
+                  type="button"
+                  title="Thêm tài liệu nghiên cứu"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={busy || uploading}
+                >
+                  <Paperclip size={18} />
+                </button>
+              )}
               <textarea
+                ref={textareaRef}
                 value={question}
                 onChange={(event) => setQuestion(event.target.value)}
                 onKeyDown={(event) => {
@@ -886,12 +947,15 @@ function App() {
                   }
                 }}
                 rows={2}
+                maxLength={4000}
                 placeholder={
                   mode === "research"
-                    ? "Nhập chủ đề nghiên cứu..."
+                    ? researchReady
+                      ? "Nhập chủ đề nghiên cứu..."
+                      : "Hãy tải tài liệu lên trước khi đặt câu hỏi..."
                     : "Đặt câu hỏi về MKAC..."
                 }
-                disabled={busy}
+                disabled={busy || !researchReady}
               />
               <div className="composer-footer">
                 <div className="composer-context">
