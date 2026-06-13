@@ -35,7 +35,7 @@ COPY scripts ./scripts
 COPY litellm_config.yaml ./litellm_config.yaml
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
-RUN mkdir -p /app/uploads /app/logs /app/mkac_processed/pages
+RUN mkdir -p /app/uploads /app/logs /app/data /app/mkac_processed/pages
 
 EXPOSE 8001
 

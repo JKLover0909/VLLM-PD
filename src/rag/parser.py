@@ -218,9 +218,24 @@ class DocumentParser:
             metadata=metadata,
         )
         if path.suffix.lower() in IMAGE_EXTENSIONS:
+            image_path = str(path.resolve())
+            if not chunks:
+                chunks = [
+                    TextChunk(
+                        text=(
+                            f"Hình ảnh được tải lên: {path.name}. "
+                            "Nội dung chi tiết cần được phân tích bằng mô hình vision."
+                        ),
+                        source_file=path.name,
+                        page_number=1,
+                        chunk_index=0,
+                        content_type="image",
+                        metadata={**metadata, "image_path": image_path},
+                    )
+                ]
             for chunk in chunks:
                 chunk.content_type = "image"
-                chunk.metadata["image_path"] = str(path.resolve())
+                chunk.metadata["image_path"] = image_path
         return chunks
 
     def _render_pdf_page(self, page: fitz.Page, target: Path | None) -> Path:

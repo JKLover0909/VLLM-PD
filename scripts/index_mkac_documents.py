@@ -45,6 +45,7 @@ def sha256(path: Path) -> str:
 def build_embedding_text(chunk, metadata: dict) -> str:
     """Add curated document identity to OCR text used for semantic retrieval."""
     organization = metadata.get("organization", {})
+    leadership = organization.get("leadership", {})
     identity = [
         f"Kho tri thức: {metadata.get('knowledge_base', 'MKAC')}",
         f"Tài liệu: {metadata.get('title', chunk.source_file)}",
@@ -53,6 +54,9 @@ def build_embedding_text(chunk, metadata: dict) -> str:
         f"Tên pháp lý tiếng Việt: {organization.get('legal_name_vi', '')}",
         f"Tên pháp lý tiếng Anh: {organization.get('legal_name_en', '')}",
         f"Mã số doanh nghiệp: {organization.get('enterprise_id', '')}",
+        f"Giám đốc hiện tại: {leadership.get('director', '')}",
+        f"Phó tổng giám đốc: {leadership.get('deputy_general_director', '')}",
+        f"Tổng giám đốc: {leadership.get('general_director', '')}",
     ]
     return "\n".join(item for item in identity if item.rsplit(": ", 1)[-1]) + (
         f"\n\n{chunk.text}"

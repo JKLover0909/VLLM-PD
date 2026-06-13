@@ -19,11 +19,9 @@ Thư mục `docmind/` là phần demo tách riêng từ các thử nghiệm trư
 - Parser tài liệu: Docling.
 - LLM upstream:
   - Gemma4 local trên Máy 1 qua Ollama/ngrok.
-  - MiMo 2.5 Pro qua Xiaomi MiMo API.
   - OpenAI GPT-5.4 mini.
   - Grok 4.20 Reasoning qua Azure.
-- Session có file ảnh `.png/.jpg/.jpeg` tự động route sang OpenAI Vision để đọc
-  nội dung ảnh.
+- Chế độ `Nghiên cứu` luôn dùng Grok để xử lý tài liệu và ảnh.
 - Coding Agent: LangGraph + MCP tools, endpoint `/agent` được bảo vệ bằng
   `AGENT_API_KEY`.
 
@@ -45,9 +43,8 @@ Máy 2: FastAPI + React
         v
 Máy 2: LiteLLM, cổng 4000 nội bộ
         |
-        |-- auto-model -> MiMo 2.5 Pro -> fallback OpenAI -> fallback Gemma4 local
+        |-- auto-model -> OpenAI -> fallback Grok -> fallback Gemma4 local
         |-- local-gemma -> Gemma4 local trên Máy 1
-        |-- mimo-pro -> MiMo 2.5 Pro
         |-- openai-model -> GPT-5.4 mini
         |-- grok-model -> Grok 4.20 Reasoning qua Azure
         |-- coding-model -> Gemma4 local -> fallback OpenAI
@@ -138,8 +135,6 @@ OLLAMA_API_BASE=https://your-machine-1-ollama-ngrok-url
 OLLAMA_MODEL=gemma4:latest
 
 OPENAI_API_KEY=...
-MIMO_API_KEY=...
-MIMO_API_BASE=https://token-plan-sgp.xiaomimimo.com/v1
 
 AZURE_OPENAI_API_KEY=...
 AZURE_OPENAI_ENDPOINT=https://your-resource-name.openai.azure.com/openai/v1
@@ -275,7 +270,8 @@ Người dùng có thể:
   tài liệu từ nút chính giữa màn hình, thanh bên hoặc nút đính kèm cạnh ô nhập.
 - Panel nguồn mặc định thu gọn; nút nguồn hiển thị số trích dẫn của câu trả lời
   mới nhất và chỉ mở khi người dùng cần đối chiếu.
-- Chọn model `Tự động`, `Gemma4 Local`, `MiMo 2.5 Pro`, `OpenAI` hoặc `Grok`.
+- Chế độ `Hỏi đáp MKAC` chỉ hiển thị hai lựa chọn `Cloud Model` và `Local Model`; mặc định là `Cloud Model`.
+- Chế độ `Nghiên cứu` luôn dùng model nghiên cứu Grok ở backend.
 - Đặt câu hỏi và xem sources từ tài liệu.
 
 ### Index kho tài liệu MKAC
@@ -324,7 +320,7 @@ curl -fsS http://localhost:8001/query \
   -d "{
     \"session_id\":\"$SESSION_ID\",
     \"question\":\"Quy định làm thêm giờ tại MKAC như thế nào?\",
-    \"model\":\"grok\",
+    \"model\":\"openai\",
     \"mode\":\"mkac\",
     \"stream\":false
   }" | jq .
@@ -358,11 +354,10 @@ LiteLLM aliases trong `litellm_config.yaml`:
 
 | Lựa chọn UI/API | Model group LiteLLM | Backend |
 |---|---|---|
-| `auto` | `auto-model` | MiMo 2.5 Pro, fallback OpenAI, fallback Gemma4 local |
-| `local` | `local-gemma` | Ollama/Gemma4 trên Máy 1 |
-| `mimo` | `mimo-pro` | MiMo 2.5 Pro |
-| `openai` | `openai-model` | OpenAI GPT-5.4 mini |
-| `grok` | `grok-model` | Grok 4.20 Reasoning qua Azure |
+| `Cloud Model` / `openai` | `openai-model` | OpenAI GPT-5.4 mini |
+| `Local Model` / `local` | `local-gemma` | Ollama/Gemma4 trên Máy 1 |
+| Research Model / `grok` | `grok-model` | Grok 4.20 Reasoning qua Azure, dùng riêng cho `Nghiên cứu` |
+| `auto` | `auto-model` | Route kỹ thuật dự phòng: OpenAI, fallback Grok, fallback Gemma4 local |
 | Agent | `coding-model` | Gemma4 local, fallback OpenAI |
 
 Trong mode `mkac`, retrieval dùng collection `mkac_knowledge`. Nếu không có
@@ -421,8 +416,7 @@ curl -fsS -H 'ngrok-skip-browser-warning: true' "$PUBLIC_URL/health" | jq .
 - React build production thành công.
 - Desktop/mobile UI đã kiểm tra bằng screenshot trình duyệt.
 - Qdrant và LiteLLM đang chạy Docker.
-- Local Gemma4 và OpenAI trả `200`.
-- MiMo Token Plan SGP trả `200`.
+- Local Gemma4, OpenAI và Grok trả `200`.
 - Upload `documents/test1.pdf`, index 3 chunks, query SSE trả sources và token.
 - `/agent` có key trả `200`, không có key trả `401`.
 
@@ -436,21 +430,6 @@ docker compose up -d --force-recreate litellm
 ```
 
 Nếu thấy lỗi config router, kiểm tra `litellm_config.yaml`.
-
-### MiMo trả 401
-
-Kiểm tra `MIMO_API_BASE`. Token Plan key `tp-*` thường cần endpoint Token Plan,
-ví dụ:
-
-```env
-MIMO_API_BASE=https://token-plan-sgp.xiaomimimo.com/v1
-```
-
-Pay-as-you-go key có thể dùng:
-
-```env
-MIMO_API_BASE=https://api.xiaomimimo.com/v1
-```
 
 ### Web không hiện React
 

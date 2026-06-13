@@ -23,7 +23,7 @@ VLLM-PD cung cấp hai nhóm chức năng độc lập nhưng dùng chung API Ga
 - Gọi mô hình ngôn ngữ thông qua LiteLLM.
 - Trả lời đồng bộ hoặc streaming bằng Server-Sent Events (SSE).
 - Cho phép chọn chế độ `Hỏi đáp MKAC` hoặc `Nghiên cứu`.
-- Cho phép chọn backend local, MiMo, OpenAI hoặc định tuyến tự động.
+- Ở chế độ MKAC, giao diện chỉ cho chọn `Cloud Model` hoặc `Local Model`; Grok được giữ riêng cho chế độ `Nghiên cứu`.
 
 ### 1.2. Coding Agent
 
@@ -42,7 +42,7 @@ Hệ thống hiện tuân theo các nguyên tắc chính sau:
 2. **Tách model vật lý khỏi ứng dụng:** mã nguồn chỉ gọi các tên model logic của LiteLLM.
 3. **Tách kho dữ liệu:** MKAC dùng khóa logic `session_id=mkac`; tài liệu nghiên cứu lọc theo UUID phiên.
 4. **Xử lý nặng ngoài event loop:** parse, embedding và thao tác Qdrant chính trong luồng upload/query được chuyển sang thread bằng `asyncio.to_thread`.
-5. **Định tuyến mô hình có fallback:** route web mặc định `auto-model` ưu tiên MiMo để tránh lỗi local generation bị cụt, còn `coding-model` giữ đường dự phòng qua OpenAI.
+5. **Định tuyến mô hình có fallback:** route web mặc định `auto-model` ưu tiên OpenAI rồi mới fallback sang Grok/Gemma4, còn `coding-model` giữ đường dự phòng qua OpenAI.
 6. **Giới hạn phạm vi công cụ Agent:** MCP filesystem và bộ công cụ fallback bị ràng buộc bởi `WORKSPACE_DIR`; Git MCP được gắn với `AGENT_REPOSITORY_DIR`.
 
 ## 3. Bố cục repository
@@ -116,7 +116,7 @@ Sơ đồ tổng thể:
                          ▼                                       ▼
               ┌──────────────────────┐                ┌─────────────────────┐
               │ Máy 1: Ollama       │                │ Cloud providers     │
-              │ Gemma4 local        │                │ MiMo / OpenAI       │
+              │ Gemma4 local        │                │ Grok / OpenAI       │
               └──────────────────────┘                └─────────────────────┘
 
 Máy 2 còn chạy Qdrant :6333/:6334 để lưu vector và payload tài liệu.
@@ -465,9 +465,8 @@ http://localhost:4000/v1
 
 | Giá trị API | Model logic LiteLLM | Backend chính |
 |---|---|---|
-| `auto` | `auto-model` | `openai/mimo-v2.5-pro` |
+| `auto` | `auto-model` | `openai/gpt-5.4-mini` |
 | `local` | `local-gemma` | Ollama `gemma4:latest` |
-| `mimo` | `mimo-pro` | `openai/mimo-v2.5-pro` |
 | `openai` | `openai-model` | `openai/gpt-5.4-mini` |
 | `grok` | `grok-model` | Azure `grok-4-20-reasoning` |
 | Coding Agent | `coding-model` | Ollama `gemma4:latest` |
@@ -476,7 +475,7 @@ http://localhost:4000/v1
 
 ```yaml
 auto-model:
-  - openai-model
+  - grok-model
   - local-gemma
 
 coding-model:
@@ -485,16 +484,15 @@ coding-model:
 
 Ý nghĩa:
 
-- `auto`: MiMo → OpenAI → Gemma4 local.
+- `auto`: OpenAI → Grok → Gemma4 local.
 - Agent: Gemma4 local → OpenAI.
-- `local`, `mimo`, `openai` và `grok` không có fallback riêng trong cấu hình hiện tại.
-- Nếu session có file ảnh `.png`, `.jpg` hoặc `.jpeg`, RAG pipeline bắt buộc route sang `openai-model` và đính kèm ảnh base64 vào prompt để dùng Vision.
+- `local`, `openai` và `grok` không có fallback riêng trong cấu hình hiện tại.
+- Chế độ `Nghiên cứu` luôn route sang `grok-model`; ảnh `.png`, `.jpg` hoặc `.jpeg` được đính kèm base64 vào prompt để dùng Vision.
 - Router dùng `simple-shuffle`, retry một lần và timeout tổng quát 120 giây.
 
 ### 13.3. Điểm cần lưu ý
 
 - `OLLAMA_MODEL` có trong `.env.example` nhưng `litellm_config.yaml` đang ghi trực tiếp `gemma4:latest`; đổi riêng biến này chưa làm thay đổi model.
-- `MIMO_API_BASE` phụ thuộc loại tài khoản hoặc gói dịch vụ MiMo.
 - `LITELLM_MASTER_KEY` bảo vệ LiteLLM, nhưng giá trị mặc định `sk-local` chỉ phù hợp môi trường tin cậy.
 - Provider key được truyền vào container LiteLLM qua `.env`; không được đưa các key này vào frontend.
 
@@ -673,7 +671,7 @@ Khuyến nghị tối thiểu khi public:
 | Nhóm | Biến chính |
 |---|---|
 | Ollama | `OLLAMA_API_BASE`, `OLLAMA_MODEL` |
-| Provider cloud | `OPENAI_API_KEY`, `MIMO_API_KEY`, `MIMO_API_BASE` |
+| Provider cloud | `OPENAI_API_KEY`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT` |
 | LiteLLM | `LITELLM_URL`, `LITELLM_MASTER_KEY` |
 | API public | `MACHINE2_API_HOST`, `MACHINE2_API_PORT`, `NGROK_RESERVED_DOMAIN` |
 | Qdrant | `QDRANT_HOST`, `QDRANT_PORT` |
@@ -830,7 +828,7 @@ Kiểm tra log FastAPI và thử khởi động foreground để thấy stack tr
 Ảnh hưởng:
 
 - `local-gemma` lỗi trực tiếp.
-- `auto-model` có thể chuyển sang MiMo/OpenAI.
+- `auto-model` có thể chuyển sang Grok hoặc Gemma4 local.
 - `coding-model` có thể chuyển sang OpenAI.
 
 Kiểm tra:

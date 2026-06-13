@@ -44,6 +44,7 @@ pnpm-debug.log*
 # Runtime data and local storage
 uploads/
 logs/
+data/
 qdrant_storage/
 *.pid
 *.log

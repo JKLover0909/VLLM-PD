@@ -1,11 +1,9 @@
 model_list:
-  # Default web route. MiMo is primary because local Gemma4 can end generations
-  # early while still returning HTTP 200, which prevents LiteLLM error fallback.
+  # Default web route. OpenAI is primary for the basic MKAC chat.
   - model_name: auto-model
     litellm_params:
-      model: openai/mimo-v2.5-pro
-      api_key: os.environ/MIMO_API_KEY
-      api_base: os.environ/MIMO_API_BASE
+      model: openai/gpt-5.4-mini
+      api_key: os.environ/OPENAI_API_KEY
       timeout: 120
 
   # Local Gemma4 served by Machine 1 through ngrok.
@@ -21,13 +19,6 @@ model_list:
       max_output_tokens: 4096
 
   # Cloud providers selectable from the web UI.
-  - model_name: mimo-pro
-    litellm_params:
-      model: openai/mimo-v2.5-pro
-      api_key: os.environ/MIMO_API_KEY
-      api_base: os.environ/MIMO_API_BASE
-      timeout: 120
-
   - model_name: openai-model
     litellm_params:
       model: openai/gpt-5.4-mini
@@ -55,7 +46,7 @@ model_list:
 
 router_settings:
   fallbacks:
-    - auto-model: ["openai-model", "local-gemma"]
+    - auto-model: ["grok-model", "local-gemma"]
     - coding-model: ["openai-model"]
   num_retries: 1
   timeout: 120

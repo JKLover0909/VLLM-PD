@@ -22,7 +22,7 @@ from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 # Load biến môi trường từ .env
@@ -37,6 +37,7 @@ from src.rag.embedder import Embedder
 from src.rag.vector_store import VectorStore
 from src.rag.rag_pipeline import RAGPipeline
 from src.rag.web_search import WebSearcher
+from src.auth.employee_directory import EmployeeDirectory
 
 ENABLE_AGENT = os.getenv("ENABLE_AGENT", "true").lower() in {"1", "true", "yes", "on"}
 agent_executor = None
@@ -73,6 +74,9 @@ ALLOWED_UPLOAD_EXTENSIONS = {
     ".jpeg",
 }
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+EMPLOYEE_DIRECTORY_DB_PATH = Path(
+    os.getenv("EMPLOYEE_DIRECTORY_DB_PATH", "data/employee_directory.sqlite")
+)
 
 logging.basicConfig(level=LOG_LEVEL)
 logger = logging.getLogger(__name__)
@@ -88,6 +92,7 @@ mkac_vector_store: Optional[VectorStore] = None
 doc_parser: Optional[DocumentParser] = None
 rag_pipeline: Optional[RAGPipeline] = None
 web_searcher: Optional[WebSearcher] = None
+employee_directory = EmployeeDirectory(EMPLOYEE_DIRECTORY_DB_PATH)
 rate_limit_events: Dict[str, Deque[float]] = defaultdict(deque)
 rate_limit_lock = asyncio.Lock()
 upload_processing_semaphore = asyncio.Semaphore(UPLOAD_PROCESSING_CONCURRENCY)
@@ -275,8 +280,9 @@ class QueryRequest(BaseModel):
     session_id: str
     question: str
     stream: bool = True
-    model: Literal["auto", "local", "mimo", "openai", "grok"] = "auto"
+    model: Literal["auto", "local", "openai", "grok"] = "openai"
     mode: Literal["mkac", "research"] = "mkac"
+    employee_id: Optional[str] = None
 
 
 class QueryResponse(BaseModel):
@@ -293,6 +299,26 @@ class SessionInfoResponse(BaseModel):
     num_chunks: int
     files: List[str]
     num_files: int
+
+
+class EmployeeAuthRequest(BaseModel):
+    employee_id: str
+
+
+class EmployeeResponse(BaseModel):
+    id: str
+    name: str
+    gender: str = ""
+    position: str = ""
+    department: str = ""
+    greeting: str = ""
+    department_size: int = 0
+    department_heads: List[str] = Field(default_factory=list)
+    department_deputies: List[str] = Field(default_factory=list)
+
+
+class EmployeeAuthResponse(BaseModel):
+    employee: EmployeeResponse
 
 
 class AgentRequest(BaseModel):
@@ -327,6 +353,52 @@ def message_text(message: Any) -> str:
     return str(content)
 
 
+def verify_mkac_employee(employee_id: Optional[str]) -> EmployeeResponse:
+    """Return the employee record or reject MKAC access."""
+    employee = employee_directory.profile(employee_id or "")
+    if not employee:
+        raise HTTPException(status_code=403, detail="Mã nhân viên không hợp lệ.")
+    return EmployeeResponse(
+        id=employee["id"],
+        name=employee["name"],
+        gender=employee.get("gender", ""),
+        position=employee.get("position", ""),
+        department=employee.get("department", ""),
+        greeting=employee.get("greeting", ""),
+        department_size=employee.get("department_size", 0),
+        department_heads=employee.get("department_heads", []),
+        department_deputies=employee.get("department_deputies", []),
+    )
+
+
+def authorize_query(req: QueryRequest) -> Optional[EmployeeResponse]:
+    if req.mode != "mkac":
+        return None
+    return verify_mkac_employee(req.employee_id)
+
+
+def employee_context_for_query(
+    req: QueryRequest,
+    employee: Optional[EmployeeResponse],
+) -> Optional[Dict[str, Any]]:
+    if employee is None:
+        return None
+
+    context = employee.model_dump()
+    context["company_name"] = "Meiko Automation"
+    context["company_legal_name"] = "Công ty Cổ phần Meiko Automation"
+    department_context = employee_directory.department_context_for_question(
+        req.question,
+        current_department=employee.department,
+    )
+    if department_context:
+        context["queried_departments"] = department_context
+    people_context = employee_directory.people_context_for_question(req.question)
+    if people_context:
+        context["queried_people"] = people_context
+    return context
+
+
 # ──────────────────────────────────────────────
 # RAG Endpoints
 # ──────────────────────────────────────────────
@@ -346,6 +418,10 @@ async def health():
         "mkac_documents": (mkac_info or {}).get("num_files", 0),
         "mkac_chunks": (mkac_info or {}).get("num_chunks", 0),
         "mkac_web_search": bool(web_searcher and web_searcher.enabled),
+        "employee_directory": {
+            "db_path": str(EMPLOYEE_DIRECTORY_DB_PATH),
+            "employees": employee_directory.count(),
+        },
         "document_processing": {
             "active": upload_active,
             "waiting": upload_waiting,
@@ -356,6 +432,13 @@ async def health():
             "ocr_device": getattr(doc_parser, "ocr_device", None),
         },
     }
+
+
+@app.post("/auth/employee", response_model=EmployeeAuthResponse)
+async def authenticate_employee(req: EmployeeAuthRequest):
+    """Check whether a MKAC employee ID exists in the local directory."""
+    employee = verify_mkac_employee(req.employee_id)
+    return EmployeeAuthResponse(employee=employee)
 
 
 @app.get("/knowledge/mkac/status")
@@ -379,32 +462,23 @@ async def mkac_knowledge_status():
 async def list_models():
     """Danh sách model người dùng có thể chọn trên frontend."""
     return {
-        "default": "auto",
+        "default": "openai",
         "models": [
             {
-                "id": "auto",
-                "name": "Tự động",
-                "description": "Ưu tiên MiMo Pro, fallback sang OpenAI rồi Gemma4 local.",
-            },
-            {
                 "id": "local",
-                "name": "Gemma4 Local",
-                "description": "Chạy trên Máy 1 cho tài liệu text; session có ảnh tự chuyển sang OpenAI Vision.",
-            },
-            {
-                "id": "mimo",
-                "name": "MiMo 2.5 Pro",
-                "description": "Phù hợp tổng hợp tài liệu text; session có ảnh tự chuyển sang OpenAI Vision.",
+                "name": "Local Model",
+                "description": "Chạy model nội bộ/local cho hỏi đáp MKAC dạng text.",
             },
             {
                 "id": "openai",
-                "name": "OpenAI GPT-5.4 mini",
-                "description": "Dùng GPT-5.4 mini cho coding, tool calling và truy vấn khó.",
+                "name": "Cloud Model",
+                "description": "Mặc định cho hỏi đáp MKAC, dùng model cloud ổn định.",
             },
             {
                 "id": "grok",
-                "name": "Grok 4.20 Reasoning",
-                "description": "Suy luận chuyên sâu qua Azure; session có ảnh tự chuyển sang OpenAI Vision.",
+                "name": "Research Model",
+                "description": "Dành riêng cho chế độ nghiên cứu tài liệu và hình ảnh.",
+                "hidden_in_mkac": True,
             },
         ],
     }
@@ -529,6 +603,8 @@ async def query_documents(req: QueryRequest, request: Request):
     """
     await enforce_rate_limit(request, "query", QUERY_RATE_LIMIT, 60)
     normalize_session_id(req.session_id)
+    current_employee = authorize_query(req)
+    current_user_context = employee_context_for_query(req, current_employee)
 
     try:
         answer, results, routed_model, answer_scope = await rag_pipeline.query(
@@ -536,6 +612,7 @@ async def query_documents(req: QueryRequest, request: Request):
             question=req.question,
             model=req.model,
             mode=req.mode,
+            current_user=current_user_context,
         )
         return QueryResponse(
             answer=answer,
@@ -557,6 +634,8 @@ async def query_stream(req: QueryRequest, request: Request):
     """
     await enforce_rate_limit(request, "query", QUERY_RATE_LIMIT, 60)
     normalize_session_id(req.session_id)
+    current_employee = authorize_query(req)
+    current_user_context = employee_context_for_query(req, current_employee)
 
     async def event_generator():
         import json
@@ -567,6 +646,7 @@ async def query_stream(req: QueryRequest, request: Request):
                 question=req.question,
                 model=req.model,
                 mode=req.mode,
+                current_user=current_user_context,
             )
             )
             

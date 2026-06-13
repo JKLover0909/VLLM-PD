@@ -4,7 +4,6 @@ import ReactMarkdown from "react-markdown";
 import {
   Activity,
   AlertCircle,
-  BookOpen,
   Bot,
   Check,
   CheckCircle2,
@@ -17,6 +16,7 @@ import {
   Globe2,
   Layers3,
   Loader2,
+  LogOut,
   Menu,
   PanelRightClose,
   PanelRightOpen,
@@ -39,9 +39,9 @@ import "./styles.css";
 
 const QUICK_PROMPTS = {
   mkac: [
+    "Meiko Automation có bao nhiêu phòng ban, gồm các phòng ban nào?",
     "Quy định làm thêm giờ tại MKAC như thế nào?",
-    "Chế độ công tác trong nước được quy định ra sao?",
-    "Chế độ thăm hỏi dành cho nhân viên gồm những gì?",
+    "Các sản phẩm chính của MKAC là gì?",
   ],
   research: [
     "Lập báo cáo nghiên cứu tổng hợp từ các tài liệu",
@@ -66,7 +66,6 @@ const MODE_OPTIONS = {
 const MODEL_ACCENTS = {
   auto: "accent-auto",
   local: "accent-local",
-  mimo: "accent-mimo",
   openai: "accent-openai",
   grok: "accent-grok",
 };
@@ -86,6 +85,7 @@ const SESSION_STORAGE_KEYS = {
 const LEGACY_SESSION_STORAGE_KEY = "vllm-pd-session";
 const SESSION_TITLE_STORAGE_KEY = "vllm-pd-session-titles";
 const THEME_STORAGE_KEY = "vllm-pd-theme";
+const EMPLOYEE_STORAGE_KEY = "vllm-pd-mkac-employee";
 const THEME_OPTIONS = ["system", "light", "dark"];
 const THEME_META = {
   system: {
@@ -111,6 +111,15 @@ function storedTheme() {
   }
 }
 
+function storedEmployee() {
+  try {
+    const value = JSON.parse(localStorage.getItem(EMPLOYEE_STORAGE_KEY) || "null");
+    return value?.id && value?.name ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, options);
   if (!response.ok) {
@@ -130,6 +139,15 @@ async function api(path, options = {}) {
 
 async function createSession() {
   const response = await api("/sessions", { method: "POST" });
+  return response.json();
+}
+
+async function authenticateEmployee(employeeId) {
+  const response = await api("/auth/employee", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ employee_id: employeeId }),
+  });
   return response.json();
 }
 
@@ -247,7 +265,7 @@ function App() {
     num_chunks: 0,
     files: [],
   });
-  const [model, setModel] = useState("auto");
+  const [model, setModel] = useState("openai");
   const [mode, setMode] = useState("mkac");
   const [question, setQuestion] = useState("");
   const [sourcesByMode, setSourcesByMode] = useState({
@@ -270,6 +288,12 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sourcePanelOpen, setSourcePanelOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [employee, setEmployee] = useState(storedEmployee);
+  const [employeeCodeInput, setEmployeeCodeInput] = useState(
+    () => storedEmployee()?.id || "",
+  );
+  const [employeeCodeError, setEmployeeCodeError] = useState("");
+  const [employeeVerifying, setEmployeeVerifying] = useState(false);
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
   const modelSelectRef = useRef(null);
@@ -277,8 +301,13 @@ function App() {
   const endRef = useRef(null);
 
   const selectedModel = useMemo(
-    () => models.find((item) => item.id === model),
-    [models, model],
+    () => models.find((item) => item.id === (mode === "research" ? "grok" : model)),
+    [models, mode, model],
+  );
+  const requestModel = mode === "research" ? "grok" : model;
+  const mkacModels = useMemo(
+    () => models.filter((item) => !item.hidden_in_mkac && item.id !== "grok"),
+    [models],
   );
 
   const currentMode = MODE_OPTIONS[mode];
@@ -288,8 +317,13 @@ function App() {
   const messages = messagesByMode[mode];
   const sources = sourcesByMode[mode];
   const researchReady = mode !== "research" || files.length > 0;
+  const mkacAuthorized = mode !== "mkac" || Boolean(employee?.id && employee?.name);
   const canAsk =
-    Boolean(question.trim()) && !busy && Boolean(sessionId) && researchReady;
+    Boolean(question.trim()) &&
+    !busy &&
+    Boolean(sessionId) &&
+    researchReady &&
+    mkacAuthorized;
   const pendingTotalSize = useMemo(
     () => pendingFiles.reduce((total, file) => total + file.size, 0),
     [pendingFiles],
@@ -300,6 +334,32 @@ function App() {
   const latestSources = sources.length
     ? sources
     : latestAssistantMessage?.sources || [];
+
+  useEffect(() => {
+    let cancelled = false;
+    const savedEmployee = storedEmployee();
+    if (!savedEmployee?.id) return undefined;
+
+    async function refreshSavedEmployee() {
+      try {
+        const data = await authenticateEmployee(savedEmployee.id);
+        if (cancelled) return;
+        setEmployee(data.employee);
+        setEmployeeCodeInput(data.employee.id);
+        localStorage.setItem(EMPLOYEE_STORAGE_KEY, JSON.stringify(data.employee));
+      } catch {
+        if (cancelled) return;
+        setEmployee(null);
+        setEmployeeCodeInput("");
+        localStorage.removeItem(EMPLOYEE_STORAGE_KEY);
+      }
+    }
+
+    refreshSavedEmployee();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     async function bootstrap() {
@@ -314,7 +374,10 @@ function App() {
         const mkacData = await mkacResponse.json();
         setModels(modelData.models || []);
         setMkacStatus(mkacData);
-        setModel(modelData.default || "auto");
+        setModel((current) => {
+          const nextDefault = modelData.default || "openai";
+          return current === "auto" || current === "grok" ? nextDefault : current;
+        });
         setHealth("online");
 
         const legacySession = localStorage.getItem(LEGACY_SESSION_STORAGE_KEY);
@@ -617,6 +680,10 @@ function App() {
 
   async function sendMessage(prompt = question) {
     const cleanQuestion = prompt.trim();
+    if (mode === "mkac" && !mkacAuthorized) {
+      setEmployeeCodeError("Vui lòng nhập mã nhân viên hợp lệ trước khi hỏi MKAC.");
+      return;
+    }
     if (!cleanQuestion || busy || !sessionId) return;
 
     const requestMode = mode;
@@ -656,8 +723,9 @@ function App() {
           session_id: requestSessionId,
           question: cleanQuestion,
           stream: true,
-          model,
+          model: requestModel,
           mode: requestMode,
+          employee_id: requestMode === "mkac" ? employee?.id : undefined,
         },
         (event) => {
           if (event.type === "sources") {
@@ -702,6 +770,15 @@ function App() {
       );
     } catch (queryError) {
       const wasStopped = queryError.name === "AbortError";
+      if (queryError.status === 403 && requestMode === "mkac") {
+        setEmployee(null);
+        setEmployeeCodeInput("");
+        try {
+          localStorage.removeItem(EMPLOYEE_STORAGE_KEY);
+        } catch {
+          // Ignore storage failures.
+        }
+      }
       if (!wasStopped) setError(queryError.message);
       setModeMessages(requestMode, (current) =>
         current.map((item) =>
@@ -722,6 +799,58 @@ function App() {
       generationControllerRef.current = null;
       setPendingAssistantId("");
       setBusy(false);
+    }
+  }
+
+  async function verifyEmployeeCode(event) {
+    event.preventDefault();
+    const normalizedCode = employeeCodeInput.trim();
+
+    if (!normalizedCode) {
+      setEmployeeCodeError("Mã nhân viên không hợp lệ.");
+      return;
+    }
+
+    setEmployeeVerifying(true);
+    setEmployeeCodeError("");
+    try {
+      const data = await authenticateEmployee(normalizedCode);
+      setEmployee(data.employee);
+      try {
+        localStorage.setItem(EMPLOYEE_STORAGE_KEY, JSON.stringify(data.employee));
+      } catch {
+        // localStorage can be blocked in private browsing; the in-memory state still works.
+      }
+    } catch {
+      setEmployee(null);
+      setEmployeeCodeError("Mã nhân viên không hợp lệ.");
+      try {
+        localStorage.removeItem(EMPLOYEE_STORAGE_KEY);
+      } catch {
+        // Ignore storage failures.
+      }
+    } finally {
+      setEmployeeVerifying(false);
+    }
+  }
+
+  function updateEmployeeCodeInput(value) {
+    setEmployeeCodeInput(value.replace(/\D/g, "").slice(0, 6));
+    setEmployeeCodeError("");
+  }
+
+  function logoutEmployee() {
+    setEmployee(null);
+    setEmployeeCodeInput("");
+    setEmployeeCodeError("");
+    setQuestion("");
+    setModeMessages("mkac", []);
+    setModeSources("mkac", []);
+    try {
+      localStorage.removeItem(EMPLOYEE_STORAGE_KEY);
+      localStorage.removeItem("vllm-pd-mkac-employee-code");
+    } catch {
+      // Ignore storage failures.
     }
   }
 
@@ -760,12 +889,12 @@ function App() {
 
           <aside className={`document-sidebar ${sidebarOpen ? "open" : ""}`}>
             <div className="brand-row">
-              <div className="brand-mark">
-                <BookOpen size={21} />
+              <div className="brand-mark logo-mark">
+                <img src="/mkac-logo.png" alt="MKAC" />
               </div>
               <div>
-                <strong>VLLM-PD</strong>
-                <span>Document intelligence</span>
+                <strong>MKAC</strong>
+                <span>Trợ lý hỏi đáp nội bộ</span>
               </div>
               <button
                 className="icon-button close-sidebar"
@@ -927,14 +1056,20 @@ function App() {
       <main className={`workspace ${sourcePanelOpen ? "" : "sources-collapsed"}`}>
         <header className="workspace-header">
           <div className="header-title">
-            <div className={`mode-mark ${mode}`}>
-              <ModeIcon size={20} />
+            <div className={`mode-mark ${mode === "mkac" ? "logo-mark" : mode}`}>
+              {mode === "mkac" ? (
+                <img src="/mkac-logo.png" alt="MKAC" />
+              ) : (
+                <ModeIcon size={20} />
+              )}
             </div>
             <div>
               <strong>{currentMode.title}</strong>
               <span>
                 {mode === "mkac"
-                  ? `${mkacStatus.num_documents} tài liệu nội bộ`
+                  ? employee?.name
+                    ? employee.greeting || `Xin chào, ${employee.name}`
+                    : `${mkacStatus.num_documents} tài liệu nội bộ`
                   : `${files.length} tài liệu trong phiên`}
               </span>
             </div>
@@ -965,50 +1100,59 @@ function App() {
               })}
             </div>
 
-            <div
-              ref={modelSelectRef}
-              className={`model-select ${MODEL_ACCENTS[model] || ""}`}
-            >
-              <Bot size={17} />
-              <button
-                className="model-select-trigger"
-                type="button"
-                aria-label="Chọn mô hình"
-                aria-haspopup="listbox"
-                aria-expanded={modelMenuOpen}
-                onClick={() => setModelMenuOpen((open) => !open)}
+            {mode === "mkac" ? (
+              <div
+                ref={modelSelectRef}
+                className={`model-select ${MODEL_ACCENTS[model] || ""}`}
               >
-                <span>{selectedModel?.name || "Đang tải model"}</span>
-                <ChevronDown
-                  className={modelMenuOpen ? "model-chevron open" : "model-chevron"}
-                  size={15}
-                />
-              </button>
-              {modelMenuOpen && (
-                <div className="model-menu" role="listbox" aria-label="Danh sách mô hình">
-                  {models.map((item) => (
-                    <button
-                      key={item.id}
-                      className={model === item.id ? "selected" : ""}
-                      type="button"
-                      role="option"
-                      aria-selected={model === item.id}
-                      onClick={() => {
-                        setModel(item.id);
-                        setModelMenuOpen(false);
-                      }}
-                    >
-                      <span className={`model-dot ${MODEL_ACCENTS[item.id] || ""}`} />
-                      <span className="model-option-copy">
-                        <strong>{item.name}</strong>
-                        <small>{item.description}</small>
-                      </span>
-                      {model === item.id && <Check size={16} />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+                <Bot size={17} />
+                <button
+                  className="model-select-trigger"
+                  type="button"
+                  aria-label="Chọn mô hình"
+                  aria-haspopup="listbox"
+                  aria-expanded={modelMenuOpen}
+                  onClick={() => setModelMenuOpen((open) => !open)}
+                >
+                  <span>{selectedModel?.name || "Đang tải model"}</span>
+                  <ChevronDown
+                    className={modelMenuOpen ? "model-chevron open" : "model-chevron"}
+                    size={15}
+                  />
+                </button>
+                {modelMenuOpen && (
+                  <div className="model-menu" role="listbox" aria-label="Danh sách mô hình">
+                    {mkacModels.map((item) => (
+                      <button
+                        key={item.id}
+                        className={model === item.id ? "selected" : ""}
+                        type="button"
+                        role="option"
+                        aria-selected={model === item.id}
+                        onClick={() => {
+                          setModel(item.id);
+                          setModelMenuOpen(false);
+                        }}
+                      >
+                        <span className={`model-dot ${MODEL_ACCENTS[item.id] || ""}`} />
+                        <span className="model-option-copy">
+                          <strong>{item.name}</strong>
+                          <small>{item.description}</small>
+                        </span>
+                        {model === item.id && <Check size={16} />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="model-select locked accent-grok" title="Chế độ nghiên cứu luôn dùng Grok">
+                <Bot size={17} />
+                <span className="model-select-trigger">
+                  <span>{selectedModel?.name || "Grok 4.20 Reasoning"}</span>
+                </span>
+              </div>
+            )}
 
             <button
               className="icon-button header-tool theme-toggle"
@@ -1019,6 +1163,19 @@ function App() {
             >
               <ThemeIcon size={18} />
             </button>
+
+            {mode === "mkac" && employee && (
+              <button
+                className="icon-button header-tool"
+                type="button"
+                title="Đăng xuất mã nhân viên"
+                aria-label="Đăng xuất mã nhân viên"
+                onClick={logoutEmployee}
+                disabled={busy}
+              >
+                <LogOut size={18} />
+              </button>
+            )}
 
             <button
               className="icon-button header-tool"
@@ -1056,16 +1213,60 @@ function App() {
             aria-busy={busy}
           >
             <div className="conversation-scroll">
-              {messages.length === 0 ? (
+              {mode === "mkac" && !mkacAuthorized ? (
+                <div className="employee-gate">
+                  <form className="employee-card" onSubmit={verifyEmployeeCode}>
+                    <div className="employee-logo">
+                      <img src="/mkac-logo.png" alt="MKAC" />
+                    </div>
+                    <h1>Xác thực nhân viên MKAC</h1>
+                    <p>
+                      Nhập mã nhân viên để truy cập chế độ hỏi đáp nội bộ MKAC.
+                    </p>
+                    <label className="employee-field">
+                      <span>Mã nhân viên</span>
+                      <input
+                        value={employeeCodeInput}
+                        onChange={(event) =>
+                          updateEmployeeCodeInput(event.target.value)
+                        }
+                        inputMode="numeric"
+                        autoComplete="off"
+                        maxLength={6}
+                        placeholder="Mã nhân viên"
+                        disabled={employeeVerifying}
+                        autoFocus
+                      />
+                    </label>
+                    {employeeCodeError && (
+                      <span className="employee-error" role="alert">
+                        {employeeCodeError}
+                      </span>
+                    )}
+                    <button
+                      className="employee-submit"
+                      type="submit"
+                      disabled={employeeVerifying}
+                    >
+                      {employeeVerifying && <Loader2 className="spin" size={16} />}
+                      {employeeVerifying ? "Đang kiểm tra" : "Tiếp tục"}
+                    </button>
+                  </form>
+                </div>
+              ) : messages.length === 0 ? (
                 <div className="empty-conversation">
                   <div className="empty-copy">
                     <div className={`empty-icon ${mode}`}>
                       <ModeIcon size={30} />
                     </div>
-                    <h1>{currentMode.title}</h1>
+                    <h1>
+                      {mode === "mkac" && employee?.name
+                        ? employee.greeting || `Xin chào, ${employee.name}`
+                        : currentMode.title}
+                    </h1>
                     <p>
                       {mode === "mkac"
-                        ? "Tra cứu quy định nội bộ MKAC; nếu chưa có dữ liệu, hệ thống sẽ tìm nguồn trên web."
+                        ? "Bạn có thể tra cứu các quy định và thông tin nội bộ MKAC."
                         : files.length > 0
                           ? "Sẵn sàng nghiên cứu tài liệu đã index trong phiên này."
                           : "Tải tài liệu lên để bắt đầu nghiên cứu."}
@@ -1088,7 +1289,7 @@ function App() {
                         key={prompt}
                         type="button"
                         onClick={() => sendMessage(prompt)}
-                        disabled={!researchReady}
+                        disabled={!researchReady || !mkacAuthorized}
                       >
                         <Search size={16} />
                         <span>{prompt}</span>
@@ -1237,63 +1438,71 @@ function App() {
               </div>
             )}
 
-            <form className="composer" onSubmit={onSubmit}>
-              {mode === "research" && (
-                <button
-                  className="composer-attach icon-button"
-                  type="button"
-                  title="Thêm tài liệu nghiên cứu"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={busy || uploading}
-                >
-                  <Paperclip size={18} />
-                </button>
-              )}
-              <textarea
-                ref={textareaRef}
-                value={question}
-                onChange={(event) => setQuestion(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    sendMessage();
-                  }
-                }}
-                rows={2}
-                maxLength={4000}
-                aria-label={
-                  mode === "research"
-                    ? "Câu hỏi nghiên cứu"
-                    : "Câu hỏi về MKAC"
-                }
-                placeholder={
-                  mode === "research"
-                    ? researchReady
-                      ? "Nhập chủ đề nghiên cứu..."
-                      : "Hãy tải tài liệu lên trước khi đặt câu hỏi..."
-                    : "Đặt câu hỏi về MKAC..."
-                }
-                disabled={busy || !researchReady}
-              />
-              <div className="composer-footer">
-                <div className="composer-context">
-                  <span className={`model-dot ${MODEL_ACCENTS[model] || ""}`} />
-                  <span>{selectedModel?.description || "Đang tải danh sách model"}</span>
-                </div>
-                <div className="composer-actions">
-                  <span className="char-count">{question.length}/4000</span>
+            {mkacAuthorized && (
+              <form className="composer" onSubmit={onSubmit}>
+                {mode === "research" && (
                   <button
-                    className="send-button"
-                    type={busy ? "button" : "submit"}
-                    title={busy ? "Dừng trả lời" : "Gửi"}
-                    onClick={busy ? stopGeneration : undefined}
-                    disabled={busy ? false : !canAsk}
+                    className="composer-attach icon-button"
+                    type="button"
+                    title="Thêm tài liệu nghiên cứu"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={busy || uploading}
                   >
-                    {busy ? <Square size={16} fill="currentColor" /> : <Send size={18} />}
+                    <Paperclip size={18} />
                   </button>
+                )}
+                <textarea
+                  ref={textareaRef}
+                  value={question}
+                  onChange={(event) => setQuestion(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      sendMessage();
+                    }
+                  }}
+                  rows={2}
+                  maxLength={4000}
+                  aria-label={
+                    mode === "research"
+                      ? "Câu hỏi nghiên cứu"
+                      : "Câu hỏi về MKAC"
+                  }
+                  placeholder={
+                    mode === "research"
+                      ? researchReady
+                        ? "Nhập chủ đề nghiên cứu..."
+                        : "Hãy tải tài liệu lên trước khi đặt câu hỏi..."
+                      : "Đặt câu hỏi về MKAC..."
+                  }
+                  disabled={busy || !researchReady}
+                />
+                <div className="composer-footer">
+                  <div className="composer-context">
+                  <span className={`model-dot ${MODEL_ACCENTS[requestModel] || ""}`} />
+                  <span>
+                    {selectedModel?.description || "Đang tải danh sách model"}
+                    </span>
+                  </div>
+                  <div className="composer-actions">
+                    <span className="char-count">{question.length}/4000</span>
+                    <button
+                      className="send-button"
+                      type={busy ? "button" : "submit"}
+                      title={busy ? "Dừng trả lời" : "Gửi"}
+                      onClick={busy ? stopGeneration : undefined}
+                      disabled={busy ? false : !canAsk}
+                    >
+                      {busy ? (
+                        <Square size={16} fill="currentColor" />
+                      ) : (
+                        <Send size={18} />
+                      )}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </form>
+              </form>
+            )}
           </section>
 
           <aside

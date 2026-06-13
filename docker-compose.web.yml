@@ -17,12 +17,17 @@ services:
       MKAC_MANIFEST_PATH: /app/config/mkac_manifest.json
       MKAC_PAGE_IMAGE_DIR: /app/mkac_processed/pages
       MKAC_INDEX_REPORT: /app/logs/mkac_index_report.json
+      EMPLOYEE_DIRECTORY_SOURCE_DIR: /app/documents/MKAC
+      EMPLOYEE_DIRECTORY_SOURCE_GLOB: "3. DANH SÁCH KHÁM SỨC KHOẺ 2026.pdf"
+      EMPLOYEE_DIRECTORY_DB_PATH: /app/data/employee_directory.sqlite
+      EMPLOYEE_DIRECTORY_SUMMARY_PATH: "/app/documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html"
     ports:
       - "${MACHINE2_API_PORT:-8001}:8001"
     volumes:
       - ./documents/MKAC:/app/documents/MKAC:ro
       - ./config:/app/config
       - ./uploads:/app/uploads
+      - ./data:/app/data
       - ./logs:/app/logs
       - ./mkac_processed:/app/mkac_processed
       - hf_cache:/root/.cache/huggingface
