@@ -1,4 +1,4 @@
-# Giai đoạn 2: Kết quả Read-only Coding Agent
+# Giai đoạn 2: kết quả Coding Agent chỉ đọc
 
 Ngày kiểm thử: 2026-06-06
 
@@ -10,7 +10,7 @@ Ngày kiểm thử: 2026-06-06
 - `read_only_tools.py`: executor chỉ đọc, khóa trong sandbox.
 - `tests/test_read_only_tools.py`: unit test chức năng và bảo mật.
 - `02_test_read_only_agent.ipynb`: vòng lặp model -> tool -> model.
-- Compatibility adapter cho JSON tool call dạng text của Gemma4.
+- Adapter tương thích cho JSON tool call dạng text của Gemma4.
 - Completion guard yêu cầu đủ bằng chứng trước khi kết luận.
 
 Tool được expose:
@@ -116,4 +116,4 @@ Không model nào thay đổi sandbox.
 - Local Gemma4: giữ ở Giai đoạn 2, cần cải thiện tool protocol hoặc dùng
   workflow được điều phối cứng hơn.
 
-Giai đoạn 3 chỉ sinh và validate patch, chưa ghi file.
+Giai đoạn 3 chỉ sinh và kiểm tra patch, chưa ghi file.

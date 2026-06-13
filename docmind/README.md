@@ -1,17 +1,18 @@
-# DocMind 📚
+# DocMind
 
-**RAG-powered Document Q&A Webapp** — Phân tích tài liệu có ảnh, hỏi đáp thông minh, hỗ trợ tiếng Việt & tiếng Anh.
+**Ứng dụng web hỏi đáp tài liệu dùng RAG**: phân tích tài liệu có ảnh, hỏi đáp
+thông minh, hỗ trợ tiếng Việt và tiếng Anh.
 
-## Stack
+## Công nghệ
 
 | Thành phần | Công nghệ |
 |---|---|
-| LLM | Llama 3.1 8B Instruct FP16 via **vLLM** |
-| Embedding | **BAAI/bge-m3** (multilingual, 8192 ctx) |
+| LLM | Llama 3.1 8B Instruct FP16 qua **vLLM** |
+| Embedding | **BAAI/bge-m3** (đa ngữ, 8192 ctx) |
 | Vector DB | **FAISS** IndexFlatIP (cosine similarity) |
 | OCR | **EasyOCR** (vi + en) |
-| PDF Parse | **PyMuPDF** |
-| Backend | **FastAPI** + async streaming |
+| Parse PDF | **PyMuPDF** |
+| Backend | **FastAPI** + streaming bất đồng bộ |
 | Frontend | **Streamlit** |
 
 ---
@@ -21,7 +22,7 @@
 - Python 3.10+
 - GPU ≥ 16GB VRAM (Llama 3.1 8B FP16)
 - RAM ≥ 16GB
-- Storage ≥ 20GB (model weights)
+- Lưu trữ ≥ 20GB (model weights)
 - CUDA 11.8+
 
 ---
@@ -38,6 +39,7 @@ pip install -r requirements.txt
 ## Chạy
 
 ### Bước 1: Khởi động vLLM server
+
 ```bash
 bash scripts/start_vllm.sh
 # Chạy trên port 8000
@@ -46,6 +48,7 @@ bash scripts/start_vllm.sh
 ```
 
 ### Bước 2: Khởi động FastAPI backend
+
 ```bash
 cd backend
 cp .env.example .env   # Chỉnh sửa nếu cần
@@ -54,6 +57,7 @@ uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
 ### Bước 3: Khởi động Streamlit frontend
+
 ```bash
 cd frontend
 streamlit run app.py --server.port 8501
@@ -65,13 +69,13 @@ streamlit run app.py --server.port 8501
 ## Sử dụng
 
 1. Mở `http://localhost:8501` trên trình duyệt
-2. Click **"Tạo Session Mới"** ở sidebar
-3. Upload tài liệu (PDF, ảnh) → Click **"Index Tài liệu"**
+2. Bấm **"Tạo Session Mới"** ở sidebar
+3. Upload tài liệu (PDF, ảnh) → bấm **"Index Tài liệu"**
 4. Nhập câu hỏi và nhận câu trả lời kèm nguồn trích dẫn
 
 ---
 
-## Cấu trúc Project
+## Cấu trúc dự án
 
 ```
 docmind/
@@ -93,15 +97,15 @@ docmind/
 
 ---
 
-## API Endpoints
+## Các API endpoint
 
-| Method | Endpoint | Mô tả |
+| Phương thức | Endpoint | Mô tả |
 |---|---|---|
 | GET | `/health` | Kiểm tra trạng thái |
 | POST | `/sessions` | Tạo session mới |
 | GET | `/sessions/{id}` | Thông tin session |
 | DELETE | `/sessions/{id}` | Xóa session |
-| POST | `/sessions/{id}/upload` | Upload & index file |
+| POST | `/sessions/{id}/upload` | Upload và index file |
 | POST | `/query` | Hỏi đáp (non-streaming) |
 | POST | `/query/stream` | Hỏi đáp (SSE streaming) |
 | DELETE | `/sessions/{id}/files/{name}` | Xóa file |
@@ -110,9 +114,7 @@ docmind/
 
 ## Lưu ý
 
-- **OCR ảnh nặng**: EasyOCR load lần đầu ~30s. Sau đó cache.
-- **bge-m3**: Load ~2GB VRAM. Nếu thiếu VRAM, dùng `device="cpu"`.
-- **Session TTL**: 1 giờ không dùng → tự xóa.
+- **OCR ảnh nặng**: EasyOCR load lần đầu khoảng 30 giây. Sau đó dùng cache.
+- **bge-m3**: load khoảng 2 GB VRAM. Nếu thiếu VRAM, dùng `device="cpu"`.
+- **Thời gian sống session**: 1 giờ không dùng → tự xóa.
 - **FAISS remove_file**: Cần re-index sau khi xóa file. Xem `vector_store.py` line 118.
-
-

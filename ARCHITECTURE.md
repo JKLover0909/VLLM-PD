@@ -189,7 +189,7 @@ Trách nhiệm:
 
 ### 7.1. Danh sách endpoint
 
-| Method | Endpoint | Chức năng | Xác thực |
+| Phương thức | Endpoint | Chức năng | Xác thực |
 |---|---|---|---|
 | `GET` | `/health` | Trả trạng thái tiến trình và cấu hình Qdrant | Không |
 | `GET` | `/models` | Danh sách model cho UI | Không |

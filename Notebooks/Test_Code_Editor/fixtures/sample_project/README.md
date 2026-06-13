@@ -1,6 +1,6 @@
-# Calculator Fixture
+# Bộ mẫu máy tính
 
-Project sandbox này được dùng để kiểm thử Coding Agent. Không dùng source chính
+Dự án sandbox này được dùng để kiểm thử Coding Agent. Không dùng mã nguồn chính
 của repo cho các bài test ghi file đầu tiên.
 
 ## Trạng thái ban đầu
@@ -30,6 +30,6 @@ Kết quả ban đầu mong đợi:
 
 ## Phạm vi
 
-- Agent chỉ được thay đổi file trong project sandbox này khi test editing.
-- Milestone 1 chỉ kiểm tra tool-calling giả, chưa đọc hoặc ghi các file này.
+- Agent chỉ được thay đổi file trong dự án sandbox này khi test chỉnh sửa.
+- Mốc 1 chỉ kiểm tra tool-calling giả, chưa đọc hoặc ghi các file này.
 - Giữ lỗi chủ đích cho đến giai đoạn sửa code có phê duyệt.

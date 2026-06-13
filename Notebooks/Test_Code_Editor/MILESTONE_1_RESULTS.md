@@ -1,4 +1,4 @@
-# Milestone 1 Results: Tool Calling Compatibility
+# Kết quả mốc 1: tương thích tool-calling
 
 Ngày kiểm thử: 2026-06-06
 
@@ -27,7 +27,7 @@ Test thất bại đúng chủ đích: `divide(10, 0)` phát sinh
 
 Cả ba model nhận cùng một tool schema `get_file_metadata` và cùng prompt.
 
-| Provider | Model alias | Kết quả | Latency | Tool | Arguments |
+| Provider | Model alias | Kết quả | Độ trễ | Tool | Arguments |
 |---|---|---:|---:|---|---|
 | Local | `local-gemma` | PASS | 6.292 giây | `get_file_metadata` | `{"file_path":"calculator.py"}` |
 | MiMo | `mimo-pro` | PASS | 3.465 giây | `get_file_metadata` | `{"file_path":"calculator.py"}` |

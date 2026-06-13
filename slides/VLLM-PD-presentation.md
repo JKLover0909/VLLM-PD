@@ -1,160 +1,198 @@
-# VLLM-PD Presentation Outline
+# Dàn ý trình bày VLLM-PD
 
-## Slide 1: Bai toan va boi canh
+## Slide 1: Bài toán và bối cảnh
 
-- Nguoi dung can hoi dap va nghien cuu tai lieu qua web.
-- He thong can ho tro model local va cloud.
-- Coding Agent can API rieng de goi tac vu lap trinh.
-- May 1, May 2, May 3 can phoi hop qua public URL don gian.
+- Người dùng cần hỏi đáp và nghiên cứu tài liệu qua web.
+- Tài liệu có nhiều định dạng: PDF, Office, HTML và ảnh.
+- Hệ thống cần hỗ trợ cả model local và cloud API.
+- Khi chạy trong công ty, người dùng truy cập qua IP nội bộ của máy chủ.
 
-Speaker notes:
-Mo dau bang nhu cau thuc te: tai lieu nhieu dinh dang, can tom tat/co nguon, va can co mot endpoint rieng cho agent lap trinh. Diem quan trong la he thong khong chi la chatbot, ma la nen tang RAG + model router + coding agent.
+Ghi chú trình bày:
+Mở đầu bằng nhu cầu thực tế: tài liệu nhiều, cần tóm tắt có nguồn, cần hỏi đáp
+nhanh và cần giao diện web dễ dùng. Điểm quan trọng là hệ thống không chỉ là
+chatbot, mà là nền tảng RAG có router model và khả năng mở rộng sang agent.
 
-## Slide 2: Muc tieu he thong
+## Slide 2: Mục tiêu hệ thống
 
-- Mot public URL cho web va API.
-- Upload, index va hoi dap tai lieu.
-- Cho phep user chon model.
-- Uu tien local, fallback cloud khi can.
-- Tach web nguoi dung va Coding Agent co khoa bao ve.
+- Một web nội bộ cho người dùng công ty.
+- Upload, index và hỏi đáp tài liệu.
+- Cho phép người dùng chọn model.
+- Ưu tiên MiMo, fallback sang OpenAI và Gemma4 local khi cần.
+- Tách riêng chế độ `Hỏi đáp MKAC` và `Nghiên cứu`.
 
-Speaker notes:
-Nhan manh mot quyet dinh thiet ke: chi public FastAPI port 8001. LiteLLM va Qdrant o noi bo de giam be mat tan cong.
+Ghi chú trình bày:
+Nhấn mạnh quyết định thiết kế: người dùng chỉ cần vào một URL web. LiteLLM và
+Qdrant là thành phần nội bộ, không cần public cho người dùng cuối.
 
-## Slide 3: Cong nghe su dung
+## Slide 3: Công nghệ sử dụng
 
-| Tang | Cong nghe |
+| Tầng | Công nghệ |
 |---|---|
 | Frontend | React, Vite, lucide-react, react-markdown |
-| API | FastAPI, SSE streaming, Pydantic |
+| API | FastAPI, Pydantic, SSE streaming |
 | RAG | Docling, BGE-M3, Qdrant |
-| Router | LiteLLM |
-| Agent | LangGraph, MCP filesystem/git |
-| Infra | Docker Compose, systemd user service, ngrok |
+| Router model | LiteLLM |
+| Agent thử nghiệm | LangGraph, MCP filesystem/git |
+| Hạ tầng | Docker Compose, systemd user service, ngrok cho môi trường demo |
 
-Speaker notes:
-Trinh bay theo tang de nguoi nghe khong bi ngop vi danh sach cong nghe. Moi cong nghe co vai tro ro rang trong pipeline.
+Ghi chú trình bày:
+Trình bày theo tầng để người nghe không bị ngợp vì danh sách công nghệ. Mỗi
+công nghệ có vai trò rõ ràng trong pipeline.
 
-## Slide 4: Model va API model routing
+## Slide 4: Model và API được gọi trong hệ thống
 
-| Lua chon | Model group | Backend |
+| Lựa chọn | Model group | Backend |
 |---|---|---|
-| Tu dong | auto-model | Gemma4 -> MiMo -> OpenAI |
-| Gemma4 Local | local-gemma | Ollama/Gemma4 tren May 1 |
-| MiMo 2.5 Pro | mimo-pro | Xiaomi MiMo API |
-| OpenAI | openai-model | GPT-5.4 mini |
-| Agent | coding-model | Gemma4 -> OpenAI |
+| Tự động | `auto-model` | MiMo 2.5 Pro, fallback OpenAI, fallback Gemma4 local |
+| Gemma4 Local | `local-gemma` | Ollama/Gemma4 trên Máy 1 |
+| MiMo 2.5 Pro | `mimo-pro` | Xiaomi MiMo API |
+| OpenAI | `openai-model` | GPT-5.4 mini |
+| Grok | `grok-model` | Grok 4.20 Reasoning qua Azure |
+| Agent | `coding-model` | Gemma4 local, fallback OpenAI |
 
-Speaker notes:
-Giai thich model group la ten logic de frontend/backend khong phu thuoc truc tiep vao provider. LiteLLM giu vai tro router va fallback.
+Ghi chú trình bày:
+Giải thích `model group` là tên logic để frontend/backend không phụ thuộc trực
+tiếp vào provider. LiteLLM giữ vai trò router và fallback.
 
-## Slide 5: Kien truc tong the
+## Slide 5: Kiến trúc tổng thể
 
 ```text
-May 3 / User
+Máy người dùng trong công ty
     |
-    | ngrok HTTPS, port 8001
+    | HTTP, IP nội bộ, cổng 8001
     v
-May 2: FastAPI + React
-    |-- RAG: Docling -> BGE-M3 -> Qdrant
-    |-- Agent: LangGraph -> MCP tools
+Máy chủ ứng dụng: FastAPI + React
+    |-- Hỏi đáp MKAC: Qdrant collection mkac_knowledge
+    |-- Nghiên cứu: Upload -> Docling/OCR -> BGE-M3 -> Qdrant
     v
-May 2: LiteLLM internal :4000
-    |-- May 1 Ollama/Gemma4
+LiteLLM nội bộ :4000
+    |-- Máy 1 Ollama/Gemma4
     |-- MiMo API
-    `-- OpenAI API
+    |-- OpenAI API
+    `-- Azure/Grok API
 ```
 
-Speaker notes:
-Day la slide trung tam. Chi ra service nao public, service nao noi bo. Public duy nhat la FastAPI port 8001.
+Ghi chú trình bày:
+Đây là slide trung tâm. Chỉ ra service nào cho người dùng truy cập, service nào
+chỉ chạy nội bộ. Khi demo ngoài mạng công ty có thể dùng ngrok, nhưng khi deploy
+nội bộ thì không cần ngrok.
 
-## Slide 6: Luong RAG tai lieu
+## Slide 6: Luồng RAG tài liệu
 
-1. User upload tai lieu.
-2. FastAPI validate file, session va size.
-3. Docling parse sang markdown.
-4. BGE-M3 embed chunks.
-5. Qdrant luu vector theo session.
-6. Query -> retrieve -> prompt -> LiteLLM -> answer + sources.
+1. Người dùng upload tài liệu.
+2. FastAPI kiểm tra file, session, extension và dung lượng.
+3. Docling parse/OCR nội dung.
+4. BGE-M3 sinh embedding cho từng chunk.
+5. Qdrant lưu vector theo session hoặc kho MKAC.
+6. Khi hỏi, hệ thống retrieve chunk liên quan.
+7. Backend dựng prompt và gọi LiteLLM.
+8. Frontend hiển thị câu trả lời kèm nguồn.
 
-Speaker notes:
-Nhan manh sources/citation: cau tra loi khong chi sinh van ban, ma kem bang chung tu chunk tai lieu.
+Ghi chú trình bày:
+Nhấn mạnh nguồn trích dẫn: câu trả lời không chỉ là văn bản sinh ra, mà có bằng
+chứng từ chunk tài liệu để người dùng đối chiếu.
 
-## Slide 7: Luong chon model va fallback
+## Slide 7: Chọn model và fallback
 
-- `local`: chi goi Gemma4 local.
-- `mimo`: chi goi MiMo.
-- `openai`: chi goi OpenAI.
-- `auto`: Gemma4 local fail thi fallback MiMo, roi OpenAI.
-- Agent dung `coding-model`: Gemma4 local, fallback OpenAI.
+- `auto`: ưu tiên MiMo, fallback sang OpenAI rồi Gemma4 local.
+- `local`: chỉ gọi Gemma4 local.
+- `mimo`: chỉ gọi MiMo.
+- `openai`: chỉ gọi OpenAI.
+- `grok`: gọi Grok qua Azure.
+- Session có ảnh tự route sang OpenAI Vision nếu model đã chọn không hỗ trợ ảnh.
 
-Speaker notes:
-Day la phan giai thich tai sao can LiteLLM. Nguoi dung chon model o UI, backend anh xa sang model group, LiteLLM xu ly provider/fallback.
+Ghi chú trình bày:
+Đây là phần giải thích tại sao cần LiteLLM. Người dùng chọn model ở UI, backend
+ánh xạ sang model group, còn LiteLLM xử lý provider và fallback.
 
-## Slide 8: Web public va API tren May 2
+## Slide 8: Hai chế độ sử dụng chính
 
-- React SPA duoc FastAPI serve tai `/`.
-- API cung domain: `/health`, `/models`, `/sessions`, `/query/stream`.
-- SSE streaming de hien cau tra loi theo token.
-- Ngrok expose `http://localhost:8001`.
-- LiteLLM khong public.
+### Hỏi đáp MKAC
 
-Speaker notes:
-Day la diem thiet ke giup May 3 dung don gian: mot URL duy nhat vua la web vua la API. Khong can public them LiteLLM.
+- Dùng kho tài liệu nội bộ MKAC đã index sẵn.
+- Không cho upload tài liệu ở chế độ này.
+- Nếu không có thông tin nội bộ, hệ thống có thể tìm web với ngữ cảnh MKAC.
 
-## Slide 9: Coding Agent va MCP
+### Nghiên cứu
 
-- Endpoint: `POST /agent`.
-- Bao ve bang `X-Agent-API-Key`.
-- LangGraph dieu phoi vong lap agent/tool.
-- MCP filesystem gioi han trong `WORKSPACE_DIR`.
-- MCP git khoa vao `AGENT_REPOSITORY_DIR`.
-- LLM agent goi `coding-model` qua LiteLLM.
+- Người dùng tự upload tài liệu theo phiên.
+- Tài liệu chỉ gắn với session nghiên cứu hiện tại.
+- Phù hợp để phân tích hồ sơ, PDF, ảnh hoặc tài liệu thử nghiệm.
 
-Speaker notes:
-Phan nay tach khoi RAG. Agent co quyen dung tool doc/ghi file/git nen can security boundary rieng.
+Ghi chú trình bày:
+Slide này giúp phân biệt rõ “tri thức công ty dùng chung” và “tài liệu người
+dùng upload tạm thời”.
 
-## Slide 10: Bao mat va van hanh
+## Slide 9: Giao diện người dùng
 
-- `.env` bi ignore, khong commit API key.
+- Web React chạy cùng origin với API.
+- Hỗ trợ dark mode, light mode và theo hệ thống.
+- Có chọn model, chọn chế độ, upload tài liệu và panel nguồn.
+- Trả lời streaming để người dùng thấy phản hồi dần.
+- Có cơ chế dừng câu trả lời và sao chép nội dung.
+
+Ghi chú trình bày:
+Nên demo trực tiếp UI ở slide này: đổi theme, chuyển chế độ MKAC/Nghiên cứu,
+chọn model và xem nguồn trích dẫn.
+
+## Slide 10: Bảo mật và vận hành
+
+- `.env` và `.env.docker` bị ignore, không commit API key.
 - Validate UUID session ID.
-- Chan path traversal qua filename validation.
+- Chặn path traversal qua filename validation.
 - Allowlist extension upload.
 - Rate limit query/upload theo IP.
-- systemd user service tu restart.
-- Docker Compose quan ly Qdrant va LiteLLM.
+- Giới hạn queue xử lý tài liệu để tránh quá tải VRAM.
+- Docker web nội bộ chỉ expose cổng `8001`.
 
-Speaker notes:
-Neu trinh bay truoc hoi dong ky thuat, slide nay rat quan trong. No cho thay he thong khong chi chay duoc demo, ma co suy nghi ve van hanh.
+Ghi chú trình bày:
+Nếu trình bày trước hội đồng kỹ thuật, slide này rất quan trọng. Nó cho thấy hệ
+thống không chỉ chạy được demo, mà đã có suy nghĩ về vận hành và rủi ro.
 
-## Slide 11: Ket qua kiem thu / Demo
+## Slide 11: Triển khai
 
-- React build production thanh cong.
-- UI desktop/mobile da kiem tra bang Playwright screenshot.
-- LiteLLM nhan 5 model groups.
-- Gemma4, MiMo Token Plan SGP va OpenAI goi duoc.
-- Upload `documents/test1.pdf`, index 3 chunks.
-- `/query/stream` tra sources, meta, token, done.
-- `/agent` co key tra 200, khong key tra 401.
+Hai cách chạy chính:
 
-Speaker notes:
-Day la slide de chot rang cac thanh phan khong chi nam tren so do, ma da duoc test end-to-end.
+- Local/systemd trên Máy 2: dùng `docker-compose.yml`, FastAPI chạy bằng
+  Uvicorn hoặc user service, có thể dùng ngrok khi demo ngoài mạng.
+- Docker web nội bộ: dùng `docker-compose.web.yml`, chạy `app`, `qdrant` và
+  `litellm`, không chạy ngrok, không bật Coding Agent.
 
-## Slide 12: Trade-off va huong phat trien
+Ghi chú trình bày:
+Nhấn mạnh Docker web nội bộ là hướng triển khai sang máy khác trong công ty.
+Người dùng truy cập bằng `http://IP_NỘI_BỘ:8001`.
 
-Trade-off hien tai:
-- Ngrok URL co the thay doi.
-- Rate limit dang in-memory.
-- Chua co user login/history rieng.
-- Upload lon nen dua vao job queue.
+## Slide 12: Kết quả kiểm thử / demo
 
-Huong phat trien:
-- Domain co dinh.
+- React build production thành công.
+- UI desktop/mobile đã kiểm tra bằng screenshot trình duyệt.
+- Qdrant và LiteLLM chạy bằng Docker.
+- Local Gemma4, MiMo Token Plan SGP, OpenAI và Grok gọi được.
+- Upload PDF, index chunk và query SSE trả sources.
+- Coding Agent có test riêng, nhưng không bật trong bản Docker web nội bộ.
+
+Ghi chú trình bày:
+Đây là slide để chốt rằng các thành phần không chỉ nằm trên sơ đồ mà đã được
+kiểm thử end-to-end.
+
+## Slide 13: Trade-off và hướng phát triển
+
+Trade-off hiện tại:
+
+- Ngrok URL có thể thay đổi trong môi trường demo.
+- Rate limit đang in-memory.
+- Chưa có đăng nhập người dùng và phân quyền theo phòng ban.
+- Upload tài liệu lớn nên đưa vào job queue chuyên dụng.
+
+Hướng phát triển:
+
+- Domain nội bộ cố định.
 - Auth/user management.
 - Redis rate limit.
-- Luu lich su hoi thoai.
-- Metrics/log dashboard.
-- Queue cho parse/index tai lieu lon.
+- Lưu lịch sử hội thoại theo người dùng.
+- Dashboard log và metrics.
+- Queue cho parse/index tài liệu lớn.
 
-Speaker notes:
-Ket thuc bang nhung gi da lam va nhung gi can nang cap. Cach nay giup bai trinh bay thuc te, khong tao cam giac he thong da hoan hao tuyet doi.
+Ghi chú trình bày:
+Kết thúc bằng những gì đã làm và những gì cần nâng cấp. Cách này giúp bài trình
+bày thực tế, không tạo cảm giác hệ thống đã hoàn hảo tuyệt đối.

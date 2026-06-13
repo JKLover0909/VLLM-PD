@@ -1,54 +1,61 @@
 # VLLM-PD
 
-VLLM-PD la he thong RAG va Coding Agent chay tren May 2. He thong hien tai phuc vu web React, API FastAPI, Qdrant vector database va LiteLLM router trong cung mot repo.
+VLLM-PD là hệ thống hỏi đáp tài liệu, nghiên cứu tài liệu và thử nghiệm Coding
+Agent chạy trên Máy 2. Hệ thống chính phục vụ web React, API FastAPI, Qdrant
+vector database và LiteLLM router trong cùng một repository.
 
-`docmind/` la phan demo/tach rieng, khong phai duong chay chinh cua repo hien tai.
+Thư mục `docmind/` là phần demo tách riêng từ các thử nghiệm trước, không phải
+đường chạy chính của repository hiện tại.
 
-## Trang thai hien tai
+## Trạng thái hiện tại
 
-- Web cho nguoi dung: React SPA, duoc FastAPI phuc vu tai `/`.
-- API Gateway: FastAPI chay o port `8001`.
-- Public URL: ngrok expose port `8001`; script khoi dong tu lay va in URL moi ra terminal.
-- LiteLLM: chay noi bo o port `4000`, khong can public cho nguoi dung.
-- Qdrant: chay noi bo o port `6333`.
-- Embedding: `BAAI/bge-m3` chay tren May 2.
-- Parser tai lieu: Docling.
+- Web người dùng: React SPA, được FastAPI phục vụ tại `/`.
+- API Gateway: FastAPI chạy ở cổng `8001`.
+- Public URL cho máy hiện tại: ngrok expose cổng `8001`; script khởi động tự lấy
+  URL mới và in ra terminal.
+- LiteLLM: chạy nội bộ ở cổng `4000`, không cần public cho người dùng.
+- Qdrant: chạy nội bộ ở cổng `6333`.
+- Embedding: `BAAI/bge-m3` chạy trên Máy 2.
+- Parser tài liệu: Docling.
 - LLM upstream:
-  - Gemma4 local tren May 1 qua Ollama/ngrok.
+  - Gemma4 local trên Máy 1 qua Ollama/ngrok.
   - MiMo 2.5 Pro qua Xiaomi MiMo API.
   - OpenAI GPT-5.4 mini.
-- Session co file anh `.png/.jpg/.jpeg` tu dong route sang OpenAI Vision de doc noi dung anh.
-- Coding Agent: LangGraph + MCP tools, endpoint `/agent` duoc bao ve bang `AGENT_API_KEY`.
+  - Grok 4.20 Reasoning qua Azure.
+- Session có file ảnh `.png/.jpg/.jpeg` tự động route sang OpenAI Vision để đọc
+  nội dung ảnh.
+- Coding Agent: LangGraph + MCP tools, endpoint `/agent` được bảo vệ bằng
+  `AGENT_API_KEY`.
 
-## Kien truc nhanh
+## Kiến trúc nhanh
 
 ```text
-Nguoi dung / May 3
+Người dùng / Máy 3
         |
-        | HTTPS ngrok, port 8001
+        | HTTPS ngrok hoặc IP nội bộ, cổng 8001
         v
-May 2: FastAPI + React
+Máy 2: FastAPI + React
         |
-        |-- Hoi dap MKAC -> mkac_knowledge -> LiteLLM
+        |-- Hỏi đáp MKAC -> mkac_knowledge -> LiteLLM
         |
-        |-- Nghien cuu -> Upload -> Docling/OCR -> docmind_documents
+        |-- Nghiên cứu -> Upload -> Docling/OCR -> docmind_documents
         |
         |-- /agent -> LangGraph -> MCP filesystem/git -> LiteLLM
         |
         v
-May 2: LiteLLM, port 4000 noi bo
+Máy 2: LiteLLM, cổng 4000 nội bộ
         |
-        |-- auto-model -> MiMo 2.5 Pro -> fallback OpenAI -> fallback local Gemma4
-        |-- local-gemma -> Gemma4 local tren May 1
+        |-- auto-model -> MiMo 2.5 Pro -> fallback OpenAI -> fallback Gemma4 local
+        |-- local-gemma -> Gemma4 local trên Máy 1
         |-- mimo-pro -> MiMo 2.5 Pro
         |-- openai-model -> GPT-5.4 mini
         |-- grok-model -> Grok 4.20 Reasoning qua Azure
         |-- coding-model -> Gemma4 local -> fallback OpenAI
 ```
 
-Chi tiet hon xem [ARCHITECTURE.md](ARCHITECTURE.md).
+Chi tiết hơn xem [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Thu muc chinh
+## Thư mục chính
 
 ```text
 .
@@ -60,32 +67,36 @@ Chi tiet hon xem [ARCHITECTURE.md](ARCHITECTURE.md).
 |   |   |-- vector_store.py  # Qdrant session/file/chunk storage
 |   |   `-- rag_pipeline.py  # Retrieval + prompt + LiteLLM call
 |   `-- agent/
-|       |-- graph.py         # LangGraph coding agent
+|       |-- graph.py         # LangGraph Coding Agent
 |       `-- mcp_client.py    # MCP filesystem/git tools
 |-- frontend/                # React + Vite web app
 |-- config/mkac_manifest.json
 |-- scripts/index_mkac_documents.py
-|-- docker-compose.yml       # Qdrant + LiteLLM
-|-- litellm_config.yaml      # Model aliases and fallback routing
-|-- requirements.txt         # Python dependencies for main system
-|-- .env.example             # Config template
-`-- docmind/                 # Separate demo/runtime area, not main flow
+|-- docker-compose.yml       # Qdrant + LiteLLM cho cách chạy local/systemd
+|-- docker-compose.web.yml   # Bản Docker web nội bộ
+|-- litellm_config.yaml      # Model aliases và fallback routing
+|-- requirements.txt         # Python dependencies cho hệ thống chính
+|-- .env.example             # Mẫu cấu hình local/systemd
+|-- .env.docker.example      # Mẫu cấu hình Docker web nội bộ
+`-- docmind/                 # Demo/runtime tách riêng, không phải luồng chính
 ```
 
-## Yeu cau
+## Yêu cầu
 
-- Linux tren May 2.
-- Docker va Docker Compose.
-- Conda hoac Python 3.10 environment.
-- NVIDIA GPU neu muon chay BGE-M3 nhanh tren CUDA.
-- Node.js 20+ de build frontend.
-- May 1 dang expose Ollama/Gemma4 qua `OLLAMA_API_BASE`.
+- Linux trên Máy 2 hoặc máy chủ nội bộ.
+- Docker và Docker Compose.
+- Conda hoặc Python 3.10 environment nếu chạy không dùng Docker app.
+- NVIDIA GPU nếu muốn chạy BGE-M3 và OCR nhanh trên CUDA.
+- Node.js 20+ để build frontend khi chạy local/systemd.
+- Máy 1 đang expose Ollama/Gemma4 qua `OLLAMA_API_BASE` nếu muốn dùng model
+  local.
 
-Repo hien dang dung conda env ten `docmind`, nhung day chi la ten moi truong. Thu muc `docmind/` van la demo rieng.
+Repository hiện đang dùng conda env tên `docmind`, nhưng đây chỉ là tên môi
+trường. Thư mục `docmind/` vẫn là demo riêng.
 
-## Cai dat moi truong
+## Cài đặt môi trường local/systemd
 
-Tu root repo:
+Từ root repository:
 
 ```bash
 cd /home/jkl0909/Code/llm/VLLM-PD
@@ -95,11 +106,11 @@ conda activate docmind
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# Node.js neu env chua co npm/node
+# Cài Node.js nếu env chưa có npm/node.
 conda install -n docmind -c conda-forge nodejs=20 -y
 ```
 
-Frontend:
+Build frontend:
 
 ```bash
 cd /home/jkl0909/Code/llm/VLLM-PD/frontend
@@ -107,20 +118,20 @@ npm install
 npm run build
 ```
 
-Giao dien web co ba che do mau: `Sang`, `Toi` va `Theo he thong`. Nhan nut
-theme tren thanh cong cu de chuyen che do; lua chon duoc luu trong
-`localStorage` cua trinh duyet.
+Giao diện web có ba chế độ màu: `Sáng`, `Tối` và `Theo hệ thống`. Nút theme
+trên thanh công cụ dùng để chuyển chế độ; lựa chọn được lưu trong
+`localStorage` của trình duyệt.
 
-## Cau hinh `.env`
+## Cấu hình `.env`
 
-Tao file `.env`:
+Tạo file `.env`:
 
 ```bash
 cd /home/jkl0909/Code/llm/VLLM-PD
 cp .env.example .env
 ```
 
-Nhung bien quan trong:
+Các biến quan trọng:
 
 ```env
 OLLAMA_API_BASE=https://your-machine-1-ollama-ngrok-url
@@ -147,7 +158,7 @@ QDRANT_PORT=6333
 MKAC_COLLECTION_NAME=mkac_knowledge
 MKAC_SOURCE_DIR=documents/MKAC
 MKAC_MANIFEST_PATH=config/mkac_manifest.json
-MKAC_SCORE_THRESHOLD=0.38
+MKAC_SCORE_THRESHOLD=0.48
 
 UPLOAD_DIR=./uploads
 MAX_UPLOAD_SIZE_MB=25
@@ -171,11 +182,11 @@ WORKSPACE_DIR=/home/jkl0909/Code/llm
 AGENT_REPOSITORY_DIR=/home/jkl0909/Code/llm/VLLM-PD
 ```
 
-Khong commit `.env`. File nay co the chua API key that.
+Không commit `.env`. File này có thể chứa API key thật.
 
-## Chay he thong
+## Chạy hệ thống local/systemd
 
-### 1. Khoi dong Qdrant va LiteLLM
+### 1. Khởi động Qdrant và LiteLLM
 
 ```bash
 cd /home/jkl0909/Code/llm/VLLM-PD
@@ -183,7 +194,7 @@ docker compose up -d
 docker compose ps
 ```
 
-Kiem tra LiteLLM:
+Kiểm tra LiteLLM:
 
 ```bash
 curl http://localhost:4000/health/liveliness
@@ -200,25 +211,11 @@ npm install
 npm run build
 ```
 
-FastAPI chi mount web khi `frontend/dist` ton tai.
+FastAPI chỉ mount web khi `frontend/dist` tồn tại.
 
-### Gioi han tai GPU va upload
+### 3. Chạy FastAPI cổng 8001
 
-- BGE-M3 chay tren GPU bang FP16, batch mac dinh `8`.
-- Docling/EasyOCR chay tren GPU de upload tai lieu scan phan hoi nhanh hon.
-- Mot tai lieu duoc parse/index tai mot thoi diem; toi da bon upload khac cho.
-- Batch OCR/layout/table va concurrency deu bang `1` de tranh cac dot VRAM chong nhau.
-- Khi hang doi day, API tra `503` va header `Retry-After`.
-- PDF vuot `MAX_DOCUMENT_PAGES` bi tu choi truoc khi OCR.
-- `GET /health` hien `active`, `waiting`, device va dtype dang su dung.
-
-Script `scripts/index_mkac_documents.py` mac dinh embed tren CPU de khong nap
-them mot ban BGE-M3 vao GPU khi API dang chay. Chi dat
-`MKAC_INDEX_EMBEDDING_DEVICE=cuda` khi da dung `vllm-pd-api`.
-
-### 3. Chay FastAPI port 8001
-
-Chay foreground de debug:
+Chạy foreground để debug:
 
 ```bash
 cd /home/jkl0909/Code/llm/VLLM-PD
@@ -226,7 +223,7 @@ conda activate docmind
 uvicorn src.api.main:app --host 0.0.0.0 --port 8001
 ```
 
-Hoac dung service da cau hinh tren May 2:
+Hoặc dùng service đã cấu hình trên Máy 2:
 
 ```bash
 systemctl --user status vllm-pd-api
@@ -234,154 +231,63 @@ systemctl --user restart vllm-pd-api
 journalctl --user -u vllm-pd-api -n 120 --no-pager
 ```
 
-May hien tai da bat `loginctl enable-linger`, nen user service co the chay sau khi logout.
+Máy hiện tại đã bật `loginctl enable-linger`, nên user service có thể chạy sau
+khi logout.
 
-### 4. Public bang ngrok
+### 4. Public bằng ngrok
 
-Neu dung ngrok Free, de ngrok tu sinh URL random cho port `8001`:
+Nếu dùng ngrok Free, để ngrok tự sinh URL random cho cổng `8001`:
 
 ```bash
 ngrok http 8001
 ```
 
-Neu co reserved/static domain cua ngrok tra phi, dat `NGROK_RESERVED_DOMAIN`
-de script dua domain nay vao tham so `ngrok --url`.
+Nếu có reserved/static domain của ngrok trả phí, đặt `NGROK_RESERVED_DOMAIN` để
+script đưa domain này vào tham số `ngrok --url`.
 
-Chi can public port `8001`. Khong public LiteLLM port `4000` neu khong co ly do rieng.
+Chỉ cần public cổng `8001`. Không public LiteLLM cổng `4000` nếu không có lý do
+riêng.
 
-## Deploy Docker web noi bo
+## Triển khai Docker web nội bộ
 
-Che do nay danh cho may chu trong mang cong ty. No chi trien khai web hoi dap,
-RAG, Qdrant va LiteLLM. Khong chay ngrok va khong bat Coding Agent.
+Hướng dẫn triển khai Docker web-only cho máy chủ trong mạng công ty nằm ở
+[DEPLOY.md](DEPLOY.md). Chế độ này không chạy ngrok và không bật Coding Agent.
 
-File lien quan:
+## Sử dụng web
 
-```text
-Dockerfile
-docker-compose.web.yml
-.env.docker.example
-scripts/docker-deploy.sh
-scripts/docker-index-mkac.sh
-```
-
-### 1. Tao cau hinh Docker
-
-```bash
-cd /home/<user>/Code/llm/VLLM-PD
-cp .env.docker.example .env.docker
-nano .env.docker
-```
-
-Sua cac API key va URL model:
-
-```env
-OLLAMA_API_BASE=...
-OPENAI_API_KEY=...
-MIMO_API_KEY=...
-AZURE_OPENAI_API_KEY=...
-AZURE_OPENAI_ENDPOINT=...
-MACHINE2_API_PORT=8001
-ENABLE_AGENT=false
-```
-
-Mac dinh `.env.docker.example` dung CPU de de chuyen may:
-
-```env
-EMBEDDING_DEVICE=cpu
-DOCLING_DEVICE=cpu
-EMBEDDING_DTYPE=float32
-```
-
-Neu may deploy co NVIDIA GPU va da cai `nvidia-container-toolkit`, co the doi:
-
-```env
-EMBEDDING_DEVICE=cuda
-DOCLING_DEVICE=cuda
-EMBEDDING_DTYPE=float16
-```
-
-### 2. Build va chay
-
-```bash
-./scripts/docker-deploy.sh
-```
-
-Script se build image, start `app`, `qdrant`, `litellm`, kiem tra `/health`
-va in URL noi bo dang:
-
-```text
-http://<IP_NOI_BO_MAY_CHU>:8001
-```
-
-Trong `docker-compose.web.yml`, chi web/API duoc expose ra LAN qua port `8001`.
-Qdrant `6333` va LiteLLM `4000` chi bind tren `127.0.0.1` cua may chu.
-
-### 3. Index kho MKAC trong Docker
-
-Sau lan deploy dau tien, index tai lieu noi bo:
-
-```bash
-./scripts/docker-index-mkac.sh
-```
-
-Script nay chay `scripts/index_mkac_documents.py` ben trong container app va
-ghi vector vao Qdrant Docker.
-
-### 4. Lenh quan tri Docker
-
-```bash
-VLLM_PD_ENV_FILE=.env.docker docker compose --env-file .env.docker -f docker-compose.web.yml ps
-VLLM_PD_ENV_FILE=.env.docker docker compose --env-file .env.docker -f docker-compose.web.yml logs -f app
-VLLM_PD_ENV_FILE=.env.docker docker compose --env-file .env.docker -f docker-compose.web.yml restart app
-VLLM_PD_ENV_FILE=.env.docker docker compose --env-file .env.docker -f docker-compose.web.yml down
-```
-
-Du lieu can backup khi chuyen may:
-
-```text
-documents/MKAC/
-config/mkac_manifest.json
-qdrant_storage/
-uploads/
-logs/
-mkac_processed/
-```
-
-## Su dung web
-
-Mo:
+Mở:
 
 ```text
 http://localhost:8001
 ```
 
-Hoac public URL duoc `./scripts/vllm-pd.sh start` in ra terminal.
+Hoặc public URL được `./scripts/vllm-pd.sh start` in ra terminal.
 
-Nguoi dung co the:
+Người dùng có thể:
 
-- Tao phien moi.
-- Chon `Hoi dap MKAC` de tra cuu kho tai lieu noi bo dung chung.
-- Chon `Nghien cuu` de upload PDF, DOCX, XLSX, PPTX, HTML, PNG, JPG, JPEG.
-- Hai che do dung session va lich su hoi dap rieng. Khi chuyen tab, frontend
-  chuyen sang UUID cua che do do; tai lieu upload chi gan voi session
-  `Nghien cuu`.
-- Che do `Nghien cuu` yeu cau co tai lieu da index truoc khi hoi; co the them
-  tai lieu tu nut chinh giua man hinh, thanh ben hoac nut dinh kem canh o nhap.
-- Panel nguon mac dinh thu gon; nut nguon hien so trich dan cua cau tra loi moi
-  nhat va chi mo khi nguoi dung can doi chieu.
-- Chon model `Tu dong`, `Gemma4 Local`, `MiMo 2.5 Pro`, `OpenAI` hoac `Grok`.
-- Dat cau hoi va xem sources tu tai lieu.
+- Tạo phiên mới.
+- Chọn `Hỏi đáp MKAC` để tra cứu kho tài liệu nội bộ dùng chung.
+- Chọn `Nghiên cứu` để upload PDF, DOCX, XLSX, PPTX, HTML, PNG, JPG, JPEG.
+- Hai chế độ dùng session và lịch sử hỏi đáp riêng. Khi chuyển tab, frontend
+  chuyển sang UUID của chế độ đó; tài liệu upload chỉ gắn với session
+  `Nghiên cứu`.
+- Chế độ `Nghiên cứu` yêu cầu có tài liệu đã index trước khi hỏi; có thể thêm
+  tài liệu từ nút chính giữa màn hình, thanh bên hoặc nút đính kèm cạnh ô nhập.
+- Panel nguồn mặc định thu gọn; nút nguồn hiển thị số trích dẫn của câu trả lời
+  mới nhất và chỉ mở khi người dùng cần đối chiếu.
+- Chọn model `Tự động`, `Gemma4 Local`, `MiMo 2.5 Pro`, `OpenAI` hoặc `Grok`.
+- Đặt câu hỏi và xem sources từ tài liệu.
 
-### Index kho tai lieu MKAC
+### Index kho tài liệu MKAC
 
-Tai lieu duoc quan ly boi `config/mkac_manifest.json` va index theo tung trang:
+Tài liệu được quản lý bởi `config/mkac_manifest.json` và index theo từng trang:
 
 ```bash
 python scripts/index_mkac_documents.py --dry-run
 python scripts/index_mkac_documents.py
 ```
 
-Chay lai mot file:
+Chạy lại một file:
 
 ```bash
 python scripts/index_mkac_documents.py \
@@ -389,26 +295,26 @@ python scripts/index_mkac_documents.py \
   --reindex
 ```
 
-PDF scan duoc OCR theo trang, anh trang duoc luu trong `mkac_processed/` va
-khong commit Git.
+PDF scan được OCR theo trang, ảnh trang được lưu trong `mkac_processed/` và
+không commit Git.
 
-## API endpoints
+## Các API endpoint
 
-| Method | Endpoint | Mo ta |
+| Phương thức | Endpoint | Mô tả |
 |---|---|---|
-| `GET` | `/health` | Kiem tra API va Qdrant config |
-| `GET` | `/models` | Danh sach model cho frontend |
-| `GET` | `/knowledge/mkac/status` | Trang thai kho tri thuc MKAC |
-| `POST` | `/sessions` | Tao session RAG |
-| `GET` | `/sessions/{session_id}` | Lay thong tin session |
-| `DELETE` | `/sessions/{session_id}` | Xoa session va file upload |
-| `POST` | `/sessions/{session_id}/upload` | Upload va index tai lieu |
-| `DELETE` | `/sessions/{session_id}/files/{filename}` | Xoa mot file trong session |
-| `POST` | `/query` | Hoi dap non-streaming |
-| `POST` | `/query/stream` | Hoi dap SSE streaming |
-| `POST` | `/agent` | Coding Agent, can `X-Agent-API-Key` |
+| `GET` | `/health` | Kiểm tra API và cấu hình Qdrant |
+| `GET` | `/models` | Danh sách model cho frontend |
+| `GET` | `/knowledge/mkac/status` | Trạng thái kho tri thức MKAC |
+| `POST` | `/sessions` | Tạo session RAG |
+| `GET` | `/sessions/{session_id}` | Lấy thông tin session |
+| `DELETE` | `/sessions/{session_id}` | Xóa session và file upload |
+| `POST` | `/sessions/{session_id}/upload` | Upload và index tài liệu |
+| `DELETE` | `/sessions/{session_id}/files/{filename}` | Xóa một file trong session |
+| `POST` | `/query` | Hỏi đáp non-streaming |
+| `POST` | `/query/stream` | Hỏi đáp SSE streaming |
+| `POST` | `/agent` | Coding Agent, cần `X-Agent-API-Key` |
 
-Request query mau:
+Request query mẫu:
 
 ```bash
 SESSION_ID=$(curl -fsS -X POST http://localhost:8001/sessions | jq -r .session_id)
@@ -417,14 +323,14 @@ curl -fsS http://localhost:8001/query \
   -H 'Content-Type: application/json' \
   -d "{
     \"session_id\":\"$SESSION_ID\",
-    \"question\":\"Quy dinh lam them gio tai MKAC nhu the nao?\",
+    \"question\":\"Quy định làm thêm giờ tại MKAC như thế nào?\",
     \"model\":\"grok\",
     \"mode\":\"mkac\",
     \"stream\":false
   }" | jq .
 ```
 
-Upload mau:
+Upload mẫu:
 
 ```bash
 curl -fsS -X POST \
@@ -432,7 +338,7 @@ curl -fsS -X POST \
   -F "file=@documents/test1.pdf" | jq .
 ```
 
-Agent mau:
+Agent mẫu:
 
 ```bash
 AGENT_KEY=$(sed -n 's/^AGENT_API_KEY=//p' .env)
@@ -442,115 +348,113 @@ curl -fsS http://localhost:8001/agent \
   -H 'Content-Type: application/json' \
   -d "{
     \"session_id\":\"$SESSION_ID\",
-    \"task\":\"Khong goi cong cu. Chi tra loi dung mot tu: OK\"
+    \"task\":\"Không gọi công cụ. Chỉ trả lời đúng một từ: OK\"
   }" | jq .
 ```
 
-## Model routing
+## Định tuyến model
 
 LiteLLM aliases trong `litellm_config.yaml`:
 
-| UI/API option | LiteLLM model group | Backend |
+| Lựa chọn UI/API | Model group LiteLLM | Backend |
 |---|---|---|
 | `auto` | `auto-model` | MiMo 2.5 Pro, fallback OpenAI, fallback Gemma4 local |
-| `local` | `local-gemma` | Ollama/Gemma4 tren May 1 |
+| `local` | `local-gemma` | Ollama/Gemma4 trên Máy 1 |
 | `mimo` | `mimo-pro` | MiMo 2.5 Pro |
 | `openai` | `openai-model` | OpenAI GPT-5.4 mini |
 | `grok` | `grok-model` | Grok 4.20 Reasoning qua Azure |
 | Agent | `coding-model` | Gemma4 local, fallback OpenAI |
 
-Trong mode `mkac`, retrieval dung collection `mkac_knowledge`. Neu khong co
-chunk dat nguong, backend tim tren web voi cau hoi gan them ngu canh MKAC.
-Ket qua co `answer_scope="web"` va kem URL de kiem chung; thong tin nay khong
-duoc coi la quy dinh noi bo MKAC. Cau tra loi web di thang vao noi dung, khong
-lap lai thong bao dai rang kho noi bo khong co du lieu. Neu tim web cung khong
-co ket qua hoac bi loi, he thong chi thong bao ngan gon rang chua tim thay
-thong tin, khong tu bo sung kien thuc chung.
+Trong mode `mkac`, retrieval dùng collection `mkac_knowledge`. Nếu không có
+chunk đạt ngưỡng, backend tìm trên web với câu hỏi gắn thêm ngữ cảnh MKAC. Kết
+quả có `answer_scope="web"` và kèm URL để kiểm chứng; thông tin này không được
+coi là quy định nội bộ MKAC.
 
-Tim web dung `ddgs` va khong can API key. Co the tat hoac dieu chinh trong
-`.env` bang `MKAC_WEB_SEARCH_ENABLED`, `MKAC_WEB_SEARCH_CONTEXT`,
-`MKAC_WEB_SEARCH_REGION`, `MKAC_WEB_SEARCH_MAX_RESULTS` va
+Tìm web dùng `ddgs` và không cần API key. Có thể tắt hoặc điều chỉnh trong
+`.env` bằng `MKAC_WEB_SEARCH_ENABLED`, `MKAC_WEB_SEARCH_CONTEXT`,
+`MKAC_WEB_SEARCH_REGION`, `MKAC_WEB_SEARCH_MAX_RESULTS` và
 `MKAC_WEB_SEARCH_TIMEOUT`.
 
-Neu cau hoi nhac den bang, hinh, so do hoac bieu do va chunk co anh trang,
-backend route sang `openai-model` de su dung Vision. Mode `research` van tu
-dong dung Vision cho file anh upload.
+Nếu câu hỏi nhắc đến bảng, hình, sơ đồ hoặc biểu đồ và chunk có ảnh trang,
+backend route sang `openai-model` để dùng Vision. Mode `research` vẫn tự động
+dùng Vision cho file ảnh upload.
 
-## Bao mat va gioi han
+## Bảo mật và giới hạn
 
-- `.env` bi ignore boi Git.
-- `/agent` yeu cau header `X-Agent-API-Key` neu `AGENT_API_KEY` duoc set.
-- Upload chi nhan extension cho phep.
-- Ten file va session ID duoc validate de tranh path traversal.
-- Upload gioi han mac dinh 25 MB/file.
-- Query gioi han mac dinh 15 request/IP/phut.
-- Upload gioi han mac dinh 10 request/IP/gio.
-- MCP filesystem tool chi duoc phep truy cap `WORKSPACE_DIR`.
-- Git MCP tool khoa vao `AGENT_REPOSITORY_DIR`.
+- `.env` bị ignore bởi Git.
+- `/agent` yêu cầu header `X-Agent-API-Key` nếu `AGENT_API_KEY` được set.
+- Upload chỉ nhận extension cho phép.
+- Tên file và session ID được validate để tránh path traversal.
+- Upload giới hạn mặc định 25 MB/file.
+- Query giới hạn mặc định 15 request/IP/phút.
+- Upload giới hạn mặc định 10 request/IP/giờ.
+- MCP filesystem tool chỉ được phép truy cập `WORKSPACE_DIR`.
+- Git MCP tool khóa vào `AGENT_REPOSITORY_DIR`.
 
-## Kiem thu nhanh
+## Kiểm thử nhanh
 
 ```bash
 cd /home/jkl0909/Code/llm/VLLM-PD
 
-# Python syntax
+# Kiểm tra cú pháp Python.
 conda run -n docmind python -m py_compile \
   src/api/main.py \
   src/rag/rag_pipeline.py \
   src/agent/graph.py \
   src/agent/mcp_client.py
 
-# Frontend build
+# Build frontend.
 cd frontend
 conda run -n docmind npm run build
 
-# Health
+# Health local.
 curl -fsS http://localhost:8001/health | jq .
 
-# Public health
+# Health public qua ngrok.
 PUBLIC_URL=$(curl -fsS http://localhost:4040/api/tunnels \
   | jq -r '.tunnels[] | select(.proto == "https") | .public_url')
 curl -fsS -H 'ngrok-skip-browser-warning: true' "$PUBLIC_URL/health" | jq .
 ```
 
-Da kiem thu tren May 2:
+Đã kiểm thử trên Máy 2:
 
-- React build production thanh cong.
-- Desktop/mobile UI bang Playwright screenshot.
-- Qdrant va LiteLLM dang chay Docker.
-- Local Gemma4 va OpenAI tra `200`.
-- MiMo Token Plan SGP tra `200`.
-- Upload `documents/test1.pdf`, index 3 chunks, query SSE tra sources va token.
-- `/agent` co key tra `200`, khong co key tra `401`.
+- React build production thành công.
+- Desktop/mobile UI đã kiểm tra bằng screenshot trình duyệt.
+- Qdrant và LiteLLM đang chạy Docker.
+- Local Gemma4 và OpenAI trả `200`.
+- MiMo Token Plan SGP trả `200`.
+- Upload `documents/test1.pdf`, index 3 chunks, query SSE trả sources và token.
+- `/agent` có key trả `200`, không có key trả `401`.
 
-## Troubleshooting
+## Xử lý lỗi thường gặp
 
-### LiteLLM khong len
+### LiteLLM không lên
 
 ```bash
 docker compose logs --tail=120 litellm
 docker compose up -d --force-recreate litellm
 ```
 
-Neu thay loi config router, kiem tra `litellm_config.yaml`.
+Nếu thấy lỗi config router, kiểm tra `litellm_config.yaml`.
 
-### MiMo tra 401
+### MiMo trả 401
 
-Kiem tra `MIMO_API_BASE`. Token Plan key `tp-*` thuong can endpoint Token Plan, vi du:
+Kiểm tra `MIMO_API_BASE`. Token Plan key `tp-*` thường cần endpoint Token Plan,
+ví dụ:
 
 ```env
 MIMO_API_BASE=https://token-plan-sgp.xiaomimimo.com/v1
 ```
 
-Pay-as-you-go key co the dung:
+Pay-as-you-go key có thể dùng:
 
 ```env
 MIMO_API_BASE=https://api.xiaomimimo.com/v1
 ```
 
-### Web khong hien React
+### Web không hiện React
 
-Build lai frontend va restart FastAPI:
+Build lại frontend và restart FastAPI:
 
 ```bash
 cd frontend
@@ -558,20 +462,23 @@ npm run build
 systemctl --user restart vllm-pd-api
 ```
 
-### FastAPI khoi dong cham
+### FastAPI khởi động chậm
 
-Lan dau co the cham vi BGE-M3 va Docling/OCR model duoc nap. Xem log:
+Lần đầu có thể chậm vì BGE-M3 và Docling/OCR model được nạp. Xem log:
 
 ```bash
 journalctl --user -u vllm-pd-api -n 160 --no-pager
 ```
 
-### Ngrok URL doi
+### Ngrok URL đổi
 
-Ngrok Free co the cap URL moi sau moi lan restart. Chay
-`./scripts/vllm-pd.sh restart`; script se tu lay URL hien tai tu ngrok API va
-in dong `Public web: ...` ra terminal. Khong can luu URL tam thoi trong `.env`.
+Ngrok Free có thể cấp URL mới sau mỗi lần restart. Chạy
+`./scripts/vllm-pd.sh restart`; script sẽ tự lấy URL hiện tại từ ngrok API và
+in dòng `Public web: ...` ra terminal. Không cần lưu URL tạm thời trong `.env`.
 
-## Ghi chu ve `docmind/`
+## Ghi chú về `docmind/`
 
-`docmind/` co requirements va backend rieng tu cac thu nghiem truoc. Trong kien truc hien tai, khong dung `docmind/` lam he thong chinh. Dung `src/`, `frontend/`, `docker-compose.yml`, `litellm_config.yaml` va `.env` o root repo.
+`docmind/` có requirements và backend riêng từ các thử nghiệm trước. Trong kiến
+trúc hiện tại, không dùng `docmind/` làm hệ thống chính. Dùng `src/`,
+`frontend/`, `docker-compose.yml`, `litellm_config.yaml` và `.env` ở root
+repository.

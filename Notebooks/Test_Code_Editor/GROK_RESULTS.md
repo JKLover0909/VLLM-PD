@@ -12,10 +12,10 @@ grok-model -> Azure grok-4-20-reasoning
 
 | Giai đoạn | Vai trò | Kết quả | Thời gian |
 |---|---|---:|---:|
-| Unit tests | Boundary và patch validator | PASS, 20/20 | 1.55 giây |
-| Giai đoạn 1 | Tool calling đơn | PASS | 2.709 giây |
-| Giai đoạn 2 | Read-only coding agent | PASS | 18.532 giây |
-| Giai đoạn 3 | Sinh và validate patch | PASS | 8.472 giây |
+| Kiểm thử đơn vị | Boundary và bộ kiểm tra patch | PASS, 20/20 | 1.55 giây |
+| Giai đoạn 1 | Tool-calling đơn | PASS | 2.709 giây |
+| Giai đoạn 2 | Coding Agent chỉ đọc | PASS | 18.532 giây |
+| Giai đoạn 3 | Sinh và kiểm tra patch | PASS | 8.472 giây |
 
 Tổng cộng có 14 lần gọi model, sử dụng 22,534 token, trong đó có 2,926
 reasoning token.
@@ -65,7 +65,7 @@ và `if not b`; hành vi cuối cùng vẫn bắt buộc được xác nhận b�
 
 Grok đạt toàn bộ vai trò hiện đã được triển khai trong bộ test:
 
-- Tool calling chuẩn OpenAI.
+- Tool-calling chuẩn OpenAI.
 - Điều phối agent nhiều bước.
 - Đọc và tìm kiếm code trong sandbox.
 - Tuân thủ chế độ read-only.
@@ -76,4 +76,3 @@ Grok đạt toàn bộ vai trò hiện đã được triển khai trong bộ tes
 Bộ test hiện chưa có Giai đoạn 4-6, nên kết quả này chưa chứng minh khả năng
 áp dụng patch thật sau phê duyệt, chạy command allowlist hoặc tự lặp sửa lỗi
 end-to-end. Grok đủ điều kiện để triển khai và kiểm thử Giai đoạn 4.
-

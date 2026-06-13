@@ -1,4 +1,4 @@
-# Giai đoạn 3: Kết quả sinh và validate patch
+# Giai đoạn 3: kết quả sinh và kiểm tra patch
 
 Ngày kiểm thử: 2026-06-06
 
@@ -28,7 +28,7 @@ toàn bộ test trong bản sao tạm.
 `git apply --recount` được sử dụng để sửa lỗi đếm số dòng hunk của LLM. Context
 code vẫn phải khớp chính xác; validator không tự sửa nội dung patch.
 
-## Unit test
+## Kiểm thử đơn vị
 
 Kết quả chung cho read-only tools và patch validator:
 
@@ -52,9 +52,9 @@ Các trường hợp patch đã kiểm tra:
 
 | Model | Trạng thái | Kết quả | Thời gian |
 |---|---|---:|---:|
-| Gemma4 Local | SKIPPED | Không qua gate Giai đoạn 2 | - |
-| Xiaomi MiMo | Tested | PASS | 17.333 giây |
-| OpenAI alias trước migration | Tested | FAIL | 19.400 giây |
+| Gemma4 Local | SKIPPED | Không qua cổng kiểm tra Giai đoạn 2 | - |
+| Xiaomi MiMo | Đã kiểm thử | PASS | 17.333 giây |
+| OpenAI alias trước migration | Đã kiểm thử | FAIL | 19.400 giây |
 
 ### Xiaomi MiMo
 

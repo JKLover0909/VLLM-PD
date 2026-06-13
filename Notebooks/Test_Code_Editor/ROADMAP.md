@@ -1,4 +1,4 @@
-# Lộ trình xây dựng AI Coding Agent với Local và Cloud APIs
+# Lộ trình xây dựng AI Coding Agent với API local và cloud
 
 ## 1. Mục tiêu
 
@@ -41,7 +41,7 @@ Repo đã có:
 Repo chưa có:
 
 - Chọn model trong request `/agent`.
-- Tool tìm kiếm nội dung code.
+- Tool tìm kiếm nội dung mã nguồn.
 - Tool sửa theo patch/diff.
 - Terminal tool thực sự, dù system prompt đang nhắc đến terminal.
 - Phê duyệt trước khi ghi file hoặc chạy lệnh.
@@ -661,7 +661,7 @@ Không làm tất cả cùng lúc. Thứ tự khuyến nghị:
 2. Tạo notebook test tool-calling cho ba model.
 3. Hoàn thiện tool chỉ đọc.
 4. Test agent `read_only`.
-5. Sinh và validate patch nhưng chưa ghi.
+5. Sinh và kiểm tra patch nhưng chưa ghi.
 6. Thêm approve/reject.
 7. Áp dụng patch trong sandbox.
 8. Thêm command runner allowlist.
