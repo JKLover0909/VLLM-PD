@@ -13,8 +13,24 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-VLLM_PD_ENV_FILE="$ENV_FILE" \
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+export VLLM_PD_ENV_FILE="$ENV_FILE"
+
+compose() {
+  if docker compose version >/dev/null 2>&1; then
+    docker compose -f "$COMPOSE_FILE" "$@"
+  elif command -v docker-compose >/dev/null 2>&1; then
+    docker-compose -f "$COMPOSE_FILE" "$@"
+  else
+    echo "Docker Compose is not available. Install docker compose plugin or docker-compose." >&2
+    exit 1
+  fi
+}
+
+compose up -d --build
 
 port="$(sed -n 's/^MACHINE2_API_PORT=//p' "$ENV_FILE" | tail -n 1)"
 port="${port:-8001}"
@@ -40,6 +56,6 @@ fi
 
 echo
 echo "Useful commands:"
-echo "  VLLM_PD_ENV_FILE=.env.docker docker compose --env-file .env.docker -f docker-compose.web.yml ps"
-echo "  VLLM_PD_ENV_FILE=.env.docker docker compose --env-file .env.docker -f docker-compose.web.yml logs -f app"
+echo "  source .env.docker && VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml ps"
+echo "  source .env.docker && VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml logs -f app"
 echo "  ./scripts/docker-index-mkac.sh"

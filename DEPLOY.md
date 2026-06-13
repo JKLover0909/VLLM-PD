@@ -136,33 +136,37 @@ vào container hoặc chạy script index thủ công với tham số `--file` n
 Xem trạng thái:
 
 ```bash
-VLLM_PD_ENV_FILE=.env.docker docker compose \
-  --env-file .env.docker \
-  -f docker-compose.web.yml ps
+set -a
+source .env.docker
+set +a
+VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml ps
 ```
 
 Xem log app:
 
 ```bash
-VLLM_PD_ENV_FILE=.env.docker docker compose \
-  --env-file .env.docker \
-  -f docker-compose.web.yml logs -f app
+set -a
+source .env.docker
+set +a
+VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml logs -f app
 ```
 
 Restart app:
 
 ```bash
-VLLM_PD_ENV_FILE=.env.docker docker compose \
-  --env-file .env.docker \
-  -f docker-compose.web.yml restart app
+set -a
+source .env.docker
+set +a
+VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
 ```
 
 Dừng toàn bộ:
 
 ```bash
-VLLM_PD_ENV_FILE=.env.docker docker compose \
-  --env-file .env.docker \
-  -f docker-compose.web.yml down
+set -a
+source .env.docker
+set +a
+VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml down
 ```
 
 ## 6. Kiểm tra sau triển khai
@@ -222,9 +226,10 @@ Nếu muốn deploy sạch, có thể không copy `qdrant_storage/` và chạy l
 Lần đầu chạy có thể chậm vì container tải model embedding/OCR. Xem log:
 
 ```bash
-VLLM_PD_ENV_FILE=.env.docker docker compose \
-  --env-file .env.docker \
-  -f docker-compose.web.yml logs -f app
+set -a
+source .env.docker
+set +a
+VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml logs -f app
 ```
 
 ### Không truy cập được từ máy khác
@@ -238,9 +243,10 @@ hostname -I
 Kiểm tra container đã publish cổng chưa:
 
 ```bash
-VLLM_PD_ENV_FILE=.env.docker docker compose \
-  --env-file .env.docker \
-  -f docker-compose.web.yml ps
+set -a
+source .env.docker
+set +a
+VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml ps
 ```
 
 Kiểm tra firewall của máy chủ và bảo đảm cổng `8001` được phép truy cập từ mạng
@@ -262,7 +268,8 @@ OLLAMA_API_BASE=...
 Sau khi sửa, restart LiteLLM:
 
 ```bash
-VLLM_PD_ENV_FILE=.env.docker docker compose \
-  --env-file .env.docker \
-  -f docker-compose.web.yml restart litellm
+set -a
+source .env.docker
+set +a
+VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart litellm
 ```
