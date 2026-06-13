@@ -34,6 +34,7 @@ Dockerfile
 docker-compose.web.yml
 .env.docker.example
 scripts/docker-deploy.sh
+scripts/import_employee_directory.py
 scripts/docker-index-mkac.sh
 ```
 
@@ -61,6 +62,19 @@ documents/MKAC/
 config/mkac_manifest.json
 ```
 
+Cần có file danh sách nhân sự trong thư mục MKAC để tạo SQLite đăng nhập và tra
+cứu nhân viên:
+
+```text
+documents/MKAC/3. DANH SÁCH KHÁM SỨC KHOẺ 2026.pdf
+```
+
+File summary nhân sự có thể copy từ máy cũ hoặc tạo lại ở bước import SQLite:
+
+```text
+documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html
+```
+
 ## 2. Tạo cấu hình Docker
 
 ```bash
@@ -77,6 +91,15 @@ AZURE_OPENAI_API_KEY=...
 AZURE_OPENAI_ENDPOINT=...
 MACHINE2_API_PORT=8001
 ENABLE_AGENT=false
+```
+
+Kiểm tra thêm các biến SQLite danh bạ nhân viên trong `.env.docker`:
+
+```env
+EMPLOYEE_DIRECTORY_SOURCE_DIR=/app/documents/MKAC
+EMPLOYEE_DIRECTORY_SOURCE_GLOB="3. DANH SÁCH KHÁM SỨC KHOẺ 2026.pdf"
+EMPLOYEE_DIRECTORY_DB_PATH=/app/data/employee_directory.sqlite
+EMPLOYEE_DIRECTORY_SUMMARY_PATH="/app/documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html"
 ```
 
 Mặc định `.env.docker.example` dùng CPU để dễ chuyển máy:
@@ -116,7 +139,101 @@ Local URL: http://localhost:8001
 LAN URL:   http://192.168.1.20:8001
 ```
 
-## 4. Index kho MKAC
+## 4. Tạo hoặc copy SQLite danh bạ nhân viên
+
+Các chức năng sau phụ thuộc vào SQLite danh bạ nhân viên:
+
+- Đăng nhập bằng mã nhân viên.
+- Lời chào theo tên, chức danh và phòng ban.
+- Hỏi theo tên người, ví dụ `Nguyễn Đình Sơn là ai?`.
+- Hỏi theo phòng ban, ví dụ `bộ phận của tôi gồm những ai?`.
+- Hỏi thông tin cá nhân, ví dụ `tôi tên gì`, `tôi làm bộ phận nào`.
+
+SQLite được lưu tại:
+
+```text
+data/employee_directory.sqlite
+```
+
+Có hai cách triển khai.
+
+### Cách A: copy SQLite từ máy cũ
+
+Dùng khi muốn triển khai nhanh và dữ liệu nhân sự chưa đổi:
+
+```bash
+mkdir -p data
+cp /path/to/old/VLLM-PD/data/employee_directory.sqlite data/
+```
+
+Nên copy kèm summary nếu có:
+
+```bash
+cp "/path/to/old/VLLM-PD/documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html" \
+  "documents/MKAC/"
+```
+
+### Cách B: tạo lại SQLite trên máy mới
+
+Dùng khi deploy sạch hoặc vừa cập nhật danh sách nhân sự. Cần chạy sau khi
+`./scripts/docker-deploy.sh` đã start container:
+
+```bash
+set -a
+source .env.docker
+set +a
+VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml run --rm \
+  -e ENABLE_AGENT=false \
+  app python scripts/import_employee_directory.py
+```
+
+Lệnh này đọc:
+
+```text
+documents/MKAC/3. DANH SÁCH KHÁM SỨC KHOẺ 2026.pdf
+```
+
+và tạo/cập nhật:
+
+```text
+data/employee_directory.sqlite
+documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html
+```
+
+Script cũng tự thêm mã cố định:
+
+```text
+000001 - Nguyễn Văn Thuận - Giám đốc Meiko Automation
+```
+
+Sau khi import, restart app để chắc chắn API đọc DB mới:
+
+```bash
+set -a
+source .env.docker
+set +a
+VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
+```
+
+Kiểm tra nhanh:
+
+```bash
+curl -fsS http://localhost:8001/health | jq '.employee_directory'
+```
+
+Kết quả mong đợi hiện tại:
+
+```json
+{
+  "db_path": "/app/data/employee_directory.sqlite",
+  "employees": 154
+}
+```
+
+Nếu thiếu SQLite hoặc import lỗi, đăng nhập MKAC sẽ bị từ chối và các câu hỏi
+theo nhân viên/phòng ban sẽ không trả lời đúng.
+
+## 5. Index kho MKAC
 
 Sau lần deploy đầu tiên, index tài liệu nội bộ:
 
@@ -127,10 +244,34 @@ Sau lần deploy đầu tiên, index tài liệu nội bộ:
 Script này chạy `scripts/index_mkac_documents.py` bên trong container `app` và
 ghi vector vào Qdrant Docker.
 
+Nên chạy import SQLite trước khi index, vì script import tạo/cập nhật file:
+
+```text
+documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html
+```
+
+File này cũng là một tài liệu trong kho MKAC, dùng để trả lời các câu hỏi về số
+phòng ban, số nhân sự, lãnh đạo và thống kê theo phòng ban.
+
 Nếu thêm hoặc sửa tài liệu MKAC, chạy lại lệnh này. Với một file cụ thể, có thể
 vào container hoặc chạy script index thủ công với tham số `--file` nếu cần.
 
-## 5. Lệnh quản trị
+Nếu chỉ cập nhật file danh sách nhân sự, chạy theo thứ tự:
+
+```bash
+set -a
+source .env.docker
+set +a
+VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml run --rm \
+  -e ENABLE_AGENT=false \
+  app python scripts/import_employee_directory.py
+
+./scripts/docker-index-mkac.sh
+
+VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
+```
+
+## 6. Lệnh quản trị
 
 Xem trạng thái:
 
@@ -168,7 +309,7 @@ set +a
 VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml down
 ```
 
-## 6. Kiểm tra sau triển khai
+## 7. Kiểm tra sau triển khai
 
 Kiểm tra health:
 
@@ -182,6 +323,39 @@ Kiểm tra danh sách model:
 curl -fsS http://localhost:8001/models | jq .
 ```
 
+Kết quả model ở web MKAC chỉ nên hiển thị `Cloud Model` và `Local Model`.
+`Research Model` dùng riêng cho chế độ nghiên cứu và bị ẩn khỏi dropdown MKAC.
+
+Kiểm tra SQLite danh bạ:
+
+```bash
+curl -fsS http://localhost:8001/health | jq '.employee_directory'
+```
+
+Kiểm tra auth nhân viên:
+
+```bash
+curl -fsS -X POST http://localhost:8001/auth/employee \
+  -H 'Content-Type: application/json' \
+  -d '{"employee_id":"000001"}' | jq .
+```
+
+Kiểm tra hỏi theo tên nhân viên:
+
+```bash
+SESSION_ID=$(curl -fsS -X POST http://localhost:8001/sessions | jq -r .session_id)
+
+curl -fsS -X POST http://localhost:8001/query \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"session_id\":\"$SESSION_ID\",
+    \"question\":\"Nguyễn Đình Sơn là ai?\",
+    \"model\":\"openai\",
+    \"mode\":\"mkac\",
+    \"employee_id\":\"000001\"
+  }" | jq .
+```
+
 Kiểm tra LiteLLM nội bộ:
 
 ```bash
@@ -190,13 +364,14 @@ curl -fsS http://localhost:4000/v1/models \
   -H "Authorization: Bearer $KEY" | jq .
 ```
 
-## 7. Dữ liệu cần backup
+## 8. Dữ liệu cần backup
 
 Khi chuyển máy hoặc backup hệ thống, lưu các đường dẫn sau:
 
 ```text
 documents/MKAC/
 config/mkac_manifest.json
+data/employee_directory.sqlite
 qdrant_storage/
 uploads/
 logs/
@@ -206,19 +381,30 @@ mkac_processed/
 Nếu muốn deploy sạch, có thể không copy `qdrant_storage/` và chạy lại:
 
 ```bash
+set -a
+source .env.docker
+set +a
+VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml run --rm \
+  -e ENABLE_AGENT=false \
+  app python scripts/import_employee_directory.py
+
 ./scripts/docker-index-mkac.sh
 ```
 
-## 8. Lưu ý bảo mật
+Không nên commit `data/employee_directory.sqlite` nếu danh sách nhân sự là dữ
+liệu nội bộ nhạy cảm. Khi cần chuyển máy, copy qua kênh nội bộ an toàn.
+
+## 9. Lưu ý bảo mật
 
 - Không commit `.env.docker`.
+- Không commit SQLite danh bạ nhân viên nếu dữ liệu nhân sự là thông tin nội bộ.
 - Không public cổng `4000` của LiteLLM ra LAN nếu không cần.
 - Không public cổng `6333` của Qdrant ra LAN nếu không cần.
 - Chế độ Docker web nội bộ đã đặt `ENABLE_AGENT=false`, nên endpoint `/agent`
   không dùng được.
 - Nếu máy chủ có firewall, chỉ cần mở cổng `8001` cho người dùng nội bộ.
 
-## 9. Xử lý lỗi thường gặp
+## 10. Xử lý lỗi thường gặp
 
 ### App khởi động chậm
 
@@ -269,4 +455,51 @@ set -a
 source .env.docker
 set +a
 VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart litellm
+```
+
+### Đăng nhập mã nhân viên bị lỗi
+
+Kiểm tra file SQLite có tồn tại không:
+
+```bash
+ls -lh data/employee_directory.sqlite
+```
+
+Kiểm tra API đọc được bao nhiêu nhân viên:
+
+```bash
+curl -fsS http://localhost:8001/health | jq '.employee_directory'
+```
+
+Nếu `employees` bằng `0` hoặc file không tồn tại, chạy lại import:
+
+```bash
+set -a
+source .env.docker
+set +a
+VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml run --rm \
+  -e ENABLE_AGENT=false \
+  app python scripts/import_employee_directory.py
+
+VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
+```
+
+### Hỏi tên nhân viên hoặc phòng ban không đúng
+
+Các câu như `Nguyễn Đình Sơn là ai?`, `bộ phận của tôi gồm những ai?` lấy dữ
+liệu từ SQLite, không lấy từ Qdrant. Nếu sai dữ liệu:
+
+1. Kiểm tra PDF danh sách nhân sự trong `documents/MKAC/`.
+2. Chạy lại import SQLite.
+3. Restart `app`.
+4. Nếu câu hỏi thống kê tổng hợp vẫn sai, chạy lại `./scripts/docker-index-mkac.sh`
+   để cập nhật file summary vào Qdrant.
+
+### Import SQLite không ghi được file summary
+
+Nếu gặp lỗi quyền ghi khi import, kiểm tra mount trong `docker-compose.web.yml`.
+Thư mục `documents/MKAC` cần được mount read-write để script tạo/cập nhật:
+
+```text
+documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html
 ```

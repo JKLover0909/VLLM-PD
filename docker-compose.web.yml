@@ -24,7 +24,7 @@ services:
     ports:
       - "${MACHINE2_API_PORT:-8001}:8001"
     volumes:
-      - ./documents/MKAC:/app/documents/MKAC:ro
+      - ./documents/MKAC:/app/documents/MKAC
       - ./config:/app/config
       - ./uploads:/app/uploads
       - ./data:/app/data
