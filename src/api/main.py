@@ -37,7 +37,11 @@ from src.rag.embedder import Embedder
 from src.rag.vector_store import VectorStore
 from src.rag.rag_pipeline import RAGPipeline
 from src.rag.web_search import WebSearcher
-from src.agent.graph import agent_executor
+
+ENABLE_AGENT = os.getenv("ENABLE_AGENT", "true").lower() in {"1", "true", "yes", "on"}
+agent_executor = None
+if ENABLE_AGENT:
+    from src.agent.graph import agent_executor
 
 # ──────────────────────────────────────────────
 # Configurations
@@ -624,6 +628,9 @@ async def run_agent(
     Thực thi Coding Agent thông qua LangGraph Agent Executor.
     Trả về toàn bộ nhật ký suy luận và kết quả sửa code.
     """
+    if not ENABLE_AGENT or agent_executor is None:
+        raise HTTPException(status_code=404, detail="Coding Agent is disabled.")
+
     logger.info(f"Triggering LangGraph agent for task: '{req.task[:100]}'")
 
     if AGENT_API_KEY and (

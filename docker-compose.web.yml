@@ -1,0 +1,62 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vllm-pd-web:latest
+    container_name: vllm-pd-web
+    env_file:
+      - ${VLLM_PD_ENV_FILE:-.env.docker}
+    environment:
+      ENABLE_AGENT: "false"
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      LITELLM_URL: http://litellm:4000/v1
+      UPLOAD_DIR: /app/uploads
+      MKAC_SOURCE_DIR: /app/documents/MKAC
+      MKAC_MANIFEST_PATH: /app/config/mkac_manifest.json
+      MKAC_PAGE_IMAGE_DIR: /app/mkac_processed/pages
+      MKAC_INDEX_REPORT: /app/logs/mkac_index_report.json
+    ports:
+      - "${MACHINE2_API_PORT:-8001}:8001"
+    volumes:
+      - ./documents/MKAC:/app/documents/MKAC:ro
+      - ./config:/app/config
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+      - ./mkac_processed:/app/mkac_processed
+      - hf_cache:/root/.cache/huggingface
+      - torch_cache:/root/.cache/torch
+    depends_on:
+      - qdrant
+      - litellm
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: vllm-pd-qdrant
+    ports:
+      - "127.0.0.1:${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+  litellm:
+    image: litellm/litellm:main-stable
+    container_name: vllm-pd-litellm
+    env_file:
+      - ${VLLM_PD_ENV_FILE:-.env.docker}
+    environment:
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    ports:
+      - "127.0.0.1:${LITELLM_PROXY_PORT:-4000}:4000"
+    volumes:
+      - ./litellm_config.yaml:/app/config.yaml:ro
+    depends_on:
+      - qdrant
+    restart: unless-stopped
+
+volumes:
+  hf_cache:
+  torch_cache:

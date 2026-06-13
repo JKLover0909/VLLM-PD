@@ -249,6 +249,104 @@ de script dua domain nay vao tham so `ngrok --url`.
 
 Chi can public port `8001`. Khong public LiteLLM port `4000` neu khong co ly do rieng.
 
+## Deploy Docker web noi bo
+
+Che do nay danh cho may chu trong mang cong ty. No chi trien khai web hoi dap,
+RAG, Qdrant va LiteLLM. Khong chay ngrok va khong bat Coding Agent.
+
+File lien quan:
+
+```text
+Dockerfile
+docker-compose.web.yml
+.env.docker.example
+scripts/docker-deploy.sh
+scripts/docker-index-mkac.sh
+```
+
+### 1. Tao cau hinh Docker
+
+```bash
+cd /home/<user>/Code/llm/VLLM-PD
+cp .env.docker.example .env.docker
+nano .env.docker
+```
+
+Sua cac API key va URL model:
+
+```env
+OLLAMA_API_BASE=...
+OPENAI_API_KEY=...
+MIMO_API_KEY=...
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_ENDPOINT=...
+MACHINE2_API_PORT=8001
+ENABLE_AGENT=false
+```
+
+Mac dinh `.env.docker.example` dung CPU de de chuyen may:
+
+```env
+EMBEDDING_DEVICE=cpu
+DOCLING_DEVICE=cpu
+EMBEDDING_DTYPE=float32
+```
+
+Neu may deploy co NVIDIA GPU va da cai `nvidia-container-toolkit`, co the doi:
+
+```env
+EMBEDDING_DEVICE=cuda
+DOCLING_DEVICE=cuda
+EMBEDDING_DTYPE=float16
+```
+
+### 2. Build va chay
+
+```bash
+./scripts/docker-deploy.sh
+```
+
+Script se build image, start `app`, `qdrant`, `litellm`, kiem tra `/health`
+va in URL noi bo dang:
+
+```text
+http://<IP_NOI_BO_MAY_CHU>:8001
+```
+
+Trong `docker-compose.web.yml`, chi web/API duoc expose ra LAN qua port `8001`.
+Qdrant `6333` va LiteLLM `4000` chi bind tren `127.0.0.1` cua may chu.
+
+### 3. Index kho MKAC trong Docker
+
+Sau lan deploy dau tien, index tai lieu noi bo:
+
+```bash
+./scripts/docker-index-mkac.sh
+```
+
+Script nay chay `scripts/index_mkac_documents.py` ben trong container app va
+ghi vector vao Qdrant Docker.
+
+### 4. Lenh quan tri Docker
+
+```bash
+VLLM_PD_ENV_FILE=.env.docker docker compose --env-file .env.docker -f docker-compose.web.yml ps
+VLLM_PD_ENV_FILE=.env.docker docker compose --env-file .env.docker -f docker-compose.web.yml logs -f app
+VLLM_PD_ENV_FILE=.env.docker docker compose --env-file .env.docker -f docker-compose.web.yml restart app
+VLLM_PD_ENV_FILE=.env.docker docker compose --env-file .env.docker -f docker-compose.web.yml down
+```
+
+Du lieu can backup khi chuyen may:
+
+```text
+documents/MKAC/
+config/mkac_manifest.json
+qdrant_storage/
+uploads/
+logs/
+mkac_processed/
+```
+
 ## Su dung web
 
 Mo:
