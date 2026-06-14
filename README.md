@@ -1,4 +1,4 @@
-# VLLM-PD
+# VLLM-PD - Commit đầu tiên: Hệ thống hỏi đáp tài liệu và Coding Agent
 
 VLLM-PD là hệ thống hỏi đáp tài liệu, nghiên cứu tài liệu và thử nghiệm Coding
 Agent chạy trên Máy 2. Hệ thống chính phục vụ web React, API FastAPI, Qdrant
