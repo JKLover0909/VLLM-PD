@@ -503,3 +503,33 @@ Thư mục `documents/MKAC` cần được mount read-write để script tạo/c
 ```text
 documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html
 ```
+
+### Index lỗi `EasyOCR is not installed`
+
+Nếu log có dạng:
+
+```text
+ModuleNotFoundError: No module named 'easyocr'
+ImportError: EasyOCR is not installed
+RuntimeError: Parser returned no indexable chunks
+```
+
+nghĩa là image Docker đang chạy chưa có OCR dependency. Cần rebuild lại image,
+không chỉ restart container:
+
+```bash
+set -a
+source .env.docker
+set +a
+
+VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml build --no-cache app
+VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml up -d app
+./scripts/docker-index-mkac.sh
+```
+
+Kiểm tra nhanh trong container:
+
+```bash
+VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml exec app \
+  python -c "import easyocr; print(easyocr.__version__)"
+```
