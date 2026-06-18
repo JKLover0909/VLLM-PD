@@ -550,23 +550,7 @@ class RAGPipeline:
     def _mkac_retrieval_question(question: str) -> str:
         """Keep company identity terms only when the question is about identity."""
         normalized = question.lower()
-        employee_keywords = {
-            "nhân sự",
-            "nhân viên",
-            "bao nhiêu người",
-            "số người",
-            "phòng ban",
-            "bộ phận",
-            "mỗi phòng",
-            "mỗi phòng ban",
-            "trưởng phòng",
-            "phó phòng",
-            "giám đốc",
-            "tổng giám đốc",
-            "phó tổng giám đốc",
-            "mã nhân viên",
-        }
-        if any(keyword in normalized for keyword in employee_keywords):
+        if RAGPipeline._is_employee_statistics_question(question):
             return (
                 f"{question}\n"
                 "Thống kê nhân sự MKAC, danh sách khám sức khỏe 2026, "
@@ -600,7 +584,7 @@ class RAGPipeline:
         if self._is_employee_statistics_question(question):
             return min(self.mkac_score_threshold, 0.34)
         if self._is_company_profile_question(question):
-            return min(self.mkac_score_threshold, 0.42)
+            return 0.42
         return self.mkac_score_threshold
 
     @classmethod
@@ -646,7 +630,9 @@ class RAGPipeline:
         normalized = question.lower()
         keywords = {
             "nhân sự",
-            "nhân viên",
+            "bao nhiêu nhân viên",
+            "số nhân viên",
+            "danh sách nhân viên",
             "bao nhiêu người",
             "số người",
             "phòng ban",
@@ -659,7 +645,8 @@ class RAGPipeline:
             "tổng giám đốc",
             "phó tổng giám đốc",
             "mã nhân viên",
-            "employee",
+            "employee count",
+            "employee list",
             "department",
             "director",
         }

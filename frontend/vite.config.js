@@ -11,8 +11,11 @@ export default defineConfig({
     proxy: {
       "/health": "http://localhost:8001",
       "/models": "http://localhost:8001",
+      "/knowledge": "http://localhost:8001",
+      "/auth": "http://localhost:8001",
       "/sessions": "http://localhost:8001",
       "/query": "http://localhost:8001",
+      "/agent": "http://localhost:8001",
     },
   },
 });

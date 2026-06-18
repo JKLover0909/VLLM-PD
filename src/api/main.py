@@ -20,7 +20,7 @@ from typing import Any, Deque, Dict, List, Literal, Optional
 
 from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
@@ -753,6 +753,15 @@ async def run_agent(
     except Exception as e:
         logger.error(f"Agent execution error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Agent execution failed: {str(e)}")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Serve the MKAC logo as the browser tab icon."""
+    favicon_path = FRONTEND_DIST / "mkac-logo.png"
+    if not favicon_path.exists():
+        raise HTTPException(status_code=404, detail="Favicon not found.")
+    return FileResponse(favicon_path, media_type="image/png")
 
 
 if FRONTEND_DIST.exists():

@@ -120,6 +120,33 @@ function storedEmployee() {
   }
 }
 
+function createClientId() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+
+  if (globalThis.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    );
+    return [
+      hex.slice(0, 4).join(""),
+      hex.slice(4, 6).join(""),
+      hex.slice(6, 8).join(""),
+      hex.slice(8, 10).join(""),
+      hex.slice(10, 16).join(""),
+    ].join("-");
+  }
+
+  return `client-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, options);
   if (!response.ok) {
@@ -401,10 +428,6 @@ function App() {
                 }
                 return;
               } catch (sessionError) {
-                if (sessionError.status === 404) {
-                  resolvedSessions[workspaceMode] = storedSession;
-                  return;
-                }
                 localStorage.removeItem(SESSION_STORAGE_KEYS[workspaceMode]);
               }
             }
@@ -693,7 +716,7 @@ function App() {
       setSessionTitles((current) => ({ ...current, [requestMode]: title }));
       persistSessionTitle(requestSessionId, title);
     }
-    const assistantId = crypto.randomUUID();
+    const assistantId = createClientId();
     const controller = new AbortController();
     generationControllerRef.current = controller;
     setQuestion("");
@@ -702,7 +725,7 @@ function App() {
     setSourcePanelOpen(false);
     setModeMessages(requestMode, (current) => [
       ...current,
-      { id: crypto.randomUUID(), role: "user", content: cleanQuestion },
+      { id: createClientId(), role: "user", content: cleanQuestion },
       {
         id: assistantId,
         role: "assistant",
@@ -856,7 +879,7 @@ function App() {
 
   function onSubmit(event) {
     event.preventDefault();
-    sendMessage();
+    sendMessage(textareaRef.current?.value || question);
   }
 
   function onDrop(event) {
@@ -1458,7 +1481,7 @@ function App() {
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && !event.shiftKey) {
                       event.preventDefault();
-                      sendMessage();
+                      sendMessage(event.currentTarget.value);
                     }
                   }}
                   rows={2}

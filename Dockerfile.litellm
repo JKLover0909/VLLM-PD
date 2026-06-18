@@ -1,0 +1,4 @@
+FROM litellm/litellm:main-stable
+
+RUN python -m ensurepip && \
+    python -m pip install --no-cache-dir Pillow==10.4.0

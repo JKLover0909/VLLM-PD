@@ -6,7 +6,7 @@ model_list:
       api_key: os.environ/OPENAI_API_KEY
       timeout: 120
 
-  # Local Gemma4 served by Machine 1 through ngrok.
+  # Local Gemma4 served by Machine 1 through the internal LAN.
   - model_name: local-gemma
     litellm_params:
       model: ollama/gemma4:latest

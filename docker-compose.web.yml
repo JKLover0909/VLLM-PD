@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     image: vllm-pd-web:latest
     container_name: vllm-pd-web
+    gpus: all
     env_file:
       - ${VLLM_PD_ENV_FILE:-.env.docker}
     environment:
@@ -24,6 +25,7 @@ services:
     ports:
       - "${MACHINE2_API_PORT:-8001}:8001"
     volumes:
+      - easyocr_cache:/root/.EasyOCR
       - ./documents/MKAC:/app/documents/MKAC
       - ./config:/app/config
       - ./uploads:/app/uploads
@@ -47,7 +49,10 @@ services:
     restart: unless-stopped
 
   litellm:
-    image: litellm/litellm:main-stable
+    build:
+      context: .
+      dockerfile: Dockerfile.litellm
+    image: vllm-pd-litellm:latest
     container_name: vllm-pd-litellm
     env_file:
       - ${VLLM_PD_ENV_FILE:-.env.docker}
@@ -65,3 +70,4 @@ services:
 volumes:
   hf_cache:
   torch_cache:
+  easyocr_cache:
