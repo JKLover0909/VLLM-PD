@@ -40,7 +40,7 @@ import "./styles.css";
 const QUICK_PROMPTS = {
   mkac: [
     "Meiko Automation có bao nhiêu phòng ban, gồm các phòng ban nào?",
-    "Quy định làm thêm giờ tại MKAC như thế nào?",
+    "Mã Lot nào có số lượng lỗi nhiều nhất?",
     "Các sản phẩm chính của MKAC là gì?",
   ],
   research: [
@@ -1362,6 +1362,8 @@ function App() {
                                 ? "Không có kết quả"
                                 : message.answerScope === "web"
                                   ? "Tìm kiếm web"
+                                : message.answerScope === "mes"
+                                  ? "Dữ liệu MES"
                                 : message.mode === "research"
                                   ? "Nghiên cứu"
                                   : "Nguồn MKAC"}
@@ -1394,6 +1396,8 @@ function App() {
                                 <span>
                                   {message.answerScope === "web"
                                     ? "Tổng hợp từ nguồn web"
+                                    : message.answerScope === "mes"
+                                      ? "Dựa trên dữ liệu MES trực tiếp"
                                     : message.answerScope === "research"
                                       ? "Dựa trên tài liệu nghiên cứu"
                                       : message.answerScope === "mkac"

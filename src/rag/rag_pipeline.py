@@ -10,6 +10,7 @@ import base64
 import logging
 import os
 import re
+import unicodedata
 from pathlib import Path
 from typing import AsyncGenerator, Tuple, List, Dict, Any
 from openai import AsyncOpenAI
@@ -17,6 +18,7 @@ from openai import AsyncOpenAI
 from src.rag.embedder import Embedder
 from src.rag.vector_store import VectorStore, SearchResult
 from src.rag.web_search import WebSearcher
+from src.integrations.mes_client import MesClient, MesLotError
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +62,15 @@ Nguyên tắc:
 4. Trích dẫn tên tệp và số trang cho từng phát hiện quan trọng.
 5. Trả lời bằng ngôn ngữ của câu hỏi.
 6. Không bịa đặt hoặc bổ sung kiến thức ngoài tài liệu."""
+
+MES_SYSTEM_PROMPT = """Bạn là trợ lý dữ liệu sản xuất bo mạch của MKAC.
+
+Hãy trả lời bằng một câu tiếng Việt tự nhiên, ngắn gọn và trực tiếp.
+Bắt buộc nêu đủ mã Lot, mã hàng và tổng số lỗi của Lot có số lỗi cao nhất.
+Chỉ sử dụng dữ liệu MES được cung cấp, không suy đoán nguyên nhân lỗi và không thêm dữ liệu khác.
+Định dạng số lượng lỗi theo cách đọc tiếng Việt, dùng dấu chấm phân cách hàng nghìn.
+Giữ nguyên mã và số lượng ở dạng chữ số; tuyệt đối không viết số lượng lỗi bằng chữ.
+Nếu có nhiều Lot đồng hạng, phải nêu đầy đủ tất cả các Lot đó."""
 
 MODEL_ROUTES = {
     "auto": "auto-model",
@@ -309,6 +320,7 @@ class RAGPipeline:
         vector_store: VectorStore,
         mkac_vector_store: VectorStore | None = None,
         web_searcher: WebSearcher | None = None,
+        mes_client: MesClient | None = None,
         top_k: int = 5,
         score_threshold: float = 0.25,
         temperature: float = 0.3,
@@ -318,6 +330,7 @@ class RAGPipeline:
         self.vector_store = vector_store
         self.mkac_vector_store = mkac_vector_store
         self.web_searcher = web_searcher
+        self.mes_client = mes_client if mes_client is not None else MesClient.from_env()
         self.top_k = top_k
         self.score_threshold = score_threshold
         self.temperature = temperature
@@ -344,6 +357,29 @@ class RAGPipeline:
         """
         Non-streaming RAG query.
         """
+        mes_lots = await self._get_mes_lots(question, mode)
+        if mes_lots is not None:
+            routed_model = self._resolve_model(model, mode=mode)
+            fallback_answer = self._format_mes_fallback(mes_lots)
+            try:
+                response = await self.openai_client.chat.completions.create(
+                    model=routed_model,
+                    messages=self._mes_messages(question, mes_lots),
+                    temperature=0.1,
+                    max_tokens=240,
+                    **self._provider_options(routed_model),
+                )
+                candidate = response.choices[0].message.content or ""
+                answer = (
+                    candidate
+                    if self._mes_answer_has_required_fields(candidate, mes_lots)
+                    else fallback_answer
+                )
+            except Exception as exc:
+                logger.warning("LLM MES answer generation failed: %s", exc)
+                answer = fallback_answer
+            return answer, [], routed_model, "mes"
+
         search_results, image_paths, answer_scope = await asyncio.to_thread(
             self._prepare_query_context,
             session_id,
@@ -408,6 +444,37 @@ class RAGPipeline:
         """
         Streaming RAG query.
         """
+        mes_lots = await self._get_mes_lots(question, mode)
+        if mes_lots is not None:
+            routed_model = self._resolve_model(model, mode=mode)
+            fallback_answer = self._format_mes_fallback(mes_lots)
+            try:
+                response = await self.openai_client.chat.completions.create(
+                    model=routed_model,
+                    messages=self._mes_messages(question, mes_lots),
+                    temperature=0.1,
+                    max_tokens=240,
+                    **self._provider_options(routed_model),
+                )
+                candidate = response.choices[0].message.content or ""
+                answer = (
+                    candidate
+                    if self._mes_answer_has_required_fields(candidate, mes_lots)
+                    else fallback_answer
+                )
+
+                async def mes_token_generator():
+                    yield answer
+
+                return mes_token_generator(), [], routed_model, "mes"
+            except Exception as exc:
+                logger.warning("Streaming LLM MES answer generation failed: %s", exc)
+
+                async def fallback_token_generator():
+                    yield fallback_answer
+
+                return fallback_token_generator(), [], routed_model, "mes"
+
         search_results, image_paths, answer_scope = await asyncio.to_thread(
             self._prepare_query_context,
             session_id,
@@ -467,6 +534,102 @@ class RAGPipeline:
         except Exception as e:
             logger.error(f"Error in streaming RAG generation: {e}")
             raise e
+
+    async def _get_mes_lots(
+        self,
+        question: str,
+        mode: str,
+    ) -> list[MesLotError] | None:
+        if mode != "mkac" or not self._is_highest_lot_error_question(question):
+            return None
+        if self.mes_client is None:
+            raise RuntimeError("MES integration chưa được cấu hình.")
+
+        logger.info("Routing highest Lot error question to MES API.")
+        return await self.mes_client.get_lots_with_highest_error()
+
+    @staticmethod
+    def _is_highest_lot_error_question(question: str) -> bool:
+        normalized = unicodedata.normalize(
+            "NFD",
+            question.lower().replace("đ", "d"),
+        )
+        normalized = "".join(
+            char for char in normalized if unicodedata.category(char) != "Mn"
+        )
+        normalized = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
+
+        has_lot = bool(re.search(r"\b(lot|lo|lo san xuat)\b", normalized))
+        has_error = bool(re.search(r"\bng\b", normalized)) or any(
+            marker in normalized
+            for marker in ("loi", "error", "defect", "hang loi", "san pham loi")
+        )
+        has_maximum = bool(
+            re.search(r"\b(nhieu|cao|lon)\b(?:\s+\w+){0,3}\s+nhat\b", normalized)
+        ) or any(
+            marker in normalized
+            for marker in (
+                "nhieu nhat",
+                "cao nhat",
+                "lon nhat",
+                "toi da",
+                "top 1",
+                "top loi",
+                "dung dau",
+                "max",
+                "maximum",
+                "most",
+            )
+        )
+        return has_lot and has_error and has_maximum
+
+    @staticmethod
+    def _mes_messages(
+        question: str,
+        lots: list[MesLotError],
+    ) -> list[dict[str, str]]:
+        rows = "\n".join(
+            (
+                f"- Lot_Id={lot.lot_id}; Product_Id={lot.product_id}; "
+                f"Total_Error_Qty={lot.total_error_qty}"
+            )
+            for lot in lots
+        )
+        return [
+            {"role": "system", "content": MES_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": f"Câu hỏi: {question}\n\nDữ liệu MES đã xác thực:\n{rows}",
+            },
+        ]
+
+    @staticmethod
+    def _format_mes_fallback(lots: list[MesLotError]) -> str:
+        def describe(lot: MesLotError) -> str:
+            quantity = f"{lot.total_error_qty:,}".replace(",", ".")
+            return (
+                f"Lot {lot.lot_id}, mã hàng {lot.product_id}, "
+                f"với tổng cộng {quantity} lỗi"
+            )
+
+        if len(lots) == 1:
+            return f"{describe(lots[0])} là Lot có số lượng lỗi cao nhất."
+        return "Các Lot có số lượng lỗi cao nhất là: " + "; ".join(
+            describe(lot) for lot in lots
+        ) + "."
+
+    @staticmethod
+    def _mes_answer_has_required_fields(
+        answer: str,
+        lots: list[MesLotError],
+    ) -> bool:
+        normalized_quantity = answer.replace(".", "").replace(",", "")
+        return bool(answer.strip()) and all(
+            lot.lot_id in answer
+            and lot.product_id in answer
+            and str(lot.total_error_qty) in normalized_quantity
+            for lot in lots
+        )
 
     def _retrieve(
         self,

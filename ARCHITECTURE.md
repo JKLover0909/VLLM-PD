@@ -57,6 +57,8 @@ VLLM-PD/
 │   │   ├── embedder.py          # BGE-M3
 │   │   ├── vector_store.py      # Qdrant
 │   │   └── rag_pipeline.py      # Retrieval, prompt, gọi LiteLLM
+│   ├── integrations/
+│   │   └── mes_client.py        # Gọi MES và chuẩn hóa dữ liệu lỗi theo Lot
 │   └── agent/
 │       ├── graph.py             # Đồ thị LangGraph
 │       └── mcp_client.py        # MCP và công cụ fallback
@@ -414,6 +416,21 @@ Nếu tìm web không có kết quả hoặc gặp lỗi, pipeline mới gọi m
 context và dùng `answer_scope=general`; model chỉ thông báo ngắn gọn rằng chưa
 tìm thấy thông tin, không trả lời bằng kiến thức chung.
 
+### 11.4. Truy vấn dữ liệu lỗi theo Lot từ MES
+
+Ở chế độ MKAC, các câu hỏi có đủ ý định `Lot + lỗi/NG + nhiều/cao nhất` được
+định tuyến tới MES trước bước embedding và retrieval. Backend gọi API MES bằng
+Bearer token, parse ba trường `Lot_Id`, `Product_Id`, `Total_Error_Qty`, tự chọn
+giá trị lớn nhất và giữ đầy đủ các Lot đồng hạng.
+
+Kết quả đã chuẩn hóa được đưa vào model người dùng đang chọn để diễn đạt thành
+một câu tiếng Việt tự nhiên. Response dùng `answer_scope=mes`, không trả nguồn
+Qdrant và frontend hiển thị nhãn `Dữ liệu MES`. Nếu LLM lỗi trước khi stream bắt
+đầu, backend dùng câu trả lời deterministic chứa đủ mã Lot, mã hàng và số lỗi.
+
+Token MES chỉ tồn tại ở backend qua biến môi trường; frontend không gọi trực
+tiếp API MES và không nhận token.
+
 ## 12. Giao thức SSE
 
 `POST /query/stream` trả `Content-Type: text/event-stream`. Mỗi event nằm trong trường `data` dưới dạng JSON.
@@ -680,6 +697,7 @@ Khuyến nghị tối thiểu khi public:
 | OCR | `DOCLING_DEVICE`, `DOCLING_NUM_THREADS`, `DOCLING_OCR_LANGUAGES` |
 | Rate limit | `QUERY_RATE_LIMIT_PER_MINUTE`, `UPLOAD_RATE_LIMIT_PER_HOUR` |
 | Agent | `AGENT_API_KEY`, `WORKSPACE_DIR`, `AGENT_REPOSITORY_DIR` |
+| MES | `MES_API_URL`, `MES_API_TOKEN`, `MES_API_TIMEOUT`, `MES_VERIFY_TLS`, `MES_CA_CERT` |
 | Log | `LOG_LEVEL` |
 
 Không commit `.env`. File này chứa provider key, LiteLLM master key và Agent API key.
