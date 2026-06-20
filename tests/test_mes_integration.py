@@ -289,3 +289,21 @@ def test_mkac_mode_does_not_route_mes_questions():
     assert result is None
     assert mes_client.calls == 0
     assert mes_database.calls == []
+
+
+def test_compound_highest_lot_question_is_reserved_for_sql_agent():
+    mes_client = FakeMesClient()
+    mes_database = FakeMesDatabase()
+    pipeline = make_pipeline(mes_client, mes_database)
+
+    source, result = asyncio.run(
+        pipeline._get_mes_route(
+            "Trong Lot có số lượng lỗi nhiều nhất, 3 loại lỗi nhiều nhất là gì?",
+            "mes",
+        )
+    )
+
+    assert source is None
+    assert result is None
+    assert mes_client.calls == 0
+    assert mes_database.calls == []

@@ -24,6 +24,11 @@ services:
       EMPLOYEE_DIRECTORY_SUMMARY_PATH: "/app/documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html"
       MES_DATABASE_ENABLED: "true"
       MES_DATABASE_PATH: /app/data/mes.sqlite
+      MES_SQL_AGENT_ENABLED: "true"
+      MES_SEMANTIC_MODEL_PATH: /app/config/mes_semantic_model.json
+      MES_SQL_AGENT_MAX_ROWS: "100"
+      MES_SQL_AGENT_TIMEOUT: "2"
+      MES_SQL_AGENT_MAX_ATTEMPTS: "2"
     ports:
       - "${MACHINE2_API_PORT:-8001}:8001"
     volumes:

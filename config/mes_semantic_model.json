@@ -1,0 +1,84 @@
+{
+  "database": "MES snapshot",
+  "description": "Dữ liệu Lot, lỗi sản xuất và tên lỗi của MKAC tại thời điểm import snapshot.",
+  "source_policy": {
+    "is_realtime": false,
+    "exclude_test_data_by_default": false,
+    "unknown_error_name": "Không suy đoán tên khi error_name rỗng"
+  },
+  "views": {
+    "v_lot_error_summary": {
+      "description": "Một dòng cho mỗi Lot, dùng để xếp hạng và thống kê tổng lỗi theo Lot.",
+      "columns": {
+        "lot_pk": "Khóa nội bộ",
+        "lot_id": "Mã Lot",
+        "product_id": "Mã sản phẩm hoặc mã hàng",
+        "status": "Mã trạng thái Lot, chưa có bảng giải nghĩa",
+        "pcs_lot": "Tổng số PCS của Lot",
+        "produce_date": "Ngày sản xuất",
+        "error_record_count": "Số lần ghi nhận lỗi, không phải tổng số lượng lỗi",
+        "distinct_error_count": "Số mã lỗi khác nhau",
+        "total_error_qty": "Tổng số lượng lỗi của Lot",
+        "unmapped_error_record_count": "Số bản ghi chưa mapping chính xác tên lỗi"
+      }
+    },
+    "v_lot_error_breakdown": {
+      "description": "Chi tiết số lượng lỗi theo Lot, công đoạn và mã lỗi.",
+      "columns": {
+        "lot_id": "Mã Lot",
+        "product_id": "Mã sản phẩm hoặc mã hàng",
+        "process_id": "Công đoạn phát hiện lỗi",
+        "error_type": "Loại lỗi dạng mã nghiệp vụ",
+        "error_id": "Mã lỗi",
+        "error_name": "Tên lỗi ưu tiên tiếng Việt; có thể rỗng",
+        "error_record_count": "Số lần ghi nhận trong nhóm",
+        "total_error_qty": "Tổng số lượng lỗi trong nhóm"
+      }
+    },
+    "v_product_error_summary": {
+      "description": "Một dòng cho mỗi mã sản phẩm, dùng để tổng hợp và xếp hạng sản phẩm.",
+      "columns": {
+        "product_id": "Mã sản phẩm hoặc mã hàng",
+        "lot_count": "Số Lot của sản phẩm",
+        "error_record_count": "Số lần ghi nhận lỗi",
+        "total_error_qty": "Tổng số lượng lỗi của sản phẩm"
+      }
+    },
+    "v_error_details": {
+      "description": "Các bản ghi lỗi chi tiết đã nối Lot, sản phẩm và danh mục tên lỗi.",
+      "columns": {
+        "error_pk": "Khóa nội bộ của bản ghi lỗi",
+        "lot_id": "Mã Lot",
+        "product_id": "Mã sản phẩm hoặc mã hàng",
+        "lot_status": "Mã trạng thái Lot",
+        "pcs_lot": "Số PCS của Lot",
+        "route_id": "Tuyến sản xuất",
+        "process_id": "Công đoạn phát hiện lỗi",
+        "process_order": "Thứ tự công đoạn",
+        "error_type": "Loại lỗi dạng mã nghiệp vụ",
+        "error_id": "Mã lỗi",
+        "error_name": "Tên lỗi ưu tiên tiếng Việt",
+        "error_name_vi": "Tên lỗi tiếng Việt",
+        "error_name_en": "Tên lỗi tiếng Anh",
+        "quantity": "Số lượng của bản ghi lỗi",
+        "error_time": "Thời gian lỗi",
+        "error_judgement": "Kết quả đánh giá lỗi",
+        "lot_mapped": "1 nếu nối được Lot",
+        "error_name_mapped": "1 nếu nối được tên lỗi"
+      }
+    }
+  },
+  "relationships": [
+    "v_lot_error_summary.lot_id = v_lot_error_breakdown.lot_id",
+    "v_lot_error_summary.lot_id = v_error_details.lot_id",
+    "v_lot_error_summary.product_id = v_product_error_summary.product_id"
+  ],
+  "business_rules": [
+    "Cụm 'tổng lỗi' nghĩa là SUM(quantity) hoặc total_error_qty, không phải COUNT bản ghi.",
+    "Cụm 'loại lỗi' mặc định nghĩa là nhóm theo error_id và error_name, không phải error_type.",
+    "Khi tổng hợp một mã lỗi qua nhiều công đoạn, SUM(total_error_qty) và GROUP BY error_id, error_name.",
+    "Không tự loại Lot hoặc sản phẩm test nếu người dùng không yêu cầu.",
+    "Không giải nghĩa status vì snapshot chưa có bảng mã trạng thái.",
+    "Tên lỗi rỗng phải hiển thị là 'Chưa mapping tên'."
+  ]
+}

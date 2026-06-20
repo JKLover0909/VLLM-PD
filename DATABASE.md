@@ -233,13 +233,12 @@ trực tiếp vào SQL.
 
 ### Router khuyến nghị
 
-Giai đoạn demo nên dùng phương án kết hợp:
+Giai đoạn demo đang dùng phương án kết hợp:
 
 1. Quy tắc chắc chắn cho câu phổ biến như “Lot nào lỗi nhiều nhất?”.
-2. LLM phân loại chỉ trả JSON gồm `intent` và tham số như `lot_id`,
-   `product_id`, `error_id`.
-3. Backend kiểm tra tham số và chọn truy vấn trong allowlist.
-4. LLM cuối chỉ diễn đạt dữ liệu, không tự tính lại hoặc tự viết SQL.
+2. Query service read-only chọn truy vấn tham số hóa trong allowlist.
+3. SQL Agent schema-aware xử lý câu phức hợp chưa có intent cố định.
+4. LLM cuối chỉ diễn đạt dữ liệu đã được backend truy vấn và kiểm chứng.
 
 Response nên dùng `answer_scope=mes_database` để phân biệt với `mes` của API
 thời gian thực, `mkac` của Qdrant và `web`.
@@ -252,7 +251,7 @@ SQLite. Thành phần bắt buộc vẫn là backend query database an toàn.
 Phương án phù hợp hiện tại:
 
 ```text
-router MES + query service read-only + SQL allowlist + LLM diễn đạt
+router MES + query service read-only + SQL Agent có validate + LLM diễn đạt
 ```
 
 Skill chỉ đáng tạo khi có nhiều bảng, nhiều nhóm truy vấn và cần đóng gói lâu
@@ -260,15 +259,33 @@ dài data dictionary, quy tắc chọn API hay snapshot, quy tắc loại dữ l
 giải nghĩa mã nghiệp vụ và ví dụ câu hỏi. Ngay cả khi có skill, việc đọc dữ liệu
 vẫn phải đi qua tool hoặc API backend.
 
-## 11. Khi nào dùng SQL Agent?
+## 11. SQL Agent hiện tại
 
-Chỉ cân nhắc SQL Agent khi các truy vấn cố định không còn đủ. Khi đó phải:
+SQL Agent đã được thêm để xử lý các câu hỏi phức hợp mà allowlist cố định chưa
+bao phủ, ví dụ:
 
-- Mở SQLite ở chế độ read-only.
-- Chỉ cho phép `SELECT` trên các view công khai.
-- Chặn ghi dữ liệu, DDL, `ATTACH` và pragma nguy hiểm.
-- Bắt buộc `LIMIT`, timeout và giới hạn số dòng.
-- Validate SQL bằng parser và ghi audit log.
+```text
+Trong Lot có số lượng lỗi nhiều nhất thì 3 loại lỗi gây lỗi nhiều nhất là gì?
+```
 
-Với snapshot hiện tại, query service theo intent dễ kiểm thử, an toàn và ổn định
-hơn SQL Agent.
+Thiết kế hiện tại:
+
+- Semantic model nằm ở `config/mes_semantic_model.json`.
+- Model chỉ nhìn thấy các view công khai:
+  - `v_lot_error_summary`
+  - `v_lot_error_breakdown`
+  - `v_product_error_summary`
+  - `v_error_details`
+- Model phải trả kế hoạch JSON có một câu `SELECT` hoặc `WITH ... SELECT`.
+- Backend validate bằng SQLGlot trước khi chạy.
+- SQLite được mở read-only bằng `mode=ro`, `PRAGMA query_only=ON` và authorizer.
+- SQL bị chặn nếu đụng bảng raw, ghi dữ liệu, DDL, `ATTACH`, `PRAGMA` hoặc nhiều
+  statement.
+- Backend ép `LIMIT`, timeout và giới hạn số dòng trả về.
+- Kết quả SQL được đưa lại cho LLM để diễn đạt tự nhiên.
+- Nếu LLM bỏ sót trường bắt buộc hoặc trả JSON/SQL thô, backend dùng fallback
+  deterministic từ kết quả đã query.
+
+Vì vậy, LLM có thể suy luận query từ cấu trúc database đã nạp sẵn, nhưng vẫn
+không được chạy SQL tùy ý. Mọi truy vấn đều đi qua lớp validate và chỉ đọc các
+view công khai.

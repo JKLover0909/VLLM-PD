@@ -25,6 +25,11 @@ from src.integrations.mes_database import (
     MesDatabaseResult,
     MesDatabaseError,
 )
+from src.integrations.mes_sql_agent import (
+    MesSqlAgent,
+    MesSqlAgentError,
+    MesSqlQueryResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -353,6 +358,7 @@ class RAGPipeline:
         web_searcher: WebSearcher | None = None,
         mes_client: MesClient | None = None,
         mes_database: MesDatabase | None = None,
+        mes_sql_agent: MesSqlAgent | None = None,
         top_k: int = 5,
         score_threshold: float = 0.25,
         temperature: float = 0.3,
@@ -365,6 +371,9 @@ class RAGPipeline:
         self.mes_client = mes_client if mes_client is not None else MesClient.from_env()
         self.mes_database = (
             mes_database if mes_database is not None else MesDatabase.from_env()
+        )
+        self.mes_sql_agent = (
+            mes_sql_agent if mes_sql_agent is not None else MesSqlAgent.from_env()
         )
         self.top_k = top_k
         self.score_threshold = score_threshold
@@ -426,6 +435,10 @@ class RAGPipeline:
             )
             return answer, [], routed_model, "mes_database"
         if mode == "mes":
+            sql_answer = await self._generate_mes_sql_answer(question, model, mode)
+            if sql_answer is not None:
+                answer, routed_model = sql_answer
+                return answer, [], routed_model, "mes_database"
             return (
                 MES_UNSUPPORTED_ANSWER,
                 [],
@@ -548,6 +561,20 @@ class RAGPipeline:
                 "mes_database",
             )
         if mode == "mes":
+            sql_answer = await self._generate_mes_sql_answer(question, model, mode)
+            if sql_answer is not None:
+                answer, routed_model = sql_answer
+
+                async def mes_sql_token_generator():
+                    yield answer
+
+                return (
+                    mes_sql_token_generator(),
+                    [],
+                    routed_model,
+                    "mes_database",
+                )
+
             routed_model = self._resolve_model(model, mode=mode)
 
             async def unsupported_mes_token_generator():
@@ -645,6 +672,8 @@ class RAGPipeline:
             return None, None
 
         highest_lot_question = self._is_highest_lot_error_question(question)
+        if highest_lot_question and self._is_compound_mes_question(question):
+            return None, None
         explicit_snapshot = bool(
             self.mes_database
             and self.mes_database.is_snapshot_question(question)
@@ -679,6 +708,138 @@ class RAGPipeline:
         if snapshot_result is not None:
             return "mes_database", snapshot_result
         return None, None
+
+    async def _generate_mes_sql_answer(
+        self,
+        question: str,
+        model: str,
+        mode: str,
+    ) -> tuple[str, str] | None:
+        if self.mes_sql_agent is None or not self.mes_sql_agent.available:
+            return None
+
+        routed_model = self._resolve_model(model, mode=mode)
+        previous_error = ""
+        max_attempts = max(1, min(int(os.getenv("MES_SQL_AGENT_MAX_ATTEMPTS", "2")), 3))
+        for attempt in range(max_attempts):
+            try:
+                response = await self.openai_client.chat.completions.create(
+                    model=routed_model,
+                    messages=self.mes_sql_agent.planner_messages(
+                        question,
+                        previous_error=previous_error,
+                    ),
+                    temperature=0,
+                    max_tokens=1200,
+                    **self._provider_options(routed_model),
+                )
+                content = response.choices[0].message.content or ""
+                plan = self.mes_sql_agent.parse_plan(content)
+                if not plan.can_answer:
+                    logger.info("MES SQL planner cannot answer: %s", plan.reason)
+                    return None
+                result = await asyncio.to_thread(self.mes_sql_agent.execute, plan.sql)
+                logger.info(
+                    "MES SQL agent executed attempt=%s rows=%s",
+                    attempt + 1,
+                    len(result.rows),
+                )
+                answer_response = await self.openai_client.chat.completions.create(
+                    model=routed_model,
+                    messages=self.mes_sql_agent.answer_messages(question, result),
+                    temperature=0.1,
+                    max_tokens=800,
+                    **self._provider_options(routed_model),
+                )
+                candidate = answer_response.choices[0].message.content or ""
+                candidate = self._normalize_mes_sql_answer(candidate)
+                if self._mes_sql_answer_is_natural(
+                    candidate
+                ) and self._mes_sql_answer_matches_result(candidate, result):
+                    return candidate, routed_model
+                return self.mes_sql_agent.fallback_answer(result), routed_model
+            except MesSqlAgentError as exc:
+                previous_error = str(exc)
+                logger.warning(
+                    "MES SQL plan rejected attempt=%s: %s",
+                    attempt + 1,
+                    exc,
+                )
+            except Exception as exc:
+                logger.warning("MES SQL agent failed: %s", exc)
+                return None
+        return None
+
+    @staticmethod
+    def _normalize_mes_sql_answer(answer: str) -> str:
+        text = (answer or "").strip()
+        if not text:
+            return ""
+        if text.startswith("```"):
+            text = text.strip("`").strip()
+            if text.lower().startswith("json"):
+                text = text[4:].strip()
+        if text.startswith("{") and text.endswith("}"):
+            try:
+                payload = json.loads(text)
+            except json.JSONDecodeError:
+                return text
+            if isinstance(payload, dict):
+                nested_answer = payload.get("answer")
+                if isinstance(nested_answer, str):
+                    return nested_answer.strip()
+        return text
+
+    @staticmethod
+    def _mes_sql_answer_matches_result(answer: str, result: MesSqlQueryResult) -> bool:
+        normalized = answer.lower()
+        for row in result.rows[:5]:
+            for key in ("lot_id", "product_id", "error_id"):
+                value = row.get(key)
+                if value and str(value).lower() not in normalized:
+                    return False
+            error_name = row.get("error_name")
+            if error_name and str(error_name).strip():
+                if str(error_name).lower() not in normalized:
+                    return False
+            elif "error_name" in row and "chưa mapping" not in normalized:
+                return False
+        return True
+
+    @staticmethod
+    def _mes_sql_answer_is_natural(answer: str) -> bool:
+        if not answer.strip():
+            return False
+        normalized = answer.lower()
+        forbidden = (
+            "select ",
+            " from ",
+            "total_error_qty",
+            "error_record_count",
+            "distinct_error_count",
+            "```sql",
+            "{\"answer\"",
+        )
+        return not any(marker in normalized for marker in forbidden)
+
+    @classmethod
+    def _is_compound_mes_question(cls, question: str) -> bool:
+        normalized = unicodedata.normalize(
+            "NFD",
+            question.lower().replace("đ", "d"),
+        )
+        normalized = "".join(
+            char for char in normalized if unicodedata.category(char) != "Mn"
+        )
+        normalized = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
+        return bool(
+            re.search(r"\btop\s*\d+\b", normalized)
+            or re.search(r"\b\d+\s+(?:loai\s+)?loi\b", normalized)
+            or any(
+                marker in normalized
+                for marker in ("cac loi nhieu nhat", "nhung loi nhieu nhat")
+            )
+        )
 
     async def _query_mes_database(
         self,

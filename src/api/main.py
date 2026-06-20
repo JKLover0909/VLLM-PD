@@ -426,7 +426,14 @@ async def health():
             "employees": employee_directory.count(),
         },
         "mes_database": (
-            mes_database.status()
+            {
+                **mes_database.status(),
+                "sql_agent_available": bool(
+                    rag_pipeline
+                    and rag_pipeline.mes_sql_agent
+                    and rag_pipeline.mes_sql_agent.available
+                ),
+            }
             if mes_database is not None
             else {"available": False, "enabled": False}
         ),

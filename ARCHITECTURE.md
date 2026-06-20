@@ -61,7 +61,8 @@ VLLM-PD/
 │   │   └── rag_pipeline.py      # Retrieval, prompt, gọi LiteLLM
 │   ├── integrations/
 │   │   ├── mes_client.py        # Gọi MES thời gian thực
-│   │   └── mes_database.py      # Truy vấn MES snapshot read-only
+│   │   ├── mes_database.py      # Truy vấn MES snapshot read-only
+│   │   └── mes_sql_agent.py     # Text-to-SQL có validate cho MES snapshot
 │   └── agent/
 │       ├── graph.py             # Đồ thị LangGraph
 │       └── mcp_client.py        # MCP và công cụ fallback
@@ -454,6 +455,27 @@ Snapshot không tự loại dữ liệu test và có thể khác API MES thời 
 LLM không khả dụng hoặc bỏ sót trường bắt buộc, backend trả câu deterministic từ
 kết quả SQL.
 
+### 11.6. SQL Agent cho câu hỏi MES phức hợp
+
+Với các câu hỏi MES phức hợp chưa có intent cố định, ví dụ “trong Lot có số lỗi
+nhiều nhất thì 3 loại lỗi gây lỗi nhiều nhất là gì”, backend dùng
+`MesSqlAgent`. Agent này không cho model truy cập bảng raw trực tiếp. Thay vào
+đó, model chỉ nhận semantic model ở `config/mes_semantic_model.json` gồm các
+view công khai:
+
+- `v_lot_error_summary`
+- `v_lot_error_breakdown`
+- `v_product_error_summary`
+- `v_error_details`
+
+LLM chỉ sinh kế hoạch JSON chứa một câu `SELECT` hoặc `WITH ... SELECT`.
+Backend validate SQL bằng SQLGlot, chỉ cho truy cập các view allowlist, chặn
+DDL/DML/`ATTACH`/`PRAGMA`, ép `LIMIT`, mở SQLite `mode=ro`, bật
+`PRAGMA query_only=ON`, dùng authorizer read-only và timeout ngắn. Sau khi chạy
+SQL, kết quả JSON đã kiểm chứng mới được đưa lại cho LLM để diễn đạt tiếng Việt
+tự nhiên. Nếu câu trả lời thiếu mã/tên lỗi/số liệu bắt buộc, backend dùng câu
+fallback deterministic từ chính kết quả SQL.
+
 ## 12. Giao thức SSE
 
 `POST /query/stream` trả `Content-Type: text/event-stream`. Mỗi event nằm trong trường `data` dưới dạng JSON.
@@ -725,6 +747,7 @@ Khuyến nghị tối thiểu khi public:
 | Agent | `AGENT_API_KEY`, `WORKSPACE_DIR`, `AGENT_REPOSITORY_DIR` |
 | MES API | `MES_API_URL`, `MES_API_TOKEN`, `MES_API_TIMEOUT`, `MES_VERIFY_TLS`, `MES_CA_CERT` |
 | MES snapshot | `MES_DATABASE_ENABLED`, `MES_DATABASE_PATH` |
+| MES SQL Agent | `MES_SQL_AGENT_ENABLED`, `MES_SEMANTIC_MODEL_PATH`, `MES_SQL_AGENT_MAX_ROWS`, `MES_SQL_AGENT_TIMEOUT`, `MES_SQL_AGENT_MAX_ATTEMPTS` |
 | Log | `LOG_LEVEL` |
 
 Không commit `.env`. File này chứa provider key, LiteLLM master key và Agent API key.
