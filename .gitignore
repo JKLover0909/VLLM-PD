@@ -46,6 +46,7 @@ uploads/
 logs/
 data/
 qdrant_storage/
+database/raw/
 *.pid
 *.log
 documents/
