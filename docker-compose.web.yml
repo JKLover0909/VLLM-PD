@@ -22,6 +22,8 @@ services:
       EMPLOYEE_DIRECTORY_SOURCE_GLOB: "3. DANH SÁCH KHÁM SỨC KHOẺ 2026.pdf"
       EMPLOYEE_DIRECTORY_DB_PATH: /app/data/employee_directory.sqlite
       EMPLOYEE_DIRECTORY_SUMMARY_PATH: "/app/documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html"
+      MES_DATABASE_ENABLED: "true"
+      MES_DATABASE_PATH: /app/data/mes.sqlite
     ports:
       - "${MACHINE2_API_PORT:-8001}:8001"
     volumes:

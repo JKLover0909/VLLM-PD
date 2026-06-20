@@ -22,8 +22,10 @@ VLLM-PD cung cấp hai nhóm chức năng độc lập nhưng dùng chung API Ga
 - Tạo prompt RAG từ các đoạn liên quan.
 - Gọi mô hình ngôn ngữ thông qua LiteLLM.
 - Trả lời đồng bộ hoặc streaming bằng Server-Sent Events (SSE).
-- Cho phép chọn chế độ `Hỏi đáp MKAC` hoặc `Nghiên cứu`.
-- Ở chế độ MKAC, giao diện chỉ cho chọn `Cloud Model` hoặc `Local Model`; Grok được giữ riêng cho chế độ `Nghiên cứu`.
+- Tách ba chế độ `Hỏi đáp hành chính nhân sự MKAC`, `Quản lý MES` và
+  `Nghiên cứu tài liệu` với session, lịch sử và nguồn dữ liệu riêng.
+- Chế độ hành chính nhân sự và MES cho chọn `Cloud Model` hoặc `Local Model`;
+  Grok được giữ riêng cho chế độ `Nghiên cứu tài liệu`.
 
 ### 1.2. Coding Agent
 
@@ -58,7 +60,8 @@ VLLM-PD/
 │   │   ├── vector_store.py      # Qdrant
 │   │   └── rag_pipeline.py      # Retrieval, prompt, gọi LiteLLM
 │   ├── integrations/
-│   │   └── mes_client.py        # Gọi MES và chuẩn hóa dữ liệu lỗi theo Lot
+│   │   ├── mes_client.py        # Gọi MES thời gian thực
+│   │   └── mes_database.py      # Truy vấn MES snapshot read-only
 │   └── agent/
 │       ├── graph.py             # Đồ thị LangGraph
 │       └── mcp_client.py        # MCP và công cụ fallback
@@ -418,7 +421,7 @@ tìm thấy thông tin, không trả lời bằng kiến thức chung.
 
 ### 11.4. Truy vấn dữ liệu lỗi theo Lot từ MES
 
-Ở chế độ MKAC, các câu hỏi có đủ ý định `Lot + lỗi/NG + nhiều/cao nhất` được
+Ở chế độ `mes`, các câu hỏi có đủ ý định `Lot + lỗi/NG + nhiều/cao nhất` được
 định tuyến tới MES trước bước embedding và retrieval. Backend gọi API MES bằng
 Bearer token, parse ba trường `Lot_Id`, `Product_Id`, `Total_Error_Qty`, tự chọn
 giá trị lớn nhất và giữ đầy đủ các Lot đồng hạng.
@@ -430,6 +433,26 @@ Qdrant và frontend hiển thị nhãn `Dữ liệu MES`. Nếu LLM lỗi trư�
 
 Token MES chỉ tồn tại ở backend qua biến môi trường; frontend không gọi trực
 tiếp API MES và không nhận token.
+
+### 11.5. Truy vấn MES snapshot cục bộ
+
+Database `data/mes.sqlite` hợp nhất thông tin Lot, bản ghi lỗi và danh mục tên
+lỗi từ ba dump MES. `MesDatabase` mở SQLite ở chế độ read-only và chỉ thực thi
+các truy vấn tham số hóa trong allowlist; câu hỏi người dùng không được chuyển
+thẳng thành SQL.
+
+Các intent hiện hỗ trợ gồm thông tin Lot, chi tiết lỗi theo Lot, tên mã lỗi,
+thống kê và chi tiết lỗi theo sản phẩm, sản phẩm có tổng lỗi cao nhất, các Lot
+có một mã lỗi và Lot có tổng lỗi cao nhất trong snapshot.
+
+API MES vẫn được ưu tiên cho câu hỏi Lot lỗi nhiều nhất theo dữ liệu thời gian
+thực. Snapshot được dùng khi người dùng nói rõ `snapshot/database`, khi API MES
+lỗi, hoặc cho các intent chi tiết mà API hiện tại chưa cung cấp. Response dùng
+`answer_scope=mes_database`; frontend hiển thị nhãn `MES snapshot`.
+
+Snapshot không tự loại dữ liệu test và có thể khác API MES thời gian thực. Nếu
+LLM không khả dụng hoặc bỏ sót trường bắt buộc, backend trả câu deterministic từ
+kết quả SQL.
 
 ## 12. Giao thức SSE
 
@@ -605,12 +628,15 @@ Chức năng chính:
 - Kiểm tra `/health` và tải `/models` khi khởi động.
 - Khôi phục UUID session riêng cho từng chế độ từ `localStorage`.
 - Tạo phiên mới.
-- Trong chế độ `Hỏi đáp MKAC`, sử dụng kho tài liệu nội bộ dùng chung và không hiển thị upload.
-- Trong chế độ `Nghiên cứu`, chọn, upload và xóa nhiều file theo phiên.
+- Trong chế độ `Hỏi đáp hành chính nhân sự MKAC`, sử dụng kho tài liệu nội bộ,
+  danh bạ nhân sự dùng chung và yêu cầu xác thực mã nhân viên.
+- Trong chế độ `Quản lý MES`, định tuyến riêng tới API MES hoặc MES snapshot;
+  không fallback sang RAG hành chính, nhân sự hoặc web.
+- Trong chế độ `Nghiên cứu tài liệu`, chọn, upload và xóa nhiều file theo phiên.
 - Chọn model.
-- Chuyển giữa `Hỏi đáp MKAC` và `Nghiên cứu`.
+- Chuyển giữa ba chế độ hành chính nhân sự, MES và nghiên cứu tài liệu.
 - Mỗi chế độ giữ UUID, lịch sử hội thoại và nguồn tham chiếu riêng; session cũ
-  dùng một khóa được migrate sang chế độ `Nghiên cứu`.
+  dùng một khóa được migrate sang chế độ `Nghiên cứu tài liệu`.
 - Gửi câu hỏi qua SSE.
 - Render Markdown.
 - Hiển thị nguồn ở panel desktop và trong từng tin nhắn.
@@ -697,7 +723,8 @@ Khuyến nghị tối thiểu khi public:
 | OCR | `DOCLING_DEVICE`, `DOCLING_NUM_THREADS`, `DOCLING_OCR_LANGUAGES` |
 | Rate limit | `QUERY_RATE_LIMIT_PER_MINUTE`, `UPLOAD_RATE_LIMIT_PER_HOUR` |
 | Agent | `AGENT_API_KEY`, `WORKSPACE_DIR`, `AGENT_REPOSITORY_DIR` |
-| MES | `MES_API_URL`, `MES_API_TOKEN`, `MES_API_TIMEOUT`, `MES_VERIFY_TLS`, `MES_CA_CERT` |
+| MES API | `MES_API_URL`, `MES_API_TOKEN`, `MES_API_TIMEOUT`, `MES_VERIFY_TLS`, `MES_CA_CERT` |
+| MES snapshot | `MES_DATABASE_ENABLED`, `MES_DATABASE_PATH` |
 | Log | `LOG_LEVEL` |
 
 Không commit `.env`. File này chứa provider key, LiteLLM master key và Agent API key.

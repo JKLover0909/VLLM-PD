@@ -38,6 +38,7 @@ from src.rag.vector_store import VectorStore
 from src.rag.rag_pipeline import RAGPipeline
 from src.rag.web_search import WebSearcher
 from src.auth.employee_directory import EmployeeDirectory
+from src.integrations.mes_database import MesDatabase
 
 ENABLE_AGENT = os.getenv("ENABLE_AGENT", "true").lower() in {"1", "true", "yes", "on"}
 agent_executor = None
@@ -93,6 +94,7 @@ doc_parser: Optional[DocumentParser] = None
 rag_pipeline: Optional[RAGPipeline] = None
 web_searcher: Optional[WebSearcher] = None
 employee_directory = EmployeeDirectory(EMPLOYEE_DIRECTORY_DB_PATH)
+mes_database = MesDatabase.from_env()
 rate_limit_events: Dict[str, Deque[float]] = defaultdict(deque)
 rate_limit_lock = asyncio.Lock()
 upload_processing_semaphore = asyncio.Semaphore(UPLOAD_PROCESSING_CONCURRENCY)
@@ -242,6 +244,7 @@ async def lifespan(app: FastAPI):
         vector_store=vector_store,
         mkac_vector_store=mkac_vector_store,
         web_searcher=web_searcher,
+        mes_database=mes_database,
     )
 
     logger.info("✅ VLLM-PD API Gateway is fully operational.")
@@ -281,7 +284,7 @@ class QueryRequest(BaseModel):
     question: str
     stream: bool = True
     model: Literal["auto", "local", "openai", "grok"] = "openai"
-    mode: Literal["mkac", "research"] = "mkac"
+    mode: Literal["mkac", "mes", "research"] = "mkac"
     employee_id: Optional[str] = None
 
 
@@ -422,6 +425,11 @@ async def health():
             "db_path": str(EMPLOYEE_DIRECTORY_DB_PATH),
             "employees": employee_directory.count(),
         },
+        "mes_database": (
+            mes_database.status()
+            if mes_database is not None
+            else {"available": False, "enabled": False}
+        ),
         "document_processing": {
             "active": upload_active,
             "waiting": upload_waiting,

@@ -509,6 +509,12 @@ summary:focus-visible {
   border-color: #efd486;
 }
 
+.mode-mark.mes {
+  color: #174f82;
+  background: #e5f1fb;
+  border-color: #a9cde9;
+}
+
 .header-title strong,
 .header-title span {
   display: block;
@@ -567,6 +573,14 @@ summary:focus-visible {
 
 .mode-tabs button.active.research {
   color: #7a4d06;
+}
+
+.mode-tabs button.active.mes {
+  color: #185b91;
+}
+
+.mode-label-short {
+  display: none;
 }
 
 .model-select {
@@ -812,6 +826,12 @@ summary:focus-visible {
   color: #7a4d06;
   background: #fff0ca;
   border-color: #efd486;
+}
+
+.empty-icon.mes {
+  color: #174f82;
+  background: #e5f1fb;
+  border-color: #a9cde9;
 }
 
 .empty-conversation h1 {
@@ -1806,6 +1826,14 @@ summary:focus-visible {
     flex: 1;
   }
 
+  .mode-label-full {
+    display: none;
+  }
+
+  .mode-label-short {
+    display: inline;
+  }
+
   .model-select {
     flex: 1 1 auto;
     min-width: 0;
@@ -1983,6 +2011,13 @@ html[data-theme="dark"] .empty-icon.research {
   border-color: #745821;
 }
 
+html[data-theme="dark"] .mode-mark.mes,
+html[data-theme="dark"] .empty-icon.mes {
+  color: #9dcdf2;
+  background: #18344c;
+  border-color: #32658c;
+}
+
 html[data-theme="dark"] .empty-icon {
   color: #8ce2d8;
   background: #183b39;
@@ -2006,6 +2041,10 @@ html[data-theme="dark"] .mode-tabs button.active {
 
 html[data-theme="dark"] .mode-tabs button.active.research {
   color: #f1c66d;
+}
+
+html[data-theme="dark"] .mode-tabs button.active.mes {
+  color: #9dcdf2;
 }
 
 html[data-theme="dark"] .model-select,

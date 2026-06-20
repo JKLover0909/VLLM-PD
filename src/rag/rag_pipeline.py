@@ -7,6 +7,7 @@ Nhận câu hỏi -> Embed -> Tìm kiếm ngữ nghĩa trong Qdrant -> Tạo pro
 
 import asyncio
 import base64
+import json
 import logging
 import os
 import re
@@ -19,6 +20,11 @@ from src.rag.embedder import Embedder
 from src.rag.vector_store import VectorStore, SearchResult
 from src.rag.web_search import WebSearcher
 from src.integrations.mes_client import MesClient, MesLotError
+from src.integrations.mes_database import (
+    MesDatabase,
+    MesDatabaseResult,
+    MesDatabaseError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +77,31 @@ Chỉ sử dụng dữ liệu MES được cung cấp, không suy đoán nguyên
 Định dạng số lượng lỗi theo cách đọc tiếng Việt, dùng dấu chấm phân cách hàng nghìn.
 Giữ nguyên mã và số lượng ở dạng chữ số; tuyệt đối không viết số lượng lỗi bằng chữ.
 Nếu có nhiều Lot đồng hạng, phải nêu đầy đủ tất cả các Lot đó."""
+
+MES_DATABASE_SYSTEM_PROMPT = """Bạn là trợ lý phân tích dữ liệu sản xuất bo mạch MKAC.
+
+Chỉ trả lời từ JSON MES snapshot được cung cấp. Không tự viết SQL, không suy đoán
+nguyên nhân lỗi và không bổ sung dữ liệu bên ngoài JSON.
+
+Quy tắc:
+1. Trả lời bằng tiếng Việt tự nhiên, trực tiếp và ngắn gọn.
+2. Giữ nguyên mã Lot, mã hàng, mã lỗi, công đoạn và các con số.
+3. Dùng dấu chấm phân cách hàng nghìn khi trình bày số lượng.
+4. total_error_qty là tổng số lượng lỗi; error_record_count là số lần ghi nhận,
+   hai đại lượng này không được đánh đồng.
+5. Tên lỗi rỗng nghĩa là chưa mapping được; không được tự đặt tên lỗi.
+6. Nói rõ đây là dữ liệu MES snapshot khi kết luận có thể bị hiểu là dữ liệu
+   thời gian thực.
+7. Dữ liệu test không bị loại trừ, đúng như trường filters trong JSON.
+8. Tuyệt đối không để lộ tên field JSON/SQL như total_error_qty,
+   error_record_count, lot_count hoặc các tên kỹ thuật tương tự.
+9. Chỉ trả lời đúng thông tin người dùng hỏi; không liệt kê thêm chỉ số không
+   cần thiết."""
+
+MES_UNSUPPORTED_ANSWER = (
+    "Chưa nhận diện được truy vấn MES này. Bạn có thể hỏi về thông tin một Lot, "
+    "chi tiết lỗi theo Lot, tên mã lỗi hoặc thống kê lỗi theo mã hàng."
+)
 
 MODEL_ROUTES = {
     "auto": "auto-model",
@@ -321,6 +352,7 @@ class RAGPipeline:
         mkac_vector_store: VectorStore | None = None,
         web_searcher: WebSearcher | None = None,
         mes_client: MesClient | None = None,
+        mes_database: MesDatabase | None = None,
         top_k: int = 5,
         score_threshold: float = 0.25,
         temperature: float = 0.3,
@@ -331,6 +363,9 @@ class RAGPipeline:
         self.mkac_vector_store = mkac_vector_store
         self.web_searcher = web_searcher
         self.mes_client = mes_client if mes_client is not None else MesClient.from_env()
+        self.mes_database = (
+            mes_database if mes_database is not None else MesDatabase.from_env()
+        )
         self.top_k = top_k
         self.score_threshold = score_threshold
         self.temperature = temperature
@@ -357,8 +392,10 @@ class RAGPipeline:
         """
         Non-streaming RAG query.
         """
-        mes_lots = await self._get_mes_lots(question, mode)
-        if mes_lots is not None:
+        mes_source, mes_data = await self._get_mes_route(question, mode)
+        if mes_source == "mes":
+            mes_lots = mes_data
+            assert isinstance(mes_lots, list)
             routed_model = self._resolve_model(model, mode=mode)
             fallback_answer = self._format_mes_fallback(mes_lots)
             try:
@@ -379,6 +416,22 @@ class RAGPipeline:
                 logger.warning("LLM MES answer generation failed: %s", exc)
                 answer = fallback_answer
             return answer, [], routed_model, "mes"
+        if mes_source == "mes_database":
+            assert isinstance(mes_data, MesDatabaseResult)
+            answer, routed_model = await self._generate_mes_database_answer(
+                question,
+                mes_data,
+                model,
+                mode,
+            )
+            return answer, [], routed_model, "mes_database"
+        if mode == "mes":
+            return (
+                MES_UNSUPPORTED_ANSWER,
+                [],
+                self._resolve_model(model, mode=mode),
+                "mes_database",
+            )
 
         search_results, image_paths, answer_scope = await asyncio.to_thread(
             self._prepare_query_context,
@@ -444,8 +497,10 @@ class RAGPipeline:
         """
         Streaming RAG query.
         """
-        mes_lots = await self._get_mes_lots(question, mode)
-        if mes_lots is not None:
+        mes_source, mes_data = await self._get_mes_route(question, mode)
+        if mes_source == "mes":
+            mes_lots = mes_data
+            assert isinstance(mes_lots, list)
             routed_model = self._resolve_model(model, mode=mode)
             fallback_answer = self._format_mes_fallback(mes_lots)
             try:
@@ -474,6 +529,36 @@ class RAGPipeline:
                     yield fallback_answer
 
                 return fallback_token_generator(), [], routed_model, "mes"
+        if mes_source == "mes_database":
+            assert isinstance(mes_data, MesDatabaseResult)
+            answer, routed_model = await self._generate_mes_database_answer(
+                question,
+                mes_data,
+                model,
+                mode,
+            )
+
+            async def mes_database_token_generator():
+                yield answer
+
+            return (
+                mes_database_token_generator(),
+                [],
+                routed_model,
+                "mes_database",
+            )
+        if mode == "mes":
+            routed_model = self._resolve_model(model, mode=mode)
+
+            async def unsupported_mes_token_generator():
+                yield MES_UNSUPPORTED_ANSWER
+
+            return (
+                unsupported_mes_token_generator(),
+                [],
+                routed_model,
+                "mes_database",
+            )
 
         search_results, image_paths, answer_scope = await asyncio.to_thread(
             self._prepare_query_context,
@@ -540,13 +625,159 @@ class RAGPipeline:
         question: str,
         mode: str,
     ) -> list[MesLotError] | None:
-        if mode != "mkac" or not self._is_highest_lot_error_question(question):
+        if mode != "mes" or not self._is_highest_lot_error_question(question):
             return None
         if self.mes_client is None:
             raise RuntimeError("MES integration chưa được cấu hình.")
 
         logger.info("Routing highest Lot error question to MES API.")
         return await self.mes_client.get_lots_with_highest_error()
+
+    async def _get_mes_route(
+        self,
+        question: str,
+        mode: str,
+    ) -> tuple[
+        str | None,
+        list[MesLotError] | MesDatabaseResult | None,
+    ]:
+        if mode != "mes":
+            return None, None
+
+        highest_lot_question = self._is_highest_lot_error_question(question)
+        explicit_snapshot = bool(
+            self.mes_database
+            and self.mes_database.is_snapshot_question(question)
+        )
+
+        if highest_lot_question and not explicit_snapshot:
+            api_error: Exception | None = None
+            if self.mes_client is not None:
+                try:
+                    return "mes", await self.mes_client.get_lots_with_highest_error()
+                except Exception as exc:
+                    api_error = exc
+                    logger.warning(
+                        "MES API failed; trying local snapshot fallback: %s",
+                        exc,
+                    )
+
+            snapshot_result = await self._query_mes_database(
+                question,
+                allow_highest_lot=True,
+            )
+            if snapshot_result is not None:
+                return "mes_database", snapshot_result
+            if api_error is not None:
+                raise api_error
+            raise RuntimeError("MES API và MES snapshot chưa được cấu hình.")
+
+        snapshot_result = await self._query_mes_database(
+            question,
+            allow_highest_lot=explicit_snapshot,
+        )
+        if snapshot_result is not None:
+            return "mes_database", snapshot_result
+        return None, None
+
+    async def _query_mes_database(
+        self,
+        question: str,
+        *,
+        allow_highest_lot: bool,
+    ) -> MesDatabaseResult | None:
+        if self.mes_database is None or not self.mes_database.available:
+            return None
+        try:
+            result = await asyncio.to_thread(
+                self.mes_database.query_question,
+                question,
+                allow_highest_lot=allow_highest_lot,
+            )
+            if result is not None:
+                logger.info("Routing MES question to snapshot intent=%s", result.intent)
+            return result
+        except MesDatabaseError as exc:
+            logger.warning("MES snapshot query failed: %s", exc)
+            return None
+
+    async def _generate_mes_database_answer(
+        self,
+        question: str,
+        result: MesDatabaseResult,
+        model: str,
+        mode: str,
+    ) -> tuple[str, str]:
+        routed_model = self._resolve_model(model, mode=mode)
+        try:
+            response = await self.openai_client.chat.completions.create(
+                model=routed_model,
+                messages=self._mes_database_messages(question, result),
+                temperature=0.1,
+                max_tokens=600,
+                **self._provider_options(routed_model),
+            )
+            candidate = response.choices[0].message.content or ""
+            answer = (
+                candidate
+                if self._mes_database_answer_has_required_terms(candidate, result)
+                else result.fallback_answer
+            )
+        except Exception as exc:
+            logger.warning("LLM MES snapshot answer generation failed: %s", exc)
+            answer = result.fallback_answer
+        return answer, routed_model
+
+    @staticmethod
+    def _mes_database_messages(
+        question: str,
+        result: MesDatabaseResult,
+    ) -> list[dict[str, str]]:
+        payload = json.dumps(
+            result.prompt_payload(),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        return [
+            {"role": "system", "content": MES_DATABASE_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"Câu hỏi: {question}\n\n"
+                    f"Dữ liệu MES snapshot:\n{payload}\n\n"
+                    f"Câu trả lời kiểm chứng để tham khảo: {result.fallback_answer}\n"
+                    "Hãy diễn đạt tự nhiên, không nhắc tên field nội bộ."
+                ),
+            },
+        ]
+
+    @staticmethod
+    def _mes_database_answer_has_required_terms(
+        answer: str,
+        result: MesDatabaseResult,
+    ) -> bool:
+        if not answer.strip():
+            return False
+        forbidden_fields = (
+            "total_error_qty",
+            "error_record_count",
+            "distinct_error_count",
+            "unmapped_error_record_count",
+            "lot_count",
+            "product_id",
+            "lot_id",
+            "error_id",
+            "process_id",
+        )
+        if any(field in answer.lower() for field in forbidden_fields):
+            return False
+        normalized_answer = answer.replace(".", "").replace(",", "")
+        return all(
+            not term
+            or term in answer
+            or term.replace(".", "").replace(",", "") in normalized_answer
+            for term in result.required_terms
+        )
 
     @staticmethod
     def _is_highest_lot_error_question(question: str) -> bool:

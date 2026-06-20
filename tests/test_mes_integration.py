@@ -4,7 +4,73 @@ import httpx
 import pytest
 
 from src.integrations.mes_client import MesApiError, MesClient, MesLotError
+from src.integrations.mes_database import MesDatabaseResult
 from src.rag.rag_pipeline import RAGPipeline
+
+
+class FakeEmbedder:
+    pass
+
+
+class FakeStore:
+    pass
+
+
+class FakeMesDatabase:
+    available = True
+
+    def __init__(self):
+        self.calls = []
+
+    def is_snapshot_question(self, question):
+        return "database" in question.lower() or "snapshot" in question.lower()
+
+    def query_question(self, question, *, allow_highest_lot=False):
+        self.calls.append((question, allow_highest_lot))
+        if "Lot 000432-01-000" in question:
+            return MesDatabaseResult(
+                intent="lot_details",
+                rows=[{"lot_id": "000432-01-000", "product_id": "3736-0008"}],
+                imported_at="2026-06-20T03:52:08+00:00",
+                fallback_answer="Lot 000432-01-000 thuộc mã hàng 3736-0008.",
+                required_terms=("000432-01-000", "3736-0008"),
+            )
+        if allow_highest_lot:
+            return MesDatabaseResult(
+                intent="highest_error_lot",
+                rows=[
+                    {
+                        "lot_id": "SNAPSHOT-LOT",
+                        "product_id": "SNAPSHOT-PRODUCT",
+                        "total_error_qty": 52300,
+                    }
+                ],
+                imported_at="2026-06-20T03:52:08+00:00",
+                fallback_answer="Snapshot Lot có 52.300 lỗi.",
+                required_terms=("SNAPSHOT-LOT", "SNAPSHOT-PRODUCT", "52300"),
+            )
+        return None
+
+
+class FakeMesClient:
+    def __init__(self, error=None):
+        self.error = error
+        self.calls = 0
+
+    async def get_lots_with_highest_error(self):
+        self.calls += 1
+        if self.error:
+            raise self.error
+        return [MesLotError("LIVE-LOT", "LIVE-PRODUCT", 15920)]
+
+
+def make_pipeline(mes_client, mes_database):
+    return RAGPipeline(
+        embedder=FakeEmbedder(),
+        vector_store=FakeStore(),
+        mes_client=mes_client,
+        mes_database=mes_database,
+    )
 
 
 def test_mes_client_sends_bearer_payload_and_returns_all_highest_lots():
@@ -129,3 +195,97 @@ def test_mes_answer_validation_rejects_missing_product_id():
         "Lot 000432-01-000 có 15.920 lỗi.",
         lots,
     )
+
+
+def test_lot_detail_question_routes_to_snapshot_without_calling_live_api():
+    mes_client = FakeMesClient()
+    mes_database = FakeMesDatabase()
+    pipeline = make_pipeline(mes_client, mes_database)
+
+    source, result = asyncio.run(
+        pipeline._get_mes_route("Lot 000432-01-000 sản xuất mã hàng nào?", "mes")
+    )
+
+    assert source == "mes_database"
+    assert result.intent == "lot_details"
+    assert mes_client.calls == 0
+
+
+def test_highest_lot_question_prefers_live_api():
+    mes_client = FakeMesClient()
+    mes_database = FakeMesDatabase()
+    pipeline = make_pipeline(mes_client, mes_database)
+
+    source, result = asyncio.run(
+        pipeline._get_mes_route("Lot nào có số lượng lỗi nhiều nhất?", "mes")
+    )
+
+    assert source == "mes"
+    assert result[0].lot_id == "LIVE-LOT"
+    assert mes_client.calls == 1
+    assert mes_database.calls == []
+
+
+def test_explicit_snapshot_question_bypasses_live_api():
+    mes_client = FakeMesClient()
+    mes_database = FakeMesDatabase()
+    pipeline = make_pipeline(mes_client, mes_database)
+
+    source, result = asyncio.run(
+        pipeline._get_mes_route(
+            "Theo database, Lot nào có số lượng lỗi nhiều nhất?",
+            "mes",
+        )
+    )
+
+    assert source == "mes_database"
+    assert result.intent == "highest_error_lot"
+    assert mes_client.calls == 0
+
+
+def test_snapshot_is_used_when_live_api_fails():
+    mes_client = FakeMesClient(MesApiError("offline"))
+    mes_database = FakeMesDatabase()
+    pipeline = make_pipeline(mes_client, mes_database)
+
+    source, result = asyncio.run(
+        pipeline._get_mes_route("Lot nào có số lượng lỗi nhiều nhất?", "mes")
+    )
+
+    assert source == "mes_database"
+    assert result.intent == "highest_error_lot"
+    assert mes_client.calls == 1
+
+
+def test_mes_database_answer_rejects_internal_field_names():
+    result = MesDatabaseResult(
+        intent="product_error_summary",
+        rows=[{"product_id": "3736-0008", "total_error_qty": 40727}],
+        imported_at="2026-06-20T03:52:08+00:00",
+        fallback_answer="Mã hàng 3736-0008 có tổng 40.727 lỗi.",
+        required_terms=("3736-0008", "40727"),
+    )
+
+    assert RAGPipeline._mes_database_answer_has_required_terms(
+        "Mã hàng 3736-0008 có tổng 40.727 lỗi.",
+        result,
+    )
+    assert not RAGPipeline._mes_database_answer_has_required_terms(
+        "Mã hàng 3736-0008 có 40.727 lỗi (total_error_qty).",
+        result,
+    )
+
+
+def test_mkac_mode_does_not_route_mes_questions():
+    mes_client = FakeMesClient()
+    mes_database = FakeMesDatabase()
+    pipeline = make_pipeline(mes_client, mes_database)
+
+    source, result = asyncio.run(
+        pipeline._get_mes_route("Lot nào có số lượng lỗi nhiều nhất?", "mkac")
+    )
+
+    assert source is None
+    assert result is None
+    assert mes_client.calls == 0
+    assert mes_database.calls == []

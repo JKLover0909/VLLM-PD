@@ -40,8 +40,13 @@ import "./styles.css";
 const QUICK_PROMPTS = {
   mkac: [
     "Meiko Automation có bao nhiêu phòng ban, gồm các phòng ban nào?",
-    "Mã Lot nào có số lượng lỗi nhiều nhất?",
+    "Quy định làm thêm giờ ở MKAC như thế nào?",
     "Các sản phẩm chính của MKAC là gì?",
+  ],
+  mes: [
+    "Mã Lot nào có số lượng lỗi nhiều nhất?",
+    "Lot 000432-01-000 có những lỗi gì?",
+    "Mã hàng 3736-0008 có tổng bao nhiêu lỗi?",
   ],
   research: [
     "Lập báo cáo nghiên cứu tổng hợp từ các tài liệu",
@@ -52,12 +57,20 @@ const QUICK_PROMPTS = {
 
 const MODE_OPTIONS = {
   mkac: {
-    label: "Hỏi đáp MKAC",
-    title: "Hỏi đáp về MKAC",
+    label: "Hành chính nhân sự",
+    shortLabel: "HCNS",
+    title: "Hỏi đáp hành chính nhân sự MKAC",
     icon: Database,
   },
+  mes: {
+    label: "Quản lý MES",
+    shortLabel: "MES",
+    title: "Quản lý MES",
+    icon: Activity,
+  },
   research: {
-    label: "Nghiên cứu",
+    label: "Nghiên cứu tài liệu",
+    shortLabel: "Nghiên cứu",
     title: "Nghiên cứu tài liệu",
     icon: FlaskConical,
   },
@@ -80,6 +93,7 @@ const WAITING_MESSAGES = [
 
 const SESSION_STORAGE_KEYS = {
   mkac: "vllm-pd-session-mkac",
+  mes: "vllm-pd-session-mes",
   research: "vllm-pd-session-research",
 };
 const LEGACY_SESSION_STORAGE_KEY = "vllm-pd-session";
@@ -237,9 +251,9 @@ function formatBytes(bytes) {
 }
 
 function defaultSessionTitle(workspaceMode) {
-  return workspaceMode === "research"
-    ? "Phiên nghiên cứu mới"
-    : "Hỏi đáp MKAC mới";
+  if (workspaceMode === "research") return "Phiên nghiên cứu mới";
+  if (workspaceMode === "mes") return "Phiên MES mới";
+  return "Hành chính nhân sự mới";
 }
 
 function sessionTitleFromQuestion(question) {
@@ -273,9 +287,10 @@ function persistSessionTitle(sessionId, title) {
 
 function App() {
   const [theme, setTheme] = useState(storedTheme);
-  const [sessionIds, setSessionIds] = useState({ mkac: "", research: "" });
+  const [sessionIds, setSessionIds] = useState({ mkac: "", mes: "", research: "" });
   const [sessionTitles, setSessionTitles] = useState({
     mkac: defaultSessionTitle("mkac"),
+    mes: defaultSessionTitle("mes"),
     research: defaultSessionTitle("research"),
   });
   const [files, setFiles] = useState([]);
@@ -283,6 +298,7 @@ function App() {
   const [uploadSummary, setUploadSummary] = useState(null);
   const [messagesByMode, setMessagesByMode] = useState({
     mkac: [],
+    mes: [],
     research: [],
   });
   const [models, setModels] = useState([]);
@@ -292,11 +308,17 @@ function App() {
     num_chunks: 0,
     files: [],
   });
+  const [mesStatus, setMesStatus] = useState({
+    available: false,
+    lots: 0,
+    error_events: 0,
+  });
   const [model, setModel] = useState("openai");
   const [mode, setMode] = useState("mkac");
   const [question, setQuestion] = useState("");
   const [sourcesByMode, setSourcesByMode] = useState({
     mkac: [],
+    mes: [],
     research: [],
   });
   const [health, setHealth] = useState("checking");
@@ -396,11 +418,12 @@ function App() {
           api("/models"),
           api("/knowledge/mkac/status"),
         ]);
-        await healthResponse.json();
+        const healthData = await healthResponse.json();
         const modelData = await modelResponse.json();
         const mkacData = await mkacResponse.json();
         setModels(modelData.models || []);
         setMkacStatus(mkacData);
+        setMesStatus(healthData.mes_database || {});
         setModel((current) => {
           const nextDefault = modelData.default || "openai";
           return current === "auto" || current === "grok" ? nextDefault : current;
@@ -410,6 +433,7 @@ function App() {
         const legacySession = localStorage.getItem(LEGACY_SESSION_STORAGE_KEY);
         const storedSessions = {
           mkac: localStorage.getItem(SESSION_STORAGE_KEYS.mkac),
+          mes: localStorage.getItem(SESSION_STORAGE_KEYS.mes),
           research:
             localStorage.getItem(SESSION_STORAGE_KEYS.research) || legacySession,
         };
@@ -442,6 +466,8 @@ function App() {
         setSessionTitles({
           mkac:
             savedTitles[resolvedSessions.mkac] || defaultSessionTitle("mkac"),
+          mes:
+            savedTitles[resolvedSessions.mes] || defaultSessionTitle("mes"),
           research:
             savedTitles[resolvedSessions.research] ||
             defaultSessionTitle("research"),
@@ -732,7 +758,12 @@ function App() {
         content: "",
         model: selectedModel?.name || model,
         mode: requestMode,
-        answerScope: requestMode === "mkac" ? "mkac" : "research",
+        answerScope:
+          requestMode === "mkac"
+            ? "mkac"
+            : requestMode === "mes"
+              ? "mes_database"
+              : "research",
         sources: [],
       },
     ]);
@@ -889,7 +920,7 @@ function App() {
   }
 
   return (
-    <div className={`app-shell ${mode === "mkac" ? "mkac-layout" : ""}`}>
+    <div className={`app-shell ${mode !== "research" ? "mkac-layout" : ""}`}>
       {mode === "research" && (
         <>
           <button
@@ -1093,7 +1124,11 @@ function App() {
                   ? employee?.name
                     ? employee.greeting || `Xin chào, ${employee.name}`
                     : `${mkacStatus.num_documents} tài liệu nội bộ`
-                  : `${files.length} tài liệu trong phiên`}
+                  : mode === "mes"
+                    ? mesStatus.available
+                      ? `${mesStatus.lots || 0} Lot · ${mesStatus.error_events || 0} bản ghi lỗi`
+                      : "MES snapshot chưa sẵn sàng"
+                    : `${files.length} tài liệu trong phiên`}
               </span>
             </div>
           </div>
@@ -1115,15 +1150,17 @@ function App() {
                     aria-selected={mode === key}
                     aria-controls={`${key}-conversation`}
                     tabIndex={mode === key ? 0 : -1}
+                    title={option.title}
                   >
                     <Icon size={17} />
-                    {option.label}
+                    <span className="mode-label-full">{option.label}</span>
+                    <span className="mode-label-short">{option.shortLabel}</span>
                   </button>
                 );
               })}
             </div>
 
-            {mode === "mkac" ? (
+            {mode !== "research" ? (
               <div
                 ref={modelSelectRef}
                 className={`model-select ${MODEL_ACCENTS[model] || ""}`}
@@ -1289,10 +1326,12 @@ function App() {
                     </h1>
                     <p>
                       {mode === "mkac"
-                        ? "Bạn có thể tra cứu các quy định và thông tin nội bộ MKAC."
-                        : files.length > 0
-                          ? "Sẵn sàng nghiên cứu tài liệu đã index trong phiên này."
-                          : "Tải tài liệu lên để bắt đầu nghiên cứu."}
+                        ? "Tra cứu quy định hành chính, thông tin nội bộ và nhân sự MKAC."
+                        : mode === "mes"
+                          ? "Tra cứu Lot, mã hàng, mã lỗi và thống kê sản xuất từ MES."
+                          : files.length > 0
+                            ? "Sẵn sàng nghiên cứu tài liệu đã index trong phiên này."
+                            : "Tải tài liệu lên để bắt đầu nghiên cứu."}
                     </p>
                     {mode === "research" && files.length === 0 && (
                       <button
@@ -1324,9 +1363,19 @@ function App() {
                     <div>
                       <Layers3 size={16} />
                       <strong>
-                        {mode === "mkac" ? mkacStatus.num_documents : files.length}
+                        {mode === "mkac"
+                          ? mkacStatus.num_documents
+                          : mode === "mes"
+                            ? mesStatus.lots || 0
+                            : files.length}
                       </strong>
-                      <span>{mode === "mkac" ? "Tài liệu MKAC" : "Tài liệu"}</span>
+                      <span>
+                        {mode === "mkac"
+                          ? "Tài liệu MKAC"
+                          : mode === "mes"
+                            ? "Lot MES"
+                            : "Tài liệu"}
+                      </span>
                     </div>
                     <div>
                       <Bot size={16} />
@@ -1364,6 +1413,8 @@ function App() {
                                   ? "Tìm kiếm web"
                                 : message.answerScope === "mes"
                                   ? "Dữ liệu MES"
+                                : message.answerScope === "mes_database"
+                                  ? "MES snapshot"
                                 : message.mode === "research"
                                   ? "Nghiên cứu"
                                   : "Nguồn MKAC"}
@@ -1398,6 +1449,8 @@ function App() {
                                     ? "Tổng hợp từ nguồn web"
                                     : message.answerScope === "mes"
                                       ? "Dựa trên dữ liệu MES trực tiếp"
+                                    : message.answerScope === "mes_database"
+                                      ? "Dựa trên MES snapshot cục bộ"
                                     : message.answerScope === "research"
                                       ? "Dựa trên tài liệu nghiên cứu"
                                       : message.answerScope === "mkac"
@@ -1493,14 +1546,18 @@ function App() {
                   aria-label={
                     mode === "research"
                       ? "Câu hỏi nghiên cứu"
-                      : "Câu hỏi về MKAC"
+                      : mode === "mes"
+                        ? "Câu hỏi về MES"
+                        : "Câu hỏi hành chính nhân sự MKAC"
                   }
                   placeholder={
                     mode === "research"
                       ? researchReady
                         ? "Nhập chủ đề nghiên cứu..."
                         : "Hãy tải tài liệu lên trước khi đặt câu hỏi..."
-                      : "Đặt câu hỏi về MKAC..."
+                      : mode === "mes"
+                        ? "Hỏi về Lot, mã hàng hoặc lỗi sản xuất..."
+                        : "Hỏi về hành chính, quy định hoặc nhân sự MKAC..."
                   }
                   disabled={busy || !researchReady}
                 />

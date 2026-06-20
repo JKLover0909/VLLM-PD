@@ -173,6 +173,12 @@ Giới hạn hiện tại:
 
 ## 9. Đưa dữ liệu vào hệ thống hỏi đáp
 
+Trạng thái hiện tại: phương án dưới đây đã được triển khai trong
+`src/integrations/mes_database.py` và tích hợp vào `RAGPipeline`. Frontend nhận
+`answer_scope=mes_database` và hiển thị nhãn `MES snapshot`. Router MES chỉ hoạt
+động trong mode `mes`; mode `mkac` được dành riêng cho hành chính, nhân sự và
+tài liệu nội bộ MKAC.
+
 LLM không tự nhìn thấy SQLite. Backend phải truy vấn database rồi chỉ đưa kết
 quả có cấu trúc vào prompt:
 
@@ -210,7 +216,7 @@ Kết quả gửi cho model nên có metadata dạng:
 }
 ```
 
-### Intent nên hỗ trợ trước
+### Intent đang hỗ trợ
 
 | Intent | Nguồn truy vấn |
 |---|---|
@@ -220,6 +226,7 @@ Kết quả gửi cho model nên có metadata dạng:
 | Tên của mã lỗi | `error_catalog` canonical |
 | Tổng lỗi theo sản phẩm | `v_product_error_summary` |
 | Lỗi phổ biến của sản phẩm | `v_error_details` |
+| Các Lot có một mã lỗi | `error_events` + `lots` |
 
 Mỗi intent nên ánh xạ đến SQL tham số hóa cố định. Không nối nội dung câu hỏi
 trực tiếp vào SQL.
