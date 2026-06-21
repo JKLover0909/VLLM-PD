@@ -318,7 +318,7 @@ class MesSqlAgent:
                     "và số liệu, dùng dấu chấm phân cách hàng nghìn. Không nhắc "
                     "SQL, JSON hoặc tên field kỹ thuật. Chỉ trả về câu trả lời "
                     "thuần, không bọc trong JSON. Nói rõ là MES snapshot. "
-                    "Tên lỗi rỗng phải nói 'chưa mapping tên'. Không suy đoán."
+                    "Tên lỗi rỗng phải nói '*Lỗi chưa rõ tên*'. Không suy đoán."
                 ),
             },
             {
@@ -357,7 +357,7 @@ class MesSqlAgent:
                 error_id = str(row.get("error_id") or "chưa rõ")
                 error_name = row.get("error_name")
                 error_label = (
-                    f"{error_id} - {error_name or 'chưa mapping tên'}"
+                    f"{error_id} - {error_name or '*Lỗi chưa rõ tên*'}"
                 )
                 items.append(
                     f"{error_label}: "

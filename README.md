@@ -1,6 +1,6 @@
-# VLLM-PD - Commit đầu tiên: Hệ thống hỏi đáp tài liệu và Coding Agent
+# Meibook - Commit đầu tiên: Hệ thống hỏi đáp tài liệu và Coding Agent
 
-VLLM-PD là hệ thống hỏi đáp tài liệu, nghiên cứu tài liệu và thử nghiệm Coding
+Meibook là hệ thống hỏi đáp tài liệu, nghiên cứu tài liệu và thử nghiệm Coding
 Agent chạy trên Máy 2. Hệ thống chính phục vụ web React, API FastAPI, Qdrant
 vector database và LiteLLM router trong cùng một repository.
 
@@ -96,7 +96,7 @@ trường. Thư mục `docmind/` vẫn là demo riêng.
 Từ root repository:
 
 ```bash
-cd /home/jkl0909/Code/llm/VLLM-PD
+cd /home/jkl0909/Code/llm/Meibook
 
 conda create -n docmind python=3.10 -y
 conda activate docmind
@@ -110,7 +110,7 @@ conda install -n docmind -c conda-forge nodejs=20 -y
 Build frontend:
 
 ```bash
-cd /home/jkl0909/Code/llm/VLLM-PD/frontend
+cd /home/jkl0909/Code/llm/Meibook/frontend
 npm install
 npm run build
 ```
@@ -124,7 +124,7 @@ trên thanh công cụ dùng để chuyển chế độ; lựa chọn được l
 Tạo file `.env`:
 
 ```bash
-cd /home/jkl0909/Code/llm/VLLM-PD
+cd /home/jkl0909/Code/llm/Meibook
 cp .env.example .env
 ```
 
@@ -174,7 +174,7 @@ MKAC_INDEX_EMBEDDING_DEVICE=cpu
 
 AGENT_API_KEY=replace_with_a_long_random_secret
 WORKSPACE_DIR=/home/jkl0909/Code/llm
-AGENT_REPOSITORY_DIR=/home/jkl0909/Code/llm/VLLM-PD
+AGENT_REPOSITORY_DIR=/home/jkl0909/Code/llm/Meibook
 ```
 
 Không commit `.env`. File này có thể chứa API key thật.
@@ -184,7 +184,7 @@ Không commit `.env`. File này có thể chứa API key thật.
 ### 1. Khởi động Qdrant và LiteLLM
 
 ```bash
-cd /home/jkl0909/Code/llm/VLLM-PD
+cd /home/jkl0909/Code/llm/Meibook
 docker compose up -d
 docker compose ps
 ```
@@ -201,7 +201,7 @@ curl -H "Authorization: Bearer $KEY" http://localhost:4000/v1/models
 ### 2. Build React
 
 ```bash
-cd /home/jkl0909/Code/llm/VLLM-PD/frontend
+cd /home/jkl0909/Code/llm/Meibook/frontend
 npm install
 npm run build
 ```
@@ -213,7 +213,7 @@ FastAPI chỉ mount web khi `frontend/dist` tồn tại.
 Chạy foreground để debug:
 
 ```bash
-cd /home/jkl0909/Code/llm/VLLM-PD
+cd /home/jkl0909/Code/llm/Meibook
 conda activate docmind
 uvicorn src.api.main:app --host 0.0.0.0 --port 8001
 ```
@@ -221,9 +221,9 @@ uvicorn src.api.main:app --host 0.0.0.0 --port 8001
 Hoặc dùng service đã cấu hình trên Máy 2:
 
 ```bash
-systemctl --user status vllm-pd-api
-systemctl --user restart vllm-pd-api
-journalctl --user -u vllm-pd-api -n 120 --no-pager
+systemctl --user status meibook-api
+systemctl --user restart meibook-api
+journalctl --user -u meibook-api -n 120 --no-pager
 ```
 
 Máy hiện tại đã bật `loginctl enable-linger`, nên user service có thể chạy sau
@@ -256,7 +256,7 @@ Mở:
 http://localhost:8001
 ```
 
-Hoặc public URL được `./scripts/vllm-pd.sh start` in ra terminal.
+Hoặc public URL được `./scripts/meibook.sh start` in ra terminal.
 
 Người dùng có thể:
 
@@ -389,7 +389,7 @@ dùng Vision cho file ảnh upload.
 ## Kiểm thử nhanh
 
 ```bash
-cd /home/jkl0909/Code/llm/VLLM-PD
+cd /home/jkl0909/Code/llm/Meibook
 
 # Kiểm tra cú pháp Python.
 conda run -n docmind python -m py_compile \
@@ -438,7 +438,7 @@ Build lại frontend và restart FastAPI:
 ```bash
 cd frontend
 npm run build
-systemctl --user restart vllm-pd-api
+systemctl --user restart meibook-api
 ```
 
 ### FastAPI khởi động chậm
@@ -446,13 +446,13 @@ systemctl --user restart vllm-pd-api
 Lần đầu có thể chậm vì BGE-M3 và Docling/OCR model được nạp. Xem log:
 
 ```bash
-journalctl --user -u vllm-pd-api -n 160 --no-pager
+journalctl --user -u meibook-api -n 160 --no-pager
 ```
 
 ### Ngrok URL đổi
 
 Ngrok Free có thể cấp URL mới sau mỗi lần restart. Chạy
-`./scripts/vllm-pd.sh restart`; script sẽ tự lấy URL hiện tại từ ngrok API và
+`./scripts/meibook.sh restart`; script sẽ tự lấy URL hiện tại từ ngrok API và
 in dòng `Public web: ...` ra terminal. Không cần lưu URL tạm thời trong `.env`.
 
 ## Ghi chú về `docmind/`

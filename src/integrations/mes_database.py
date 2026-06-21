@@ -52,6 +52,9 @@ class MesDatabase:
         "du lieu cuc bo",
         "du lieu da luu",
     )
+    # Điều kiện loại Lot/sản phẩm test ra khỏi các truy vấn thống kê mặc định.
+    # Lot test có product_id bắt đầu bằng "Test_" (không phân biệt hoa thường).
+    EXCLUDE_TEST_FILTER = "LOWER(product_id) NOT LIKE 'test\\_%' ESCAPE '\\'"
 
     def __init__(self, db_path: Path | str):
         self.db_path = Path(db_path)
@@ -181,23 +184,39 @@ class MesDatabase:
 
     def _highest_error_lots(self) -> MesDatabaseResult:
         rows = self._fetch_all(
-            """
+            f"""
             SELECT lot_id, product_id, total_error_qty, error_record_count,
                    distinct_error_count, unmapped_error_record_count
             FROM v_lot_error_summary
-            WHERE total_error_qty = (
+            WHERE {self.EXCLUDE_TEST_FILTER}
+              AND total_error_qty = (
                 SELECT MAX(total_error_qty) FROM v_lot_error_summary
+                WHERE {self.EXCLUDE_TEST_FILTER}
             )
             ORDER BY lot_id
             """
         )
-        answer = self._format_ranked_lots(rows)
+        # Lấy thêm top lỗi chi tiết của mỗi Lot để model có thể trình bày phong phú hơn
+        enriched_rows: list[dict[str, Any]] = []
+        for row in rows:
+            top_errors = self._fetch_all(
+                """
+                SELECT error_id, error_name, total_error_qty AS error_qty
+                FROM v_lot_error_breakdown
+                WHERE lot_id = ?
+                ORDER BY total_error_qty DESC, error_id
+                LIMIT 3
+                """,
+                (row["lot_id"],),
+            )
+            enriched_rows.append({**row, "top_errors": top_errors})
+        answer = self._format_ranked_lots_with_errors(enriched_rows)
         terms = tuple(
             str(value)
             for row in rows
             for value in (row["lot_id"], row["product_id"], row["total_error_qty"])
         )
-        return self._result("highest_error_lot", rows, answer, terms)
+        return self._result("highest_error_lot", enriched_rows, answer, terms)
 
     def _lot_details(self, lot_id: str) -> MesDatabaseResult:
         rows = self._fetch_all(
@@ -254,7 +273,7 @@ class MesDatabase:
                 (lot_id,),
             )
         descriptions = "; ".join(
-            f"{row['error_id']} ({row['error_name'] or 'chưa mapping tên'}): "
+            f"{row['error_id']} ({row['error_name'] or '*Lỗi chưa rõ tên*'}): "
             f"{self._number(row['total_error_qty'])}"
             for row in rows
         )
@@ -288,7 +307,7 @@ class MesDatabase:
             )
         names = []
         for row in rows:
-            description = row["error_name"] or "chưa mapping tên"
+            description = row["error_name"] or "*Lỗi chưa rõ tên*"
             names.append(f"{description} tại công đoạn {row['process_id']}")
         answer = f"Trong MES snapshot, mã lỗi {error_id} được ghi nhận là " + "; ".join(names) + "."
         terms = (error_id, str(rows[0]["error_name"] or ""))
@@ -348,7 +367,7 @@ class MesDatabase:
                 (product_id,),
             )
         descriptions = "; ".join(
-            f"{row['error_id']} ({row['error_name'] or 'chưa mapping tên'}): "
+            f"{row['error_id']} ({row['error_name'] or '*Lỗi chưa rõ tên*'}): "
             f"{self._number(row['total_error_qty'])}"
             for row in rows
         )
@@ -362,11 +381,13 @@ class MesDatabase:
 
     def _highest_error_products(self) -> MesDatabaseResult:
         rows = self._fetch_all(
-            """
+            f"""
             SELECT product_id, lot_count, error_record_count, total_error_qty
             FROM v_product_error_summary
-            WHERE total_error_qty = (
+            WHERE {self.EXCLUDE_TEST_FILTER}
+              AND total_error_qty = (
                 SELECT MAX(total_error_qty) FROM v_product_error_summary
+                WHERE {self.EXCLUDE_TEST_FILTER}
             )
             ORDER BY product_id
             """
@@ -484,6 +505,28 @@ class MesDatabase:
             for row in rows
         )
         return f"Theo MES snapshot, Lot có tổng lỗi cao nhất là: {descriptions}."
+
+    @staticmethod
+    def _format_ranked_lots_with_errors(rows: list[dict[str, Any]]) -> str:
+        """Trả về mô tả đầy đủ: tổng lỗi + top 3 lỗi chi tiết của từng Lot."""
+        if not rows:
+            return "MES snapshot chưa có dữ liệu lỗi theo Lot."
+        parts: list[str] = []
+        for row in rows:
+            base = (
+                f"Lot {row['lot_id']}, mã hàng {row['product_id']}, "
+                f"có tổng {MesDatabase._number(row['total_error_qty'])} lỗi"
+            )
+            top_errors: list[dict[str, Any]] = row.get("top_errors") or []
+            if top_errors:
+                error_lines = "; ".join(
+                    f"{e['error_id']} - {e['error_name'] or '*Lỗi chưa rõ tên*'}: "
+                    f"{MesDatabase._number(e['error_qty'])}"
+                    for e in top_errors
+                )
+                base += f". Trong đó các lỗi có số lượng lớn nhất: {error_lines}"
+            parts.append(base)
+        return "Theo MES snapshot, Lot có tổng lỗi cao nhất là: " + "; ".join(parts) + "."
 
     @staticmethod
     def _number(value: Any) -> str:

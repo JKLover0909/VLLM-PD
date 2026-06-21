@@ -3,11 +3,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: vllm-pd-web:latest
-    container_name: vllm-pd-web
+    image: meibook-web:latest
+    container_name: meibook-web
     gpus: all
     env_file:
-      - ${VLLM_PD_ENV_FILE:-.env.docker}
+      - ${MEIBOOK_ENV_FILE:-.env.docker}
     environment:
       ENABLE_AGENT: "false"
       QDRANT_HOST: qdrant
@@ -48,7 +48,7 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
-    container_name: vllm-pd-qdrant
+    container_name: meibook-qdrant
     ports:
       - "127.0.0.1:${QDRANT_PORT:-6333}:6333"
     volumes:
@@ -59,10 +59,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.litellm
-    image: vllm-pd-litellm:latest
-    container_name: vllm-pd-litellm
+    image: meibook-litellm:latest
+    container_name: meibook-litellm
     env_file:
-      - ${VLLM_PD_ENV_FILE:-.env.docker}
+      - ${MEIBOOK_ENV_FILE:-.env.docker}
     environment:
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
     command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]

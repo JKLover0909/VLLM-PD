@@ -1,6 +1,6 @@
-# Kiến trúc hệ thống VLLM-PD
+# Kiến trúc hệ thống Meibook
 
-Tài liệu này mô tả kiến trúc của luồng chạy chính trong repository `VLLM-PD`, dựa trên mã nguồn và cấu hình được đối chiếu ngày **05/06/2026**.
+Tài liệu này mô tả kiến trúc của luồng chạy chính trong repository `Meibook`, dựa trên mã nguồn và cấu hình được đối chiếu ngày **05/06/2026**.
 
 Các phát biểu về cấu trúc phần mềm, endpoint, model logic và luồng dữ liệu được lấy trực tiếp từ mã nguồn. Trạng thái dịch vụ đang chạy, URL ngrok, số lượng MCP tool hoặc kết quả kiểm thử trên một máy cụ thể là thông tin vận hành theo thời điểm và cần được xác minh lại bằng các lệnh ở phần [Vận hành và kiểm tra](#18-vận-hành-và-kiểm-tra).
 
@@ -8,7 +8,7 @@ Các phát biểu về cấu trúc phần mềm, endpoint, model logic và luồ
 
 ## 1. Mục tiêu và phạm vi chức năng
 
-VLLM-PD cung cấp hai nhóm chức năng độc lập nhưng dùng chung API Gateway và LiteLLM:
+Meibook cung cấp hai nhóm chức năng độc lập nhưng dùng chung API Gateway và LiteLLM:
 
 ### 1.1. Không gian hỏi đáp và nghiên cứu tài liệu
 
@@ -50,7 +50,7 @@ Hệ thống hiện tuân theo các nguyên tắc chính sau:
 ## 3. Bố cục repository
 
 ```text
-VLLM-PD/
+Meibook/
 ├── src/
 │   ├── api/
 │   │   └── main.py              # FastAPI, REST, SSE, static frontend
@@ -253,7 +253,7 @@ DELETE /sessions/{id}
   └─ xóa uploads/{session_id}
 ```
 
-Frontend lưu UUID tại `localStorage` với khóa `vllm-pd-session`. Nếu session mới chưa có tài liệu, `GET /sessions/{id}` trả `404`; frontend coi đây là phiên rỗng hợp lệ và tiếp tục giữ UUID.
+Frontend lưu UUID tại `localStorage` với khóa `meibook-session`. Nếu session mới chưa có tài liệu, `GET /sessions/{id}` trả `404`; frontend coi đây là phiên rỗng hợp lệ và tiếp tục giữ UUID.
 
 Không có bảng session riêng, thời hạn hết hạn hoặc tác vụ tự động dọn session. Dữ liệu chỉ bị xóa khi client gọi endpoint xóa hoặc quản trị viên dọn trực tiếp.
 
@@ -667,7 +667,7 @@ Chức năng chính:
 - Panel nguồn dùng progressive disclosure: mặc định thu gọn và hiển thị số
   nguồn của câu trả lời mới nhất trên nút mở panel.
 - Hỗ trợ giao diện `Sáng`, `Tối` và `Theo hệ thống`; lựa chọn được lưu bằng
-  khóa `vllm-pd-theme` trong `localStorage`. Chế độ hệ thống theo dõi
+  khóa `meibook-theme` trong `localStorage`. Chế độ hệ thống theo dõi
   `prefers-color-scheme` và cập nhật ngay khi thiết lập hệ điều hành thay đổi.
 - Script nhỏ trong `frontend/index.html` áp dụng theme trước khi React mount để
   tránh nháy nền sáng khi mở dark mode.
@@ -795,18 +795,18 @@ uvicorn src.api.main:app --host 0.0.0.0 --port 8001
 
 ### 18.4. User service trên Máy 2
 
-Nếu máy đã cài service `vllm-pd-api`:
+Nếu máy đã cài service `meibook-api`:
 
 ```bash
-systemctl --user status vllm-pd-api
-systemctl --user restart vllm-pd-api
-journalctl --user -u vllm-pd-api -n 160 --no-pager
+systemctl --user status meibook-api
+systemctl --user restart meibook-api
+journalctl --user -u meibook-api -n 160 --no-pager
 ```
 
 Đường dẫn service từng được sử dụng:
 
 ```text
-~/.config/systemd/user/vllm-pd-api.service
+~/.config/systemd/user/meibook-api.service
 ```
 
 Repository không chứa unit file này, vì vậy cần xác minh nội dung thực tế trên Máy 2.
@@ -927,7 +927,7 @@ Kiểm tra `frontend/dist`, build lại và restart API:
 ```bash
 cd frontend
 npm run build
-systemctl --user restart vllm-pd-api
+systemctl --user restart meibook-api
 ```
 
 ### 19.6. Session vừa tạo trả 404
@@ -988,11 +988,11 @@ Các hướng ưu tiên theo tác động:
 - FAISS không phải vector store của hệ thống chính.
 - Port `8000` không phải port API mặc định.
 - Máy 3 không cần truy cập trực tiếp LiteLLM.
-- Repository hiện không chạy vLLM server làm backend suy luận chính; tên dự án `VLLM-PD` không đồng nghĩa runtime hiện tại đang dùng vLLM.
+- Repository hiện không chạy vLLM server làm backend suy luận chính; tên dự án `Meibook` không đồng nghĩa runtime hiện tại đang dùng vLLM.
 
 ## 22. Tóm tắt
 
-VLLM-PD là một hệ thống RAG và Coding Agent triển khai tập trung trên Máy 2:
+Meibook là một hệ thống RAG và Coding Agent triển khai tập trung trên Máy 2:
 
 - FastAPI là cổng vào duy nhất cho web và API.
 - React cung cấp giao diện hỏi đáp/nghiên cứu.

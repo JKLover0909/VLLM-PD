@@ -94,14 +94,18 @@ Quy tắc:
 3. Dùng dấu chấm phân cách hàng nghìn khi trình bày số lượng.
 4. total_error_qty là tổng số lượng lỗi; error_record_count là số lần ghi nhận,
    hai đại lượng này không được đánh đồng.
-5. Tên lỗi rỗng nghĩa là chưa mapping được; không được tự đặt tên lỗi.
+5. Tên lỗi rỗng nghĩa là *Lỗi chưa rõ tên*; không được tự đặt tên lỗi.
 6. Nói rõ đây là dữ liệu MES snapshot khi kết luận có thể bị hiểu là dữ liệu
    thời gian thực.
 7. Dữ liệu test không bị loại trừ, đúng như trường filters trong JSON.
 8. Tuyệt đối không để lộ tên field JSON/SQL như total_error_qty,
-   error_record_count, lot_count hoặc các tên kỹ thuật tương tự.
-9. Chỉ trả lời đúng thông tin người dùng hỏi; không liệt kê thêm chỉ số không
-   cần thiết."""
+   error_record_count, lot_count, top_errors, error_qty hoặc các tên kỹ thuật tương tự.
+9. Nếu JSON chứa danh sách lỗi chi tiết (top_errors) của một Lot, hãy tự động trình bày thêm danh sách đó (nếu câu trả lời chính chưa liệt kê). Ví dụ:
+   trong đó 3 lỗi có số lượng lỗi lớn nhất là:
+   1. B114D - Thừa đồng: 4.293
+   2. 0002 - *Lỗi chưa rõ tên*: 2.000
+10. Chỉ trả lời đúng thông tin người dùng hỏi; không liệt kê thêm chỉ số không
+    cần thiết."""
 
 MES_UNSUPPORTED_ANSWER = (
     "Chưa nhận diện được truy vấn MES này. Bạn có thể hỏi về thông tin một Lot, "
@@ -802,7 +806,7 @@ class RAGPipeline:
             if error_name and str(error_name).strip():
                 if str(error_name).lower() not in normalized:
                     return False
-            elif "error_name" in row and "chưa mapping" not in normalized:
+            elif "error_name" in row and "chưa rõ tên" not in normalized:
                 return False
         return True
 

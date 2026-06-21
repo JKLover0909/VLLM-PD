@@ -1,6 +1,6 @@
 # Triển khai Docker web nội bộ
 
-Tài liệu này mô tả cách triển khai VLLM-PD lên một máy chủ khác trong mạng nội
+Tài liệu này mô tả cách triển khai Meibook lên một máy chủ khác trong mạng nội
 bộ công ty. Chế độ này chỉ chạy web hỏi đáp, RAG, Qdrant và LiteLLM. Không chạy
 ngrok và không bật Coding Agent.
 
@@ -50,8 +50,8 @@ scripts/docker-index-mkac.sh
 
 ```bash
 cd /home/<user>/Code/llm
-git clone <repo-url> VLLM-PD
-cd VLLM-PD
+git clone <repo-url> Meibook
+cd Meibook
 ```
 
 Nếu không dùng Git remote, copy repository sang máy mới và bảo đảm có các thư
@@ -126,7 +126,7 @@ EMBEDDING_DTYPE=float16
 
 Script sẽ:
 
-1. Build image `vllm-pd-web`.
+1. Build image `meibook-web`.
 2. Start `app`, `qdrant` và `litellm`.
 3. Kiểm tra `/health`.
 4. In URL local và URL LAN.
@@ -134,7 +134,7 @@ Script sẽ:
 Ví dụ:
 
 ```text
-VLLM-PD Docker web deployment is running.
+Meibook Docker web deployment is running.
 Local URL: http://localhost:8001
 LAN URL:   http://192.168.1.20:8001
 ```
@@ -163,13 +163,13 @@ Dùng khi muốn triển khai nhanh và dữ liệu nhân sự chưa đổi:
 
 ```bash
 mkdir -p data
-cp /path/to/old/VLLM-PD/data/employee_directory.sqlite data/
+cp /path/to/old/Meibook/data/employee_directory.sqlite data/
 ```
 
 Nên copy kèm summary nếu có:
 
 ```bash
-cp "/path/to/old/VLLM-PD/documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html" \
+cp "/path/to/old/Meibook/documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html" \
   "documents/MKAC/"
 ```
 
@@ -182,7 +182,7 @@ Dùng khi deploy sạch hoặc vừa cập nhật danh sách nhân sự. Cần c
 set -a
 source .env.docker
 set +a
-VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml run --rm \
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml run --rm \
   -e ENABLE_AGENT=false \
   app python scripts/import_employee_directory.py
 ```
@@ -212,7 +212,7 @@ Sau khi import, restart app để chắc chắn API đọc DB mới:
 set -a
 source .env.docker
 set +a
-VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
 ```
 
 Kiểm tra nhanh:
@@ -262,13 +262,13 @@ Nếu chỉ cập nhật file danh sách nhân sự, chạy theo thứ tự:
 set -a
 source .env.docker
 set +a
-VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml run --rm \
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml run --rm \
   -e ENABLE_AGENT=false \
   app python scripts/import_employee_directory.py
 
 ./scripts/docker-index-mkac.sh
 
-VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
 ```
 
 ## 6. Lệnh quản trị
@@ -279,7 +279,7 @@ Xem trạng thái:
 set -a
 source .env.docker
 set +a
-VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml ps
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml ps
 ```
 
 Xem log app:
@@ -288,7 +288,7 @@ Xem log app:
 set -a
 source .env.docker
 set +a
-VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml logs -f app
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml logs -f app
 ```
 
 Restart app:
@@ -297,7 +297,7 @@ Restart app:
 set -a
 source .env.docker
 set +a
-VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
 ```
 
 Dừng toàn bộ:
@@ -306,7 +306,7 @@ Dừng toàn bộ:
 set -a
 source .env.docker
 set +a
-VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml down
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml down
 ```
 
 ## 7. Kiểm tra sau triển khai
@@ -384,7 +384,7 @@ Nếu muốn deploy sạch, có thể không copy `qdrant_storage/` và chạy l
 set -a
 source .env.docker
 set +a
-VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml run --rm \
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml run --rm \
   -e ENABLE_AGENT=false \
   app python scripts/import_employee_directory.py
 
@@ -414,7 +414,7 @@ Lần đầu chạy có thể chậm vì container tải model embedding/OCR. Xe
 set -a
 source .env.docker
 set +a
-VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml logs -f app
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml logs -f app
 ```
 
 ### Không truy cập được từ máy khác
@@ -431,7 +431,7 @@ Kiểm tra container đã publish cổng chưa:
 set -a
 source .env.docker
 set +a
-VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml ps
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml ps
 ```
 
 Kiểm tra firewall của máy chủ và bảo đảm cổng `8001` được phép truy cập từ mạng
@@ -454,7 +454,7 @@ Sau khi sửa, restart LiteLLM:
 set -a
 source .env.docker
 set +a
-VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart litellm
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart litellm
 ```
 
 ### Đăng nhập mã nhân viên bị lỗi
@@ -477,11 +477,11 @@ Nếu `employees` bằng `0` hoặc file không tồn tại, chạy lại import
 set -a
 source .env.docker
 set +a
-VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml run --rm \
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml run --rm \
   -e ENABLE_AGENT=false \
   app python scripts/import_employee_directory.py
 
-VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
 ```
 
 ### Hỏi tên nhân viên hoặc phòng ban không đúng
@@ -522,14 +522,14 @@ set -a
 source .env.docker
 set +a
 
-VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml build --no-cache app
-VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml up -d app
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml build --no-cache app
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml up -d app
 ./scripts/docker-index-mkac.sh
 ```
 
 Kiểm tra nhanh trong container:
 
 ```bash
-VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml exec app \
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml exec app \
   python -c "import easyocr; print(easyocr.__version__)"
 ```

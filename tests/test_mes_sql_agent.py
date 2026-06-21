@@ -147,4 +147,4 @@ def test_fallback_answer_formats_top_error_breakdown():
     assert "Lot LOT-B" in answer
     assert "mã hàng PRODUCT-B" in answer
     assert "E1 - Lỗi một: 31.240" in answer
-    assert "E2 - chưa mapping tên: 7.800" in answer
+    assert "E2 - *Lỗi chưa rõ tên*: 7.800" in answer

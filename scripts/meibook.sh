@@ -20,11 +20,11 @@ NGROK_API_URL="${NGROK_API_URL:-http://localhost:4040/api/tunnels}"
 usage() {
   cat <<'EOF'
 Usage:
-  ./scripts/vllm-pd.sh start [--build]
-  ./scripts/vllm-pd.sh restart [--build]
-  ./scripts/vllm-pd.sh stop
-  ./scripts/vllm-pd.sh status
-  ./scripts/vllm-pd.sh logs
+  ./scripts/meibook.sh start [--build]
+  ./scripts/meibook.sh restart [--build]
+  ./scripts/meibook.sh stop
+  ./scripts/meibook.sh status
+  ./scripts/meibook.sh logs
 EOF
 }
 
@@ -82,8 +82,8 @@ start_system() {
 
   echo "Starting user services..."
   systemctl --user daemon-reload
-  systemctl --user enable --now vllm-pd-api.service
-  systemctl --user enable --now vllm-pd-ngrok.service
+  systemctl --user enable --now meibook-api.service
+  systemctl --user enable --now meibook-ngrok.service
 
   wait_for_url "FastAPI/Web" "http://localhost:${API_PORT}/health" 45
   wait_for_url "LiteLLM" "http://localhost:4000/health/liveliness" 20 || true
@@ -106,7 +106,7 @@ start_system() {
 
 stop_system() {
   echo "Stopping user services..."
-  systemctl --user stop vllm-pd-ngrok.service vllm-pd-api.service || true
+  systemctl --user stop meibook-ngrok.service meibook-api.service || true
 
   echo "Stopping Docker services..."
   docker compose stop
@@ -115,11 +115,11 @@ stop_system() {
 status_system() {
   docker compose ps
   echo
-  systemctl --user --no-pager --full status vllm-pd-api.service vllm-pd-ngrok.service || true
+  systemctl --user --no-pager --full status meibook-api.service meibook-ngrok.service || true
 }
 
 logs_system() {
-  journalctl --user -u vllm-pd-api.service -u vllm-pd-ngrok.service -n 160 --no-pager
+  journalctl --user -u meibook-api.service -u meibook-ngrok.service -n 160 --no-pager
 }
 
 case "$COMMAND" in

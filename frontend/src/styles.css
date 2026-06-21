@@ -1919,6 +1919,40 @@ summary:focus-visible {
   }
 }
 
+.suggestion-list {
+  padding-left: 1.25rem;
+  margin: 0;
+  list-style-type: disc;
+}
+
+.suggestion-list li {
+  margin-bottom: 0.5rem;
+}
+
+.suggestion-list button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #177169;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.suggestion-list button:hover {
+  color: #0d4a44;
+}
+
+html[data-theme="dark"] .suggestion-list button {
+  color: #78d9cf;
+}
+
+html[data-theme="dark"] .suggestion-list button:hover {
+  color: #91e6dc;
+}
+
 /* Dark theme */
 html[data-theme="dark"] {
   color: #e7ecf2;

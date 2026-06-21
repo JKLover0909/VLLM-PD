@@ -221,7 +221,7 @@ async def lifespan(app: FastAPI):
     global embedder, vector_store, mkac_vector_store, doc_parser, rag_pipeline
     global web_searcher
 
-    logger.info("🚀 Starting VLLM-PD API Gateway on Machine 2...")
+    logger.info("🚀 Starting Meibook API Gateway on Machine 2...")
     
     # Khởi tạo Vector DB trước
     vector_store = VectorStore(host=QDRANT_HOST, port=QDRANT_PORT)
@@ -247,7 +247,7 @@ async def lifespan(app: FastAPI):
         mes_database=mes_database,
     )
 
-    logger.info("✅ VLLM-PD API Gateway is fully operational.")
+    logger.info("✅ Meibook API Gateway is fully operational.")
     yield
     logger.info("Shutdown completed.")
 
@@ -256,7 +256,7 @@ async def lifespan(app: FastAPI):
 # FastAPI App
 # ──────────────────────────────────────────────
 app = FastAPI(
-    title="VLLM-PD API Gateway",
+    title="Meibook API Gateway",
     description="RAG & Agent Server cho Máy 2",
     version="1.0.0",
     lifespan=lifespan,
@@ -495,6 +495,45 @@ async def list_models():
                 "description": "Dành riêng cho chế độ nghiên cứu tài liệu và hình ảnh.",
                 "hidden_in_mkac": True,
             },
+        ],
+    }
+
+
+# Cache dữ liệu quick answers khi load lần đầu
+_quick_answers_cache: Optional[dict] = None
+QUICK_ANSWERS_PATH = Path(__file__).resolve().parents[2] / "config" / "quick_answers.json"
+
+
+def _load_quick_answers() -> dict:
+    """Đọc file config/quick_answers.json và cache kết quả."""
+    global _quick_answers_cache
+    if _quick_answers_cache is not None:
+        return _quick_answers_cache
+    try:
+        with QUICK_ANSWERS_PATH.open("r", encoding="utf-8") as f:
+            _quick_answers_cache = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logger.warning(f"Cannot load quick answers config: {e}")
+        _quick_answers_cache = {}
+    return _quick_answers_cache
+
+
+@app.get("/quick-answers")
+async def quick_answers(mode: str = "mkac"):
+    """Trả về danh sách câu hỏi gợi ý theo chế độ."""
+    data = _load_quick_answers()
+    items = data.get(mode, [])
+    return {
+        "mode": mode,
+        "short_answer_threshold": data.get("short_answer_threshold", 300),
+        "max_suggestions": data.get("max_suggestions", 3),
+        "suggestions": [
+            {
+                "question": item["question"],
+                "keywords": item.get("keywords", []),
+                "answer": item.get("answer", "")
+            }
+            for item in items
         ],
     }
 

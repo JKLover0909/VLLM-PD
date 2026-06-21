@@ -92,14 +92,14 @@ const WAITING_MESSAGES = [
 ];
 
 const SESSION_STORAGE_KEYS = {
-  mkac: "vllm-pd-session-mkac",
-  mes: "vllm-pd-session-mes",
-  research: "vllm-pd-session-research",
+  mkac: "meibook-session-mkac",
+  mes: "meibook-session-mes",
+  research: "meibook-session-research",
 };
-const LEGACY_SESSION_STORAGE_KEY = "vllm-pd-session";
-const SESSION_TITLE_STORAGE_KEY = "vllm-pd-session-titles";
-const THEME_STORAGE_KEY = "vllm-pd-theme";
-const EMPLOYEE_STORAGE_KEY = "vllm-pd-mkac-employee";
+const LEGACY_SESSION_STORAGE_KEY = "meibook-session";
+const SESSION_TITLE_STORAGE_KEY = "meibook-session-titles";
+const THEME_STORAGE_KEY = "meibook-theme";
+const EMPLOYEE_STORAGE_KEY = "meibook-mkac-employee";
 const THEME_OPTIONS = ["system", "light", "dark"];
 const THEME_META = {
   system: {
@@ -287,6 +287,7 @@ function persistSessionTitle(sessionId, title) {
 
 function App() {
   const [theme, setTheme] = useState(storedTheme);
+  const [quickAnswersConfig, setQuickAnswersConfig] = useState({ mkac: [], mes: [], threshold: 300, max: 3 });
   const [sessionIds, setSessionIds] = useState({ mkac: "", mes: "", research: "" });
   const [sessionTitles, setSessionTitles] = useState({
     mkac: defaultSessionTitle("mkac"),
@@ -366,7 +367,7 @@ function App() {
   const messages = messagesByMode[mode];
   const sources = sourcesByMode[mode];
   const researchReady = mode !== "research" || files.length > 0;
-  const mkacAuthorized = mode !== "mkac" || Boolean(employee?.id && employee?.name);
+  const mkacAuthorized = (mode !== "mkac" && mode !== "mes") || Boolean(employee?.id && employee?.name);
   const canAsk =
     Boolean(question.trim()) &&
     !busy &&
@@ -383,6 +384,71 @@ function App() {
   const latestSources = sources.length
     ? sources
     : latestAssistantMessage?.sources || [];
+
+  const getSuggestions = (text, currentMode, msgId) => {
+    const config = quickAnswersConfig;
+    if (!config || !config[currentMode] || config[currentMode].length === 0) return [];
+    if (text.length >= config.threshold) return [];
+    
+    const hash = msgId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const pool = [...config[currentMode]];
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = (hash + i) % (i + 1);
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    return pool.slice(0, config.max);
+  };
+
+  const handleQuickAnswerClick = (suggestion) => {
+    if (busy) return;
+    const userMsgId = createClientId();
+    const assistantMsgId = createClientId();
+    
+    setBusy(true);
+    setPendingAssistantId(assistantMsgId);
+    
+    setModeMessages(mode, (current) => [
+      ...current,
+      { id: userMsgId, role: "user", content: suggestion.question },
+      { 
+        id: assistantMsgId, 
+        role: "assistant", 
+        content: "",
+        model: selectedModel?.name || "Cache",
+        mode: mode,
+        answerScope: "quick_answer",
+        sources: []
+      }
+    ]);
+    
+    setTimeout(() => {
+      endRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+
+    const fullAnswer = suggestion.answer;
+    let i = 0;
+    
+    setTimeout(() => {
+      const interval = setInterval(() => {
+        const charsToAppend = fullAnswer.slice(i, i + 3);
+        i += 3;
+        
+        setModeMessages(mode, (current) =>
+          current.map((item) =>
+            item.id === assistantMsgId
+              ? { ...item, content: item.content + charsToAppend }
+              : item
+          )
+        );
+        
+        if (i >= fullAnswer.length) {
+          clearInterval(interval);
+          setPendingAssistantId("");
+          setBusy(false);
+        }
+      }, 25);
+    }, 300);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -413,14 +479,26 @@ function App() {
   useEffect(() => {
     async function bootstrap() {
       try {
-        const [healthResponse, modelResponse, mkacResponse] = await Promise.all([
+        const [healthResponse, modelResponse, mkacResponse, qaMkacRes, qaMesRes] = await Promise.all([
           api("/health"),
           api("/models"),
           api("/knowledge/mkac/status"),
+          api("/quick-answers?mode=mkac"),
+          api("/quick-answers?mode=mes"),
         ]);
         const healthData = await healthResponse.json();
         const modelData = await modelResponse.json();
         const mkacData = await mkacResponse.json();
+        const qaMkacData = qaMkacRes.ok ? await qaMkacRes.json() : {};
+        const qaMesData = qaMesRes.ok ? await qaMesRes.json() : {};
+        
+        setQuickAnswersConfig({
+          mkac: qaMkacData.suggestions || [],
+          mes: qaMesData.suggestions || [],
+          threshold: qaMkacData.short_answer_threshold || 300,
+          max: qaMkacData.max_suggestions || 3,
+        });
+
         setModels(modelData.models || []);
         setMkacStatus(mkacData);
         setMesStatus(healthData.mes_database || {});
@@ -729,8 +807,8 @@ function App() {
 
   async function sendMessage(prompt = question) {
     const cleanQuestion = prompt.trim();
-    if (mode === "mkac" && !mkacAuthorized) {
-      setEmployeeCodeError("Vui lòng nhập mã nhân viên hợp lệ trước khi hỏi MKAC.");
+    if ((mode === "mkac" || mode === "mes") && !mkacAuthorized) {
+      setEmployeeCodeError("Vui lòng nhập mã nhân viên hợp lệ trước khi tiếp tục.");
       return;
     }
     if (!cleanQuestion || busy || !sessionId) return;
@@ -779,7 +857,7 @@ function App() {
           stream: true,
           model: requestModel,
           mode: requestMode,
-          employee_id: requestMode === "mkac" ? employee?.id : undefined,
+          employee_id: (requestMode === "mkac" || requestMode === "mes") ? employee?.id : undefined,
         },
         (event) => {
           if (event.type === "sources") {
@@ -902,7 +980,7 @@ function App() {
     setModeSources("mkac", []);
     try {
       localStorage.removeItem(EMPLOYEE_STORAGE_KEY);
-      localStorage.removeItem("vllm-pd-mkac-employee-code");
+      localStorage.removeItem("meibook-mkac-employee-code");
     } catch {
       // Ignore storage failures.
     }
@@ -1273,7 +1351,7 @@ function App() {
             aria-busy={busy}
           >
             <div className="conversation-scroll">
-              {mode === "mkac" && !mkacAuthorized ? (
+              {(mode === "mkac" || mode === "mes") && !mkacAuthorized ? (
                 <div className="employee-gate">
                   <form className="employee-card" onSubmit={verifyEmployeeCode}>
                     <div className="employee-logo">
@@ -1281,7 +1359,9 @@ function App() {
                     </div>
                     <h1>Xác thực nhân viên MKAC</h1>
                     <p>
-                      Nhập mã nhân viên để truy cập chế độ hỏi đáp nội bộ MKAC.
+                      {mode === "mes"
+                        ? "Nhập mã nhân viên để truy cập dữ liệu sản xuất MES."
+                        : "Nhập mã nhân viên để truy cập chế độ hỏi đáp nội bộ MKAC."}
                     </p>
                     <label className="employee-field">
                       <span>Mã nhân viên</span>
@@ -1495,6 +1575,29 @@ function App() {
                             ))}
                           </details>
                         )}
+                        {message.role === "assistant" &&
+                          message.id !== pendingAssistantId &&
+                          message.content &&
+                          getSuggestions(message.content, mode, message.id).length > 0 && (
+                            <div className="message-suggestions" style={{ marginTop: "1rem" }}>
+                              <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "0.5rem", fontWeight: "bold" }}>Gợi ý thêm:</p>
+                              <ul className="suggestion-list">
+                                {getSuggestions(message.content, mode, message.id).map(
+                                  (suggestion, i) => (
+                                    <li key={i}>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleQuickAnswerClick(suggestion)}
+                                        title="Nhấn để tự động hỏi và trả lời"
+                                      >
+                                        {suggestion.question}
+                                      </button>
+                                    </li>
+                                  )
+                                )}
+                              </ul>
+                            </div>
+                          )}
                       </div>
                     </article>
                   ))}

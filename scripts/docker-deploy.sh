@@ -17,7 +17,7 @@ set -a
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 set +a
-export VLLM_PD_ENV_FILE="$ENV_FILE"
+export MEIBOOK_ENV_FILE="$ENV_FILE"
 
 compose() {
   if docker compose version >/dev/null 2>&1; then
@@ -35,7 +35,7 @@ compose up -d --build
 port="$(sed -n 's/^MACHINE2_API_PORT=//p' "$ENV_FILE" | tail -n 1)"
 port="${port:-8001}"
 
-echo "Waiting for VLLM-PD web/API on port ${port}..."
+echo "Waiting for Meibook web/API on port ${port}..."
 for _ in $(seq 1 60); do
   if curl -fsS "http://localhost:${port}/health" >/dev/null 2>&1; then
     break
@@ -46,7 +46,7 @@ done
 curl -fsS "http://localhost:${port}/health" >/dev/null
 
 echo
-echo "VLLM-PD Docker web deployment is running."
+echo "Meibook Docker web deployment is running."
 echo "Local URL: http://localhost:${port}"
 
 lan_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
@@ -56,6 +56,6 @@ fi
 
 echo
 echo "Useful commands:"
-echo "  source .env.docker && VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml ps"
-echo "  source .env.docker && VLLM_PD_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml logs -f app"
+echo "  source .env.docker && MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml ps"
+echo "  source .env.docker && MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml logs -f app"
 echo "  ./scripts/docker-index-mkac.sh"

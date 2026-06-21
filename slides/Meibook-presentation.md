@@ -1,4 +1,4 @@
-# Dàn ý trình bày VLLM-PD
+# Dàn ý trình bày Meibook
 
 ## Slide 1: Bài toán và bối cảnh
 

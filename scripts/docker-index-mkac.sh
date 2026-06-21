@@ -17,7 +17,7 @@ set -a
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 set +a
-export VLLM_PD_ENV_FILE="$ENV_FILE"
+export MEIBOOK_ENV_FILE="$ENV_FILE"
 
 compose() {
   if docker compose version >/dev/null 2>&1; then

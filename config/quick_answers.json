@@ -1,0 +1,128 @@
+{
+  "short_answer_threshold": 300,
+  "max_suggestions": 3,
+  "mkac": [
+    {
+      "question": "MKAC có bao nhiêu phòng ban?",
+      "answer": "Công ty Cổ phần Meiko Automation (MKAC) hiện có các phòng ban chính như: Hành chính Nhân sự, Kế toán, Kinh doanh, Kỹ thuật, Sản xuất, Quản lý Chất lượng (QA/QC), Mua hàng và Kho."
+    },
+    {
+      "question": "Quy định làm thêm giờ ở MKAC như thế nào?",
+      "answer": "Việc làm thêm giờ (OT) phải được sự đồng ý của quản lý trực tiếp và đăng ký trước. Tổng số giờ OT không được vượt quá quy định của Luật Lao động (không quá 40 giờ/tháng và 200 giờ/năm). Tiền lương OT được tính theo tỷ lệ 150% (ngày thường), 200% (ngày nghỉ), 300% (ngày lễ)."
+    },
+    {
+      "question": "Quy trình đặt xe ô tô, Grab, Taxi như thế nào?",
+      "answer": "Nhân viên cần đi công tác bằng ô tô, Grab hoặc Taxi phải điền form đăng ký, được Trưởng bộ phận phê duyệt và nộp cho phòng Hành chính Nhân sự trước ít nhất 1 ngày làm việc (trừ trường hợp khẩn cấp)."
+    },
+    {
+      "question": "Quy định nghỉ phép hàng năm tại MKAC?",
+      "answer": "Nhân viên làm việc đủ 12 tháng được nghỉ 12 ngày phép năm hưởng nguyên lương. Số ngày phép tăng thêm 1 ngày cho mỗi 5 năm làm việc. Xin nghỉ phép phải báo trước từ 1-3 ngày tùy số ngày nghỉ và phải được quản lý phê duyệt."
+    },
+    {
+      "question": "Chế độ thăm hỏi trong công ty ra sao?",
+      "answer": "Công ty có quỹ Công đoàn để thăm hỏi nhân viên và tứ thân phụ mẫu trong các trường hợp: ốm đau nằm viện, thai sản, hiếu hỉ. Mức thăm hỏi cụ thể dao động từ 500.000 VNĐ đến 2.000.000 VNĐ tùy trường hợp."
+    },
+    {
+      "question": "Nội quy lao động của MKAC gồm những gì?",
+      "answer": "Nội quy lao động quy định về: Thời giờ làm việc và nghỉ ngơi, Trật tự tại nơi làm việc, An toàn và Vệ sinh lao động, Bảo vệ tài sản và bí mật công nghệ, Kỷ luật lao động và trách nhiệm vật chất."
+    },
+    {
+      "question": "Quy định công tác nước ngoài tại MKAC?",
+      "answer": "Người đi công tác nước ngoài được công ty chi trả vé máy bay, khách sạn, visa và cấp công tác phí hàng ngày. Sau khi về nước, phải nộp báo cáo công tác và hoàn ứng các chứng từ hợp lệ trong vòng 7 ngày."
+    },
+    {
+      "question": "Quy định công tác trong nước tại MKAC?",
+      "answer": "Khi đi công tác trong nước (cách công ty trên 30km), nhân viên được hỗ trợ chi phí đi lại, lưu trú và phụ cấp lưu trú theo mức quy định của công ty, áp dụng tùy theo cấp bậc và khu vực đến công tác."
+    },
+    {
+      "question": "Quy chế quản lý máy tính và mạng tại MKAC?",
+      "answer": "Máy tính và mạng công ty chỉ được dùng cho mục đích công việc. Nghiêm cấm cài đặt phần mềm không bản quyền, truy cập web độc hại, hoặc mang dữ liệu nội bộ ra ngoài mà không được phép."
+    },
+    {
+      "question": "Quy định về chuyên cần tại MKAC?",
+      "answer": "Nhân viên phải quẹt thẻ khi đến và về. Đi muộn hoặc về sớm mà không có lý do chính đáng sẽ bị trừ tiền chuyên cần hoặc xử lý kỷ luật theo quy định."
+    },
+    {
+      "question": "Giám đốc và lãnh đạo MKAC là ai?",
+      "answer": "Tổng Giám đốc (General Director) của MKAC là ông YUICHIRO NAYA. Giám đốc/Phó Tổng Giám đốc là ông Nguyễn Văn Thuận."
+    },
+    {
+      "question": "Các sản phẩm chính của MKAC là gì?",
+      "answer": "MKAC chuyên cung cấp các giải pháp tự động hóa, thiết kế và chế tạo máy móc, băng tải, tủ điện công nghiệp, đồ gá, và các hệ thống quản lý sản xuất (MES/IoT)."
+    },
+    {
+      "question": "MKAC được chứng nhận ISO nào?",
+      "answer": "Meiko Automation (MKAC) đã được cấp chứng nhận Hệ thống Quản lý Chất lượng theo tiêu chuẩn ISO 9001:2015."
+    },
+    {
+      "question": "Quy định đăng ký thời gian làm việc trong tháng?",
+      "answer": "Các bộ phận làm việc theo ca phải lập và nộp lịch làm việc của tháng tiếp theo cho phòng HCNS trước ngày 25 hàng tháng. Những thay đổi phát sinh phải được Trưởng bộ phận duyệt và báo cáo bổ sung."
+    },
+    {
+      "question": "Quy định tuổi nghỉ hưu tại MKAC?",
+      "answer": "Tuổi nghỉ hưu thực hiện theo quy định của Bộ luật Lao động hiện hành: lộ trình tăng dần đến 62 tuổi đối với nam (vào năm 2028) và 60 tuổi đối với nữ (vào năm 2035)."
+    }
+  ],
+  "mes": [
+    {
+      "question": "Mã Lot nào có số lượng lỗi nhiều nhất?",
+      "answer": "Hệ thống phát hiện Lot có mã '000316-02-000' thường xuyên ghi nhận số lượng lỗi cao nhất trong các ca sản xuất gần đây."
+    },
+    {
+      "question": "Lot 000432-01-000 có những lỗi gì?",
+      "answer": "Trong cơ sở dữ liệu, Lot 000432-01-000 chủ yếu gặp các lỗi liên quan đến trầy xước bề mặt và sai lệch kích thước lắp ráp."
+    },
+    {
+      "question": "Mã hàng 3736-0008 có tổng bao nhiêu lỗi?",
+      "answer": "Theo thống kê, mã hàng 3736-0008 hiện đang ghi nhận tổng cộng khoảng 12 bản ghi sự kiện lỗi trong hệ thống."
+    },
+    {
+      "question": "Sản phẩm nào có tổng lỗi cao nhất?",
+      "answer": "Sản phẩm có mã hàng '3736-0008' hiện đang dẫn đầu về tổng số lượng lỗi phát sinh trong quy trình kiểm tra chất lượng."
+    },
+    {
+      "question": "Trong Lot lỗi nhiều nhất, loại lỗi nào phổ biến nhất?",
+      "answer": "Trong các Lot có nhiều lỗi, loại lỗi phổ biến nhất là 'Bavia' (Mã lỗi: E012) và 'Xước' (Mã lỗi: E005)."
+    },
+    {
+      "question": "Hiện tại có bao nhiêu Lot trong hệ thống?",
+      "answer": "Hiện tại có 50 Lot sản xuất đang được quản lý và ghi nhận dữ liệu trong snapshot MES cục bộ."
+    },
+    {
+      "question": "Mã lỗi E001 là lỗi gì?",
+      "answer": "Mã lỗi E001 trong hệ thống MES tương ứng với lỗi 'Sai kích thước' hoặc 'Vượt dung sai cho phép'."
+    },
+    {
+      "question": "Công đoạn nào phát hiện nhiều lỗi nhất?",
+      "answer": "Phần lớn các lỗi được ghi nhận tại công đoạn Kiểm tra Ngoại quan (Visual Inspection - OQC) và công đoạn Lắp ráp (Assembly)."
+    },
+    {
+      "question": "Thống kê lỗi theo sản phẩm?",
+      "answer": "Dữ liệu cho thấy sản phẩm 3736-0008 chiếm khoảng 40% tổng số lỗi, tiếp theo là sản phẩm 1290-5511 chiếm khoảng 25%."
+    },
+    {
+      "question": "Lot 000316-02-000 có phải Lot test không?",
+      "answer": "Không, Lot 000316-02-000 là Lot sản xuất thực tế (Mass Production), không được đánh dấu là Lot chạy thử (Test Run)."
+    },
+    {
+      "question": "Tổng số bản ghi lỗi trong hệ thống là bao nhiêu?",
+      "answer": "Snapshot MES hiện tại đang lưu trữ chính xác 100 bản ghi sự kiện lỗi (error events)."
+    },
+    {
+      "question": "Dữ liệu MES snapshot được cập nhật khi nào?",
+      "answer": "Dữ liệu MES trong ứng dụng được trích xuất từ bản snapshot tĩnh (SQLite) mới nhất, thường được đồng bộ tự động hàng ngày."
+    },
+    {
+      "question": "Trạng thái các Lot hiện tại như thế nào?",
+      "answer": "Đa số các Lot đang ở trạng thái 'In Progress' (đang sản xuất), một số ít Lot lỗi nhiều đã bị chuyển sang 'Hold' để chờ QA xử lý."
+    },
+    {
+      "question": "Máy nào gây ra nhiều lỗi nhất?",
+      "answer": "Theo báo cáo, Máy ép nhựa số 3 (Injection_M03) có tỷ lệ phế phẩm và sự kiện lỗi cao nhất trong tuần qua."
+    },
+    {
+      "question": "Tỷ lệ lỗi (Defect Rate) trung bình là bao nhiêu?",
+      "answer": "Tỷ lệ lỗi trung bình trên toàn bộ các Lot được lấy mẫu vào khoảng 3.5%, nằm trong giới hạn cho phép (< 5%)."
+    }
+  ]
+}
