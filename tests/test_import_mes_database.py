@@ -37,6 +37,8 @@ def _write_raw_files(raw_dir: Path) -> None:
         f"INSERT INTO MES_DATA_MKHC.D_ERROR ({ERROR_COLUMNS}) VALUES\n"
         "(10,NULL,TIMESTAMP'2026-01-01 09:00:00','LOT-1','ROUTE-1','PROC-1',1,'1',"
         "'E-1',5,'user',NULL,NULL,NULL,NULL,NULL,3,TIMESTAMP'2026-01-01 09:00:00',NULL),\n"
+        "(11,NULL,TIMESTAMP'2026-01-01 09:30:00','LOT-1','ROUTE-1','PROC-2',2,'1',"
+        "'0002',7,'user',NULL,NULL,NULL,NULL,NULL,3,TIMESTAMP'2026-01-01 09:30:00',NULL),\n"
         "(NULL,NULL,TIMESTAMP'2026-01-01 10:00:00','ORPHAN','ROUTE-1','PROC-X',2,'1',"
         "'E-X',2,'user',NULL,NULL,NULL,NULL,NULL,4,TIMESTAMP'2026-01-01 10:00:00',NULL);",
         encoding="utf-8",
@@ -44,7 +46,9 @@ def _write_raw_files(raw_dir: Path) -> None:
     (raw_dir / "P_ERROR_202601010000.sql").write_text(
         f"INSERT INTO MES_DATA_MKHC.P_ERROR ({CATALOG_COLUMNS}) VALUES\n"
         "(20,TIMESTAMP'2026-01-01 07:00:00',NULL,'E-1','Short','1','1',NULL,'N',"
-        "'PROC-1','Ngắn mạch',NULL,'Short circuit',NULL,NULL,'user');",
+        "'PROC-1','Ngắn mạch',NULL,'Short circuit',NULL,NULL,'user'),\n"
+        "(21,TIMESTAMP'2026-01-01 07:00:00',NULL,'0002','Scratch','1','1',NULL,'N',"
+        "'-','Xước',NULL,'Scratch',NULL,NULL,'user');",
         encoding="utf-8",
     )
 
@@ -57,21 +61,27 @@ def test_build_mes_database_preserves_orphans_and_builds_summary(tmp_path):
 
     counts = build_database(raw_dir, schema_path, db_path)
 
-    assert counts == {"lots": 1, "error_events": 2, "error_catalog": 1}
+    assert counts == {"lots": 1, "error_events": 3, "error_catalog": 2}
     with sqlite3.connect(db_path) as connection:
         summary = connection.execute(
             "SELECT lot_id, product_id, total_error_qty FROM v_lot_error_summary"
         ).fetchone()
-        detail = connection.execute(
+        exact_detail = connection.execute(
             "SELECT error_name, error_name_mapped FROM v_error_details WHERE lot_id='LOT-1'"
+            " AND error_id='E-1'"
+        ).fetchone()
+        fallback_detail = connection.execute(
+            "SELECT error_name, error_name_mapped FROM v_error_details WHERE lot_id='LOT-1'"
+            " AND error_id='0002'"
         ).fetchone()
         orphan_count = connection.execute(
             "SELECT COUNT(*) FROM error_events WHERE lot_pk IS NULL"
         ).fetchone()[0]
         metadata = dict(connection.execute("SELECT key, value FROM schema_metadata"))
 
-    assert summary == ("LOT-1", "PRODUCT-1", 5)
-    assert detail == ("Ngắn mạch", 1)
+    assert summary == ("LOT-1", "PRODUCT-1", 12)
+    assert exact_detail == ("Ngắn mạch", 1)
+    assert fallback_detail == ("Xước", 1)
     assert orphan_count == 1
     assert metadata["orphan_error_event_count"] == "1"
     assert metadata["unmapped_error_name_count"] == "1"
@@ -88,4 +98,4 @@ def test_reimport_replaces_database_instead_of_duplicating_rows(tmp_path):
 
     with sqlite3.connect(db_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM lots").fetchone()[0] == 1
-        assert connection.execute("SELECT COUNT(*) FROM error_events").fetchone()[0] == 2
+        assert connection.execute("SELECT COUNT(*) FROM error_events").fetchone()[0] == 3

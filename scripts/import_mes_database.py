@@ -8,7 +8,9 @@ import hashlib
 import os
 import sqlite3
 import tempfile
+import unicodedata
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -51,6 +53,13 @@ FILE_PATTERNS = {
     "D_ERROR": "D_ERROR_*.sql",
     "P_ERROR": "P_ERROR_*.sql",
 }
+
+
+@dataclass(frozen=True)
+class CatalogIndexes:
+    exact: dict[tuple[str, str, str], int]
+    by_error_and_type: dict[tuple[str, str], int]
+    by_error: dict[str, int]
 
 
 def parse_args() -> argparse.Namespace:
@@ -106,7 +115,7 @@ def _optional_text(value: Any) -> str | None:
     if value is None:
         return None
     text = str(value).strip()
-    return text or None
+    return unicodedata.normalize("NFC", text) if text else None
 
 
 def _required_text(value: Any, field: str) -> str:
@@ -206,9 +215,13 @@ def _insert_lots(
 def _insert_catalog(
     target: sqlite3.Connection,
     rows: list[sqlite3.Row],
-) -> dict[tuple[str, str, str], int]:
+) -> CatalogIndexes:
     canonical_positions = _canonical_catalog_positions(rows)
     catalog_pk_by_key: dict[tuple[str, str, str], int] = {}
+    fallback_candidates_by_error_and_type: dict[
+        tuple[str, str], list[tuple[int, sqlite3.Row, int]]
+    ] = defaultdict(list)
+    fallback_candidates_by_error: dict[str, list[tuple[int, sqlite3.Row, int]]] = defaultdict(list)
     sql = """
         INSERT INTO error_catalog (
             source_id, create_date, edit_date, error_id, error_name, error_type,
@@ -240,15 +253,48 @@ def _insert_catalog(
             ),
         )
         if is_canonical:
-            catalog_pk_by_key[key] = int(cursor.lastrowid)
-    return catalog_pk_by_key
+            catalog_pk = int(cursor.lastrowid)
+            catalog_pk_by_key[key] = catalog_pk
+            fallback_candidates_by_error_and_type[(key[0], key[2])].append(
+                (position, row, catalog_pk)
+            )
+            fallback_candidates_by_error[key[0]].append((position, row, catalog_pk))
+    return CatalogIndexes(
+        exact=catalog_pk_by_key,
+        by_error_and_type={
+            key: max(
+                candidates,
+                key=lambda item: _catalog_rank(item[1], item[0]),
+            )[2]
+            for key, candidates in fallback_candidates_by_error_and_type.items()
+        },
+        by_error={
+            key: max(
+                candidates,
+                key=lambda item: _catalog_rank(item[1], item[0]),
+            )[2]
+            for key, candidates in fallback_candidates_by_error.items()
+        },
+    )
+
+
+def _catalog_pk_for_event(
+    key: tuple[str, str, str],
+    catalog_indexes: CatalogIndexes,
+) -> int | None:
+    error_id, _process_id, error_type = key
+    return (
+        catalog_indexes.exact.get(key)
+        or catalog_indexes.by_error_and_type.get((error_id, error_type))
+        or catalog_indexes.by_error.get(error_id)
+    )
 
 
 def _insert_error_events(
     target: sqlite3.Connection,
     rows: Iterable[sqlite3.Row],
     lot_pk_by_id: dict[str, int],
-    catalog_pk_by_key: dict[tuple[str, str, str], int],
+    catalog_indexes: CatalogIndexes,
 ) -> None:
     sql = """
         INSERT INTO error_events (
@@ -269,7 +315,7 @@ def _insert_error_events(
             sql,
             (
                 _optional_int(row["ID"]), lot_pk_by_id.get(lot_id),
-                catalog_pk_by_key.get(key), _optional_text(row["EDIT_DATE"]),
+                _catalog_pk_for_event(key, catalog_indexes), _optional_text(row["EDIT_DATE"]),
                 _optional_text(row["CREATE_DATE"]), lot_id,
                 _optional_text(row["ROUTE_ID"]), key[1],
                 _optional_int(row["PROCESS_ORDER"]), key[2], key[0],
