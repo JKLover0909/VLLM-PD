@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1400" viewBox="0 0 900 1400" role="img" aria-labelledby="title desc">
+  <title id="title">縦型プロセス図</title>
+  <desc id="desc">ファイルアップロードからSSE Streamingまでの5ステップを縦方向に並べた図。</desc>
+  <defs>
+    <style>
+      .bg { fill: #ffffff; }
+      .line { stroke: #74d7ef; stroke-width: 5; fill: none; }
+      .card { fill: #ffffff; stroke: #e5e7eb; stroke-width: 1.2; rx: 16; }
+      .card-top { stroke: #20bce5; stroke-width: 5; stroke-linecap: round; }
+      .num-outer { fill: #eaf9fd; filter: url(#shadow); }
+      .num { fill: #38c9e9; }
+      .num-dark { fill: #005468; }
+      .num-text { font: 800 28px Arial, sans-serif; fill: #ffffff; }
+      .body { font: 700 22px "Noto Sans CJK JP", "Noto Sans JP", Arial, sans-serif; fill: #00485b; }
+      .bold { font-weight: 900; }
+    </style>
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="8" dy="8" stdDeviation="10" flood-color="#9ca3af" flood-opacity="0.28"/>
+      <feDropShadow dx="-4" dy="-4" stdDeviation="8" flood-color="#ffffff" flood-opacity="0.85"/>
+    </filter>
+  </defs>
+
+  <rect class="bg" width="900" height="1400"/>
+  <path class="line" d="M450 105 L450 1260"/>
+
+  <!-- Step 01 -->
+  <circle class="num-outer" cx="450" cy="105" r="52"/>
+  <circle class="num" cx="450" cy="105" r="38"/>
+  <text class="num-text" x="450" y="115" text-anchor="middle">01</text>
+  <rect class="card" x="160" y="170" width="580" height="150" rx="16"/>
+  <line class="card-top" x1="160" y1="170" x2="740" y2="170"/>
+  <text class="body" x="200" y="230">
+    <tspan x="200" dy="0">複数形式のファイルをア</tspan>
+    <tspan x="200" dy="28">ップロード（</tspan><tspan class="bold">PDF、DOCX</tspan>
+    <tspan x="200" dy="28">、画像、HTML...</tspan><tspan>）</tspan>
+  </text>
+
+  <!-- Step 02 -->
+  <circle class="num-outer" cx="450" cy="380" r="52"/>
+  <circle class="num" cx="450" cy="380" r="38"/>
+  <text class="num-text" x="450" y="390" text-anchor="middle">02</text>
+  <rect class="card" x="160" y="445" width="580" height="150" rx="16"/>
+  <line class="card-top" x1="160" y1="445" x2="740" y2="445"/>
+  <text class="body" x="200" y="505">
+    <tspan class="bold" x="200" dy="0">Docling</tspan><tspan>でコンテンツを解</tspan>
+    <tspan x="200" dy="28">析、テキスト抽出と</tspan><tspan class="bold">OCR</tspan>
+    <tspan x="200" dy="28">を実行</tspan>
+  </text>
+
+  <!-- Step 03 -->
+  <circle class="num-outer" cx="450" cy="655" r="52"/>
+  <circle class="num" cx="450" cy="655" r="38" opacity="0.6"/>
+  <text class="num-text" x="450" y="665" text-anchor="middle">03</text>
+  <rect class="card" x="160" y="720" width="580" height="150" rx="16"/>
+  <line class="card-top" x1="160" y1="720" x2="740" y2="720" opacity="0.55"/>
+  <text class="body" x="200" y="780">
+    <tspan x="200" dy="0">コンテンツをチャンク</tspan>
+    <tspan x="200" dy="28">グ：約</tspan><tspan class="bold">1000文字</tspan><tspan>、</tspan><tspan class="bold">20%</tspan><tspan>の</tspan>
+    <tspan x="200" dy="28">オーバーラップ</tspan>
+  </text>
+
+  <!-- Step 04 -->
+  <circle class="num-outer" cx="450" cy="930" r="52"/>
+  <circle class="num-dark" cx="450" cy="930" r="38"/>
+  <text class="num-text" x="450" y="940" text-anchor="middle">04</text>
+  <rect class="card" x="160" y="995" width="580" height="150" rx="16"/>
+  <line class="card-top" x1="160" y1="995" x2="740" y2="995" stroke="#006276"/>
+  <text class="body" x="200" y="1055">
+    <tspan class="bold" x="200" dy="0">Embedding</tspan><tspan>後、</tspan>
+    <tspan class="bold" x="200" dy="28">session_id</tspan><tspan>で分離して</tspan>
+    <tspan x="200" dy="28">Qdrantに保存</tspan>
+  </text>
+
+  <!-- Step 05 -->
+  <circle class="num-outer" cx="450" cy="1205" r="52"/>
+  <circle class="num" cx="450" cy="1205" r="38" opacity="0.35"/>
+  <text class="num-text" x="450" y="1215" text-anchor="middle">05</text>
+  <rect class="card" x="160" y="1270" width="580" height="100" rx="16"/>
+  <line class="card-top" x1="160" y1="1270" x2="740" y2="1270" opacity="0.35"/>
+  <text class="body" x="200" y="1330">
+    <tspan class="bold" x="200" dy="0">SSE Streaming</tspan><tspan>でリアルタイムにユーザーへ回答</tspan>
+  </text>
+</svg>

@@ -1,0 +1,172 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Meibook システム構成図</title>
+  <desc id="desc">Client、FastAPI Backend、RAG Pipeline、MES Database、LangGraph Agent、LiteLLM、各モデルを示す構成図。</desc>
+  <defs>
+    <style>
+      .bg { fill: #ffffff; }
+      .system { fill: #fbfbd9; stroke: #e8e95f; stroke-width: 2; }
+      .models-zone { fill: #fbfbd9; stroke: #e8e95f; stroke-width: 2; }
+      .node { fill: #eeeafb; stroke: #a78bfa; stroke-width: 1.7; }
+      .node-green { fill: #dcfce7; stroke: #22c55e; stroke-width: 2.2; }
+      .db { fill: #eeeafb; stroke: #a78bfa; stroke-width: 1.7; }
+      .text { font: 600 16px "Noto Sans CJK JP", "Noto Sans JP", Arial, sans-serif; fill: #3f3f46; }
+      .small { font: 600 14px "Noto Sans CJK JP", "Noto Sans JP", Arial, sans-serif; fill: #52525b; }
+      .label-bg { fill: #e5e7eb; opacity: 0.94; }
+      .label { font: 600 14px "Noto Sans CJK JP", "Noto Sans JP", Arial, sans-serif; fill: #4b5563; }
+      .zone-title { font: 600 15px "Noto Sans CJK JP", "Noto Sans JP", Arial, sans-serif; fill: #4b5563; }
+      .arrow { stroke: #5f6368; stroke-width: 1.7; fill: none; marker-end: url(#arrow); }
+      .arrow-soft { stroke: #33363b; stroke-width: 1.6; fill: none; marker-end: url(#arrow-soft); }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8.5" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#5f6368" />
+    </marker>
+    <marker id="arrow-soft" markerWidth="10" markerHeight="10" refX="8.5" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#33363b" />
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1600" height="900" />
+
+  <!-- Client layer -->
+  <rect class="node" x="770" y="8" width="172" height="34" rx="17" />
+  <text class="text" x="856" y="30" text-anchor="middle">ユーザー / Client</text>
+
+  <rect class="node" x="1335" y="96" width="240" height="44" />
+  <text class="text" x="1455" y="122" text-anchor="middle">React + Vite フロントエンド</text>
+
+  <rect class="label-bg" x="1410" y="56" width="82" height="23" />
+  <text class="label" x="1451" y="73" text-anchor="middle">Web UI</text>
+
+  <rect class="label-bg" x="34" y="112" width="100" height="22" />
+  <text class="label" x="84" y="129" text-anchor="middle">直接呼び出し</text>
+
+  <rect class="label-bg" x="1422" y="164" width="70" height="22" />
+  <text class="label" x="1457" y="181" text-anchor="middle">API 呼び出し</text>
+
+  <path class="arrow-soft" d="M790 25 C520 30, 120 54, 82 100 C55 134, 75 170, 110 185 C275 250, 580 248, 755 246" />
+  <path class="arrow-soft" d="M922 24 C1100 30, 1345 45, 1450 92" />
+  <path class="arrow-soft" d="M1455 140 C1455 173, 1425 185, 1388 195 C1288 223, 1065 232, 955 246" />
+
+  <!-- System zone -->
+  <rect class="system" x="6" y="205" width="1517" height="480" />
+  <text class="zone-title" x="775" y="222" text-anchor="middle">システム中核（マシン2）</text>
+
+  <!-- Backend -->
+  <rect class="node" x="720" y="226" width="270" height="66" />
+  <text class="text" x="855" y="255" text-anchor="middle">FastAPI バックエンド - Port</text>
+  <text class="text" x="855" y="278" text-anchor="middle">8001</text>
+
+  <!-- RAG -->
+  <rect class="node node-green" x="455" y="338" width="215" height="66" />
+  <text class="text" x="562" y="376" text-anchor="middle">RAG パイプライン</text>
+
+  <rect class="label-bg" x="500" y="316" width="126" height="22" />
+  <text class="label" x="563" y="333" text-anchor="middle">アップロード &amp; 質問</text>
+  <path class="arrow" d="M755 270 C680 286, 600 312, 561 348" />
+
+  <!-- RAG children -->
+  <rect class="node" x="32" y="475" width="126" height="46" />
+  <text class="text" x="95" y="503" text-anchor="middle">Docling &amp; OCR</text>
+
+  <rect class="node" x="185" y="475" width="180" height="46" />
+  <text class="text" x="275" y="503" text-anchor="middle">BGE-M3 埋め込み</text>
+
+  <ellipse class="db" cx="470" cy="499" rx="100" ry="44" />
+  <text class="text" x="470" y="494" text-anchor="middle">Qdrant ベクトルDB - Port</text>
+  <text class="text" x="470" y="517" text-anchor="middle">6333</text>
+
+  <rect class="node" x="585" y="475" width="160" height="46" />
+  <text class="text" x="665" y="503" text-anchor="middle">Web 検索 ddgs</text>
+
+  <ellipse class="db" cx="930" cy="499" rx="112" ry="36" />
+  <text class="text" x="930" y="494" text-anchor="middle">MES DB</text>
+  <text class="text" x="930" y="516" text-anchor="middle">SQLエージェント</text>
+
+  <rect class="label-bg" x="58" y="430" width="76" height="22" />
+  <text class="label" x="96" y="447" text-anchor="middle">ファイル解析</text>
+  <path class="arrow" d="M502 375 C330 392, 126 415, 95 475" />
+
+  <rect class="label-bg" x="238" y="430" width="72" height="22" />
+  <text class="label" x="274" y="447" text-anchor="middle">ベクトル化</text>
+  <path class="arrow" d="M502 374 C398 392, 292 416, 275 475" />
+
+  <rect class="label-bg" x="426" y="430" width="88" height="22" />
+  <text class="label" x="470" y="447" text-anchor="middle">意味検索</text>
+  <path class="arrow" d="M561 394 C512 415, 472 439, 470 455" />
+
+  <rect class="label-bg" x="593" y="430" width="144" height="22" />
+  <text class="label" x="665" y="447" text-anchor="middle">フォールバック検索</text>
+  <path class="arrow" d="M600 394 C640 418, 665 445, 665 475" />
+
+  <rect class="label-bg" x="888" y="430" width="88" height="22" />
+  <text class="label" x="932" y="447" text-anchor="middle">MES 照会</text>
+  <path class="arrow" d="M620 372 C750 385, 900 427, 930 463" />
+
+  <!-- Agent -->
+  <rect class="node node-green" x="1035" y="338" width="226" height="66" />
+  <text class="text" x="1148" y="376" text-anchor="middle">LangGraph エージェント</text>
+
+  <rect class="label-bg" x="1094" y="320" width="126" height="22" />
+  <text class="label" x="1157" y="337" text-anchor="middle">コーディングタスク</text>
+  <path class="arrow" d="M955 270 C1032 293, 1128 318, 1148 348" />
+
+  <rect class="node" x="1080" y="475" width="226" height="46" />
+  <text class="text" x="1193" y="503" text-anchor="middle">LiteLLM プロキシ - Port 4000</text>
+
+  <rect class="label-bg" x="972" y="430" width="58" height="22" />
+  <text class="label" x="1001" y="447" text-anchor="middle">推論</text>
+  <path class="arrow" d="M1110 394 C1152 418, 1185 445, 1193 475" />
+
+  <rect class="node" x="450" y="625" width="230" height="46" />
+  <text class="text" x="565" y="653" text-anchor="middle">Filesystem MCPサーバー</text>
+
+  <rect class="label-bg" x="533" y="575" width="82" height="22" />
+  <text class="label" x="574" y="592" text-anchor="middle">ファイル読書き</text>
+  <path class="arrow" d="M930 535 C775 565, 585 585, 565 625" />
+
+  <!-- MCP Client -->
+  <rect class="node" x="1350" y="475" width="150" height="46" />
+  <text class="text" x="1425" y="503" text-anchor="middle">MCPクライアント</text>
+
+  <rect class="label-bg" x="928" y="405" width="90" height="22" />
+  <text class="label" x="973" y="422" text-anchor="middle">回答生成</text>
+  <path class="arrow" d="M620 374 C875 390, 1090 425, 1193 475" />
+
+  <rect class="label-bg" x="1272" y="405" width="76" height="22" />
+  <text class="label" x="1310" y="422" text-anchor="middle">利用</text>
+  <path class="arrow" d="M1218 374 C1320 402, 1418 438, 1425 475" />
+  <path class="arrow" d="M1148 394 C1168 425, 1188 453, 1193 475" />
+
+  <!-- Model labels and arrows inside system -->
+  <rect class="label-bg" x="755" y="548" width="150" height="22" />
+  <text class="label" x="830" y="565" text-anchor="middle">openai-model / auto</text>
+
+  <rect class="label-bg" x="935" y="575" width="76" height="22" />
+  <text class="label" x="973" y="592" text-anchor="middle">grok-model</text>
+
+  <rect class="label-bg" x="1045" y="548" width="126" height="22" />
+  <text class="label" x="1108" y="565" text-anchor="middle">local-gemma / coding</text>
+
+  <!-- Models zone moved below to reduce width -->
+  <rect class="models-zone" x="500" y="735" width="790" height="120" />
+  <text class="zone-title" x="880" y="760" text-anchor="middle">モデル群（LiteLLMでルーティング）</text>
+
+  <rect class="node" x="520" y="785" width="210" height="46" />
+  <text class="text" x="625" y="813" text-anchor="middle">OpenAI GPT-5.4 mini</text>
+
+  <rect class="node" x="770" y="785" width="230" height="46" />
+  <text class="text" x="885" y="813" text-anchor="middle">Azure Grok 4.20 Reasoning</text>
+
+  <rect class="node" x="1020" y="785" width="250" height="46" />
+  <text class="text" x="1135" y="813" text-anchor="middle">マシン1上の Local Gemma4</text>
+
+  <path class="arrow" d="M1115 521 C955 620, 765 720, 625 785" />
+  <path class="arrow" d="M1193 521 C1085 635, 965 720, 885 785" />
+  <path class="arrow" d="M1245 521 C1240 620, 1180 720, 1135 785" />
+  <path class="arrow" d="M710 808 L785 808" />
+  <path class="arrow" d="M985 808 L1020 808" />
+
+  <!-- Backend incoming arrows -->
+  <path class="arrow" d="M755 252 C520 247, 250 225, 110 185" />
+  <path class="arrow" d="M955 252 C1120 238, 1285 215, 1388 195" />
+</svg>

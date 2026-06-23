@@ -1,0 +1,222 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1050" viewBox="0 0 1600 1050" role="img" aria-labelledby="title desc">
+  <title id="title">Meibook System Architecture</title>
+  <desc id="desc">Light architecture diagram with Client, Machine 2 application server, and Machine 1 local model server.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7f9fc; }
+      .zone { fill: #ffffff; stroke-width: 2.2; rx: 22; }
+      .zone-client { stroke: #7c3aed; }
+      .zone-server { stroke: #2563eb; }
+      .zone-model { stroke: #16a34a; }
+      .zone-title { font: 700 26px Inter, Arial, sans-serif; fill: #172033; }
+      .zone-subtitle { font: 500 15px Inter, Arial, sans-serif; fill: #64748b; }
+      .node { fill: #f8fafc; stroke: #94a3b8; stroke-width: 1.6; rx: 12; }
+      .node-primary { fill: #eef2ff; stroke: #7c3aed; }
+      .node-blue { fill: #eff6ff; stroke: #2563eb; }
+      .node-green { fill: #f0fdf4; stroke: #16a34a; }
+      .node-orange { fill: #fff7ed; stroke: #f97316; }
+      .node-red { fill: #fef2f2; stroke: #ef4444; }
+      .node-purple { fill: #faf5ff; stroke: #9333ea; }
+      .node-text { font: 700 17px Inter, Arial, sans-serif; fill: #111827; }
+      .node-sub { font: 500 13px Inter, Arial, sans-serif; fill: #475569; }
+      .label { font: 600 13px Inter, Arial, sans-serif; fill: #334155; }
+      .arrow { stroke: #475569; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .arrow-blue { stroke: #2563eb; }
+      .arrow-green { stroke: #16a34a; }
+      .arrow-orange { stroke: #f97316; }
+      .arrow-purple { stroke: #9333ea; }
+      .pill { fill: #e2e8f0; rx: 12; }
+      .pill-text { font: 700 12px Inter, Arial, sans-serif; fill: #334155; }
+      .small { font: 500 12px Inter, Arial, sans-serif; fill: #64748b; }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#475569" />
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1600" height="1050"/>
+
+  <!-- Zones -->
+  <rect class="zone zone-client" x="70" y="70" width="1460" height="170" filter="url(#shadow)"/>
+  <text class="zone-title" x="105" y="115">Máy Client</text>
+  <text class="zone-subtitle" x="105" y="143">Người dùng thao tác qua trình duyệt hoặc gọi API trực tiếp</text>
+
+  <rect class="zone zone-server" x="70" y="285" width="1460" height="570" filter="url(#shadow)"/>
+  <text class="zone-title" x="105" y="330">Máy 2 - Meibook / VLLM-PD</text>
+  <text class="zone-subtitle" x="105" y="358">FastAPI gateway, React build, RAG, MES SQL Agent, Gmail action, LiteLLM và dữ liệu nội bộ</text>
+
+  <rect class="zone zone-model" x="70" y="900" width="1460" height="105" filter="url(#shadow)"/>
+  <text class="zone-title" x="105" y="945">Máy 1 & Cloud Models</text>
+  <text class="zone-subtitle" x="105" y="972">Mô hình suy luận được điều phối qua LiteLLM</text>
+
+  <!-- Client nodes -->
+  <rect class="node node-primary" x="330" y="115" width="260" height="82"/>
+  <text class="node-text" x="460" y="150" text-anchor="middle">Người dùng</text>
+  <text class="node-sub" x="460" y="174" text-anchor="middle">Nhập câu hỏi / yêu cầu gửi mail</text>
+
+  <rect class="node node-primary" x="760" y="115" width="280" height="82"/>
+  <text class="node-text" x="900" y="150" text-anchor="middle">React + Vite Frontend</text>
+  <text class="node-sub" x="900" y="174" text-anchor="middle">Gửi API + context hội thoại</text>
+
+  <!-- Machine 2 core -->
+  <rect class="node node-blue" x="650" y="390" width="300" height="82"/>
+  <text class="node-text" x="800" y="425" text-anchor="middle">FastAPI Backend</text>
+  <text class="node-sub" x="800" y="449" text-anchor="middle">Port 8001 - API Gateway</text>
+
+  <rect class="node node-blue" x="650" y="520" width="300" height="82"/>
+  <text class="node-text" x="800" y="555" text-anchor="middle">Request Router</text>
+  <text class="node-sub" x="800" y="579" text-anchor="middle">HCNS / MES / Research / Email / Agent</text>
+
+  <!-- RAG column -->
+  <rect class="node" x="135" y="455" width="230" height="72"/>
+  <text class="node-text" x="250" y="485" text-anchor="middle">RAG Pipeline</text>
+  <text class="node-sub" x="250" y="507" text-anchor="middle">Tài liệu nội bộ & nghiên cứu</text>
+
+  <rect class="node" x="120" y="580" width="170" height="66"/>
+  <text class="node-text" x="205" y="608" text-anchor="middle">Docling & OCR</text>
+  <text class="node-sub" x="205" y="630" text-anchor="middle">Parse file</text>
+
+  <rect class="node" x="315" y="580" width="170" height="66"/>
+  <text class="node-text" x="400" y="608" text-anchor="middle">BGE-M3</text>
+  <text class="node-sub" x="400" y="630" text-anchor="middle">Embedding</text>
+
+  <rect class="node" x="120" y="705" width="170" height="66"/>
+  <text class="node-text" x="205" y="733" text-anchor="middle">Qdrant</text>
+  <text class="node-sub" x="205" y="755" text-anchor="middle">Vector DB :6333</text>
+
+  <rect class="node" x="315" y="705" width="170" height="66"/>
+  <text class="node-text" x="400" y="733" text-anchor="middle">Web Search</text>
+  <text class="node-sub" x="400" y="755" text-anchor="middle">Fallback</text>
+
+  <!-- MES column -->
+  <rect class="node node-orange" x="540" y="650" width="230" height="72"/>
+  <text class="node-text" x="655" y="680" text-anchor="middle">MES SQL Agent</text>
+  <text class="node-sub" x="655" y="702" text-anchor="middle">Sinh SQL từ schema context</text>
+
+  <rect class="node node-orange" x="520" y="765" width="175" height="66"/>
+  <text class="node-text" x="607" y="793" text-anchor="middle">MES Database</text>
+  <text class="node-sub" x="607" y="815" text-anchor="middle">SQLite snapshot</text>
+
+  <rect class="node node-orange" x="715" y="765" width="175" height="66"/>
+  <text class="node-text" x="802" y="793" text-anchor="middle">Schema Context</text>
+  <text class="node-sub" x="802" y="815" text-anchor="middle">DATABASE.md / prompt</text>
+
+  <!-- Email column -->
+  <rect class="node node-green" x="915" y="650" width="230" height="72"/>
+  <text class="node-text" x="1030" y="680" text-anchor="middle">Gmail Action</text>
+  <text class="node-sub" x="1030" y="702" text-anchor="middle">Gửi kết quả qua Gmail API</text>
+
+  <rect class="node node-green" x="895" y="765" width="175" height="66"/>
+  <text class="node-text" x="982" y="793" text-anchor="middle">Short Context</text>
+  <text class="node-sub" x="982" y="815" text-anchor="middle">3-6 message gần nhất</text>
+
+  <rect class="node node-green" x="1090" y="765" width="175" height="66"/>
+  <text class="node-text" x="1177" y="793" text-anchor="middle">OAuth Token</text>
+  <text class="node-sub" x="1177" y="815" text-anchor="middle">data/gmail_token.json</text>
+
+  <!-- Coding agent column -->
+  <rect class="node node-purple" x="1235" y="455" width="230" height="72"/>
+  <text class="node-text" x="1350" y="485" text-anchor="middle">LangGraph Agent</text>
+  <text class="node-sub" x="1350" y="507" text-anchor="middle">Task coding</text>
+
+  <rect class="node node-purple" x="1245" y="580" width="210" height="66"/>
+  <text class="node-text" x="1350" y="608" text-anchor="middle">MCP Client</text>
+  <text class="node-sub" x="1350" y="630" text-anchor="middle">Tool calling</text>
+
+  <rect class="node node-purple" x="1185" y="705" width="170" height="66"/>
+  <text class="node-text" x="1270" y="733" text-anchor="middle">Filesystem MCP</text>
+  <text class="node-sub" x="1270" y="755" text-anchor="middle">Đọc / ghi file</text>
+
+  <rect class="node node-purple" x="1375" y="705" width="120" height="66"/>
+  <text class="node-text" x="1435" y="733" text-anchor="middle">Git MCP</text>
+  <text class="node-sub" x="1435" y="755" text-anchor="middle">Mã nguồn</text>
+
+  <!-- LiteLLM -->
+  <rect class="node node-red" x="650" y="890" width="300" height="82"/>
+  <text class="node-text" x="800" y="925" text-anchor="middle">LiteLLM Proxy</text>
+  <text class="node-sub" x="800" y="949" text-anchor="middle">Port 4000 - điều phối model</text>
+
+  <!-- External models -->
+  <rect class="node node-green" x="1040" y="920" width="180" height="58"/>
+  <text class="node-text" x="1130" y="944" text-anchor="middle">OpenAI</text>
+  <text class="node-sub" x="1130" y="964" text-anchor="middle">openai / auto</text>
+
+  <rect class="node node-green" x="1240" y="920" width="160" height="58"/>
+  <text class="node-text" x="1320" y="944" text-anchor="middle">Azure Grok</text>
+  <text class="node-sub" x="1320" y="964" text-anchor="middle">grok-model</text>
+
+  <rect class="node node-green" x="1420" y="920" width="90" height="58"/>
+  <text class="node-text" x="1465" y="944" text-anchor="middle">Gemma4</text>
+  <text class="node-sub" x="1465" y="964" text-anchor="middle">Máy 1</text>
+
+  <!-- Gmail external -->
+  <rect class="node node-green" x="1305" y="795" width="190" height="56"/>
+  <text class="node-text" x="1400" y="818" text-anchor="middle">Google Gmail API</text>
+  <text class="node-sub" x="1400" y="838" text-anchor="middle">Send email</text>
+
+  <!-- Arrows client -->
+  <path class="arrow arrow-purple" d="M590 156 C645 156,700 156,760 156"/>
+  <text class="label" x="675" y="145" text-anchor="middle">Giao diện web</text>
+
+  <path class="arrow arrow-blue" d="M900 197 C900 270,840 320,810 390"/>
+  <text class="label" x="910" y="285">Gọi API</text>
+
+  <path class="arrow" d="M460 197 C470 280,575 360,650 418"/>
+  <text class="label" x="510" y="290">Gọi trực tiếp</text>
+
+  <!-- Core arrows -->
+  <path class="arrow arrow-blue" d="M800 472 L800 520"/>
+
+  <path class="arrow" d="M650 560 C520 555,420 510,365 492"/>
+  <text class="label" x="485" y="540">Query tài liệu</text>
+
+  <path class="arrow arrow-orange" d="M735 602 C710 625,685 640,655 650"/>
+  <text class="label" x="690" y="632">Câu hỏi MES</text>
+
+  <path class="arrow arrow-green" d="M865 602 C910 625,970 640,1030 650"/>
+  <text class="label" x="955" y="632">Lệnh gửi email</text>
+
+  <path class="arrow arrow-purple" d="M950 552 C1050 520,1160 498,1235 490"/>
+  <text class="label" x="1080" y="510">Task coding</text>
+
+  <!-- RAG internals -->
+  <path class="arrow" d="M250 527 L205 580"/>
+  <path class="arrow" d="M250 527 L400 580"/>
+  <path class="arrow" d="M250 527 L205 705"/>
+  <path class="arrow" d="M250 527 L400 705"/>
+  <path class="arrow arrow-blue" d="M365 492 C500 535,570 565,650 660"/>
+
+  <!-- MES internals -->
+  <path class="arrow arrow-orange" d="M630 722 L607 765"/>
+  <path class="arrow arrow-orange" d="M685 722 L802 765"/>
+  <path class="arrow arrow-orange" d="M655 722 C680 800,720 850,775 890"/>
+
+  <!-- Email internals -->
+  <path class="arrow arrow-green" d="M1010 722 L982 765"/>
+  <path class="arrow arrow-green" d="M1050 722 L1177 765"/>
+  <path class="arrow arrow-green" d="M1145 686 C1230 700,1315 760,1365 795"/>
+
+  <!-- Agent internals -->
+  <path class="arrow arrow-purple" d="M1350 527 L1350 580"/>
+  <path class="arrow arrow-purple" d="M1325 646 L1270 705"/>
+  <path class="arrow arrow-purple" d="M1375 646 L1435 705"/>
+  <path class="arrow arrow-purple" d="M1245 490 C1080 600,940 755,830 890"/>
+
+  <!-- LiteLLM to models -->
+  <path class="arrow arrow-green" d="M950 930 L1040 946"/>
+  <path class="arrow arrow-green" d="M950 930 L1240 946"/>
+  <path class="arrow arrow-green" d="M950 930 L1420 946"/>
+
+  <!-- Pills -->
+  <rect class="pill" x="677" y="366" width="246" height="24"/>
+  <text class="pill-text" x="800" y="383" text-anchor="middle">Một cổng vào cho Web và API</text>
+
+  <rect class="pill" x="875" y="625" width="310" height="24"/>
+  <text class="pill-text" x="1030" y="642" text-anchor="middle">Hỗ trợ “gửi thông tin này” bằng context</text>
+
+  <rect class="pill" x="514" y="625" width="282" height="24"/>
+  <text class="pill-text" x="655" y="642" text-anchor="middle">LLM sinh SQL dựa trên schema MES</text>
+</svg>
