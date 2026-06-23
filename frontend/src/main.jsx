@@ -225,6 +225,20 @@ async function streamQuery(payload, onEvent, signal) {
   }
 }
 
+function buildConversationContext(messages, limit = 6) {
+  return messages
+    .filter((message) => message.role === "user" || message.role === "assistant")
+    .filter((message) => message.content?.trim())
+    .slice(-limit)
+    .map((message) => ({
+      role: message.role,
+      content: message.content,
+      model: message.model || "",
+      mode: message.mode || "",
+      answer_scope: message.answerScope || "",
+    }));
+}
+
 function mergeFiles(currentFiles, incomingFiles) {
   const known = new Set(currentFiles.map((file) => `${file.name}:${file.size}`));
   const merged = [...currentFiles];
@@ -815,6 +829,7 @@ function App() {
 
     const requestMode = mode;
     const requestSessionId = sessionId;
+    const conversationContext = buildConversationContext(messages);
     if (messages.length === 0) {
       const title = sessionTitleFromQuestion(cleanQuestion);
       setSessionTitles((current) => ({ ...current, [requestMode]: title }));
@@ -858,6 +873,7 @@ function App() {
           model: requestModel,
           mode: requestMode,
           employee_id: (requestMode === "mkac" || requestMode === "mes") ? employee?.id : undefined,
+          conversation_context: conversationContext,
         },
         (event) => {
           if (event.type === "sources") {

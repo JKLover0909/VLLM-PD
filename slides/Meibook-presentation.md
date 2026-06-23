@@ -56,20 +56,35 @@ tiếp vào provider. LiteLLM giữ vai trò router và fallback.
 
 ## Slide 5: Kiến trúc tổng thể
 
-```text
-Máy người dùng trong công ty
-    |
-    | HTTP, IP nội bộ, cổng 8001
-    v
-Máy chủ ứng dụng: FastAPI + React
-    |-- Hỏi đáp MKAC: Qdrant collection mkac_knowledge
-    |-- Nghiên cứu: Upload -> Docling/OCR -> BGE-M3 -> Qdrant
-    v
-LiteLLM nội bộ :4000
-    |-- Máy 1 Ollama/Gemma4
-    |-- MiMo API
-    |-- OpenAI API
-    `-- Azure/Grok API
+```mermaid
+graph TD
+    User(["Người dùng / Client"]) -->|"Giao diện Web"| Frontend["React + Vite Frontend"]
+    User -->|"Gọi trực tiếp"| API["FastAPI Backend - Port 8001"]
+    Frontend -->|"Gọi API"| API
+    
+    subgraph Trai_Tim_He_Thong ["Trái tim Hệ thống (Máy 2)"]
+        API -->|"Upload & Query"| RAG["RAG Pipeline"]
+        API -->|"Task Coding"| Agent["LangGraph Agent"]
+        
+        RAG -->|"Phân tích file"| Parser["Docling & OCR"]
+        RAG -->|"Tạo Vector"| Embedder["BGE-M3 Embedder"]
+        RAG -->|"Truy vấn Semantic"| Qdrant[("Qdrant Vector DB - Port 6333")]
+        RAG -->|"Tìm kiếm fallback"| DuckDuckGo["Web Search ddgs"]
+        RAG -->|"Truy vấn MES"| MES[("MES Database & SQL Agent")]
+        
+        Agent -->|"Sử dụng"| MCP["MCP Client"]
+        MCP -->|"Đọc/Ghi file"| FS_Server["Filesystem MCP Server"]
+        MCP -->|"Quản lý mã nguồn"| Git_Server["Git MCP Server"]
+        
+        RAG -->|"Tạo câu trả lời"| LiteLLM["LiteLLM Proxy - Port 4000"]
+        Agent -->|"Suy luận"| LiteLLM
+    end
+    
+    subgraph Models ["Models (Điều phối bởi LiteLLM)"]
+        LiteLLM -->|"openai-model / auto"| OpenAI["OpenAI GPT-5.4 mini"]
+        LiteLLM -->|"grok-model"| Azure["Azure Grok 4.20 Reasoning"]
+        LiteLLM -->|"local-gemma / coding"| Ollama["Local Gemma4 trên Máy 1"]
+    end
 ```
 
 Ghi chú trình bày:

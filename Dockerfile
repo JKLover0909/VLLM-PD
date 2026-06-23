@@ -27,6 +27,10 @@ RUN apt-get update \
 COPY requirements.txt ./
 RUN pip install --upgrade pip \
     && pip install -r requirements.txt
+RUN pip install \
+        "google-api-python-client>=2.192.0,<3.0.0" \
+        "google-auth-httplib2>=0.3.0,<1.0.0" \
+        "google-auth-oauthlib>=1.3.0,<2.0.0"
 
 COPY src ./src
 COPY config ./config

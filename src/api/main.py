@@ -9,9 +9,11 @@ import asyncio
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import time
+import unicodedata
 import uuid
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
@@ -39,6 +41,11 @@ from src.rag.rag_pipeline import RAGPipeline
 from src.rag.web_search import WebSearcher
 from src.auth.employee_directory import EmployeeDirectory
 from src.integrations.mes_database import MesDatabase
+from src.integrations.gmail_sender import (
+    GmailSender,
+    GmailSenderError,
+    parse_email_send_command,
+)
 
 ENABLE_AGENT = os.getenv("ENABLE_AGENT", "true").lower() in {"1", "true", "yes", "on"}
 agent_executor = None
@@ -95,6 +102,7 @@ rag_pipeline: Optional[RAGPipeline] = None
 web_searcher: Optional[WebSearcher] = None
 employee_directory = EmployeeDirectory(EMPLOYEE_DIRECTORY_DB_PATH)
 mes_database = MesDatabase.from_env()
+gmail_sender = GmailSender.from_env()
 rate_limit_events: Dict[str, Deque[float]] = defaultdict(deque)
 rate_limit_lock = asyncio.Lock()
 upload_processing_semaphore = asyncio.Semaphore(UPLOAD_PROCESSING_CONCURRENCY)
@@ -286,6 +294,7 @@ class QueryRequest(BaseModel):
     model: Literal["auto", "local", "openai", "grok"] = "openai"
     mode: Literal["mkac", "mes", "research"] = "mkac"
     employee_id: Optional[str] = None
+    conversation_context: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class QueryResponse(BaseModel):
@@ -402,6 +411,159 @@ def employee_context_for_query(
     return context
 
 
+def build_email_body(
+    *,
+    original_question: str,
+    data_question: str,
+    answer: str,
+    answer_scope: str,
+) -> str:
+    return (
+        "Xin chào,\n\n"
+        "Meibook gửi bạn thông tin theo yêu cầu:\n\n"
+        f"{answer.strip()}\n\n"
+        "---\n"
+        f"Yêu cầu gốc: {original_question.strip()}\n"
+        f"Câu hỏi dữ liệu: {data_question.strip()}\n"
+        f"Nguồn trả lời: {answer_scope}\n"
+    )
+
+
+def _normalize_reference_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFD", value.lower().replace("đ", "d"))
+    normalized = "".join(
+        char for char in normalized if unicodedata.category(char) != "Mn"
+    )
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def is_context_reference(value: str) -> bool:
+    normalized = _normalize_reference_text(value)
+    reference_markers = (
+        "thong tin nay",
+        "noi dung nay",
+        "ket qua nay",
+        "cau tra loi nay",
+        "phan tren",
+        "o tren",
+        "vua roi",
+        "ben tren",
+    )
+    return any(marker in normalized for marker in reference_markers)
+
+
+def latest_assistant_context(
+    conversation_context: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    for item in reversed(conversation_context or []):
+        if item.get("role") != "assistant":
+            continue
+        content = str(item.get("content") or "").strip()
+        if content:
+            return {
+                "content": content,
+                "answer_scope": str(item.get("answer_scope") or "conversation_context"),
+                "model": str(item.get("model") or ""),
+            }
+    return None
+
+
+async def handle_email_send_query(
+    req: QueryRequest,
+    current_user_context: Optional[Dict[str, Any]],
+) -> Optional[QueryResponse]:
+    command = parse_email_send_command(req.question)
+    if command is None:
+        return None
+    if gmail_sender is None or not gmail_sender.available:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Gmail send chưa sẵn sàng. Hãy kiểm tra GMAIL_SEND_ENABLED, "
+                "GMAIL_CREDENTIALS_PATH và token OAuth."
+            ),
+        )
+
+    if is_context_reference(command.data_question):
+        previous_answer = latest_assistant_context(req.conversation_context)
+        if previous_answer is None:
+            raise GmailSenderError(
+                "Chưa có nội dung trước đó để gửi. Hãy hỏi lấy kết quả trước, "
+                "hoặc viết rõ nội dung cần gửi trong câu lệnh email."
+            )
+
+        body = build_email_body(
+            original_question=req.question,
+            data_question="Nội dung từ câu trả lời gần nhất trong cuộc hội thoại",
+            answer=previous_answer["content"],
+            answer_scope=previous_answer["answer_scope"],
+        )
+        send_result = await asyncio.to_thread(
+            gmail_sender.send_email,
+            command.to_email,
+            command.subject,
+            body,
+        )
+        logger.info(
+            "Sent Meibook contextual email action to=%s message_id=%s subject=%s",
+            send_result.to_email,
+            send_result.message_id,
+            send_result.subject,
+        )
+        status_answer = (
+            f"Đã gửi email tới {send_result.to_email} với tiêu đề "
+            f"\"{send_result.subject}\".\n\n"
+            f"Nội dung chính:\n{previous_answer['content']}"
+        )
+        return QueryResponse(
+            answer=status_answer,
+            sources=[],
+            session_id=req.session_id,
+            model=previous_answer["model"] or req.model,
+            mode=req.mode,
+            answer_scope="email_action",
+        )
+
+    answer, results, routed_model, answer_scope = await rag_pipeline.query(
+        session_id=req.session_id,
+        question=command.data_question,
+        model=req.model,
+        mode=req.mode,
+        current_user=current_user_context,
+    )
+    body = build_email_body(
+        original_question=req.question,
+        data_question=command.data_question,
+        answer=answer,
+        answer_scope=answer_scope,
+    )
+    send_result = await asyncio.to_thread(
+        gmail_sender.send_email,
+        command.to_email,
+        command.subject,
+        body,
+    )
+    logger.info(
+        "Sent Meibook email action to=%s message_id=%s subject=%s",
+        send_result.to_email,
+        send_result.message_id,
+        send_result.subject,
+    )
+    status_answer = (
+        f"Đã gửi email tới {send_result.to_email} với tiêu đề "
+        f"\"{send_result.subject}\".\n\n"
+        f"Nội dung chính:\n{answer}"
+    )
+    return QueryResponse(
+        answer=status_answer,
+        sources=rag_pipeline.format_sources(results),
+        session_id=req.session_id,
+        model=routed_model,
+        mode=req.mode,
+        answer_scope="email_action",
+    )
+
+
 # ──────────────────────────────────────────────
 # RAG Endpoints
 # ──────────────────────────────────────────────
@@ -436,6 +598,11 @@ async def health():
             }
             if mes_database is not None
             else {"available": False, "enabled": False}
+        ),
+        "gmail_send": (
+            gmail_sender.status()
+            if gmail_sender is not None
+            else {"enabled": False, "available": False}
         ),
         "document_processing": {
             "active": upload_active,
@@ -661,6 +828,10 @@ async def query_documents(req: QueryRequest, request: Request):
     current_user_context = employee_context_for_query(req, current_employee)
 
     try:
+        email_response = await handle_email_send_query(req, current_user_context)
+        if email_response is not None:
+            return email_response
+
         answer, results, routed_model, answer_scope = await rag_pipeline.query(
             session_id=req.session_id,
             question=req.question,
@@ -676,6 +847,8 @@ async def query_documents(req: QueryRequest, request: Request):
             mode=req.mode,
             answer_scope=answer_scope,
         )
+    except GmailSenderError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
     except Exception as e:
         logger.error(f"RAG query error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
@@ -694,6 +867,14 @@ async def query_stream(req: QueryRequest, request: Request):
     async def event_generator():
         import json
         try:
+            email_response = await handle_email_send_query(req, current_user_context)
+            if email_response is not None:
+                yield f"data: {json.dumps({'type': 'sources', 'sources': email_response.sources})}\n\n"
+                yield f"data: {json.dumps({'type': 'meta', 'model': email_response.model, 'mode': email_response.mode, 'answer_scope': email_response.answer_scope})}\n\n"
+                yield f"data: {json.dumps({'type': 'token', 'content': email_response.answer})}\n\n"
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                return
+
             token_stream, results, routed_model, answer_scope = (
                 await rag_pipeline.query_stream(
                 session_id=req.session_id,
