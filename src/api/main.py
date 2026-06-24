@@ -41,6 +41,7 @@ from src.rag.rag_pipeline import RAGPipeline
 from src.rag.web_search import WebSearcher
 from src.auth.employee_directory import EmployeeDirectory
 from src.integrations.mes_database import MesDatabase
+from src.integrations.mes_query_service import MesQueryService
 from src.integrations.gmail_sender import (
     GmailSender,
     GmailSenderError,
@@ -106,6 +107,7 @@ vector_store: Optional[VectorStore] = None
 mkac_vector_store: Optional[VectorStore] = None
 doc_parser: Optional[DocumentParser] = None
 rag_pipeline: Optional[RAGPipeline] = None
+mes_query_service: Optional[MesQueryService] = None
 web_searcher: Optional[WebSearcher] = None
 employee_directory = EmployeeDirectory(EMPLOYEE_DIRECTORY_DB_PATH)
 mes_database = MesDatabase.from_env()
@@ -254,6 +256,7 @@ async def lifespan(app: FastAPI):
     Khởi tạo các mô hình và kết nối database khi ứng dụng bắt đầu.
     """
     global embedder, vector_store, mkac_vector_store, doc_parser, rag_pipeline
+    global mes_query_service
     global web_searcher
 
     logger.info("🚀 Starting Meibook API Gateway on Machine 2...")
@@ -280,6 +283,10 @@ async def lifespan(app: FastAPI):
         mkac_vector_store=mkac_vector_store,
         web_searcher=web_searcher,
         mes_database=mes_database,
+    )
+    mes_query_service = MesQueryService(
+        mes_database=mes_database,
+        mes_sql_agent=rag_pipeline.mes_sql_agent,
     )
 
     logger.info("✅ Meibook API Gateway is fully operational.")
@@ -421,7 +428,7 @@ def verify_mkac_employee(employee_id: Optional[str]) -> EmployeeResponse:
 
 
 def authorize_query(req: QueryRequest) -> Optional[EmployeeResponse]:
-    if req.mode != "mkac":
+    if req.mode not in {"mkac", "mes"}:
         return None
     return verify_mkac_employee(req.employee_id)
 
@@ -446,6 +453,65 @@ def employee_context_for_query(
     if people_context:
         context["queried_people"] = people_context
     return context
+
+
+def ensure_query_services_ready() -> None:
+    if rag_pipeline is None:
+        raise HTTPException(status_code=503, detail="RAG pipeline is not ready.")
+    if mes_query_service is None:
+        raise HTTPException(status_code=503, detail="MES query service is not ready.")
+
+
+async def route_query(
+    req: QueryRequest,
+    *,
+    question: Optional[str] = None,
+    current_user_context: Optional[Dict[str, Any]] = None,
+) -> tuple[str, list, str, str]:
+    """Route by mode so MES never falls through to document RAG."""
+    ensure_query_services_ready()
+    routed_question = question or req.question
+    if req.mode == "mes":
+        logger.info("Routing query to MES service.")
+        return await mes_query_service.query(
+            question=routed_question,
+            model=req.model,
+        )
+    if req.mode in {"mkac", "research"}:
+        logger.info("Routing query to %s RAG service.", req.mode)
+        return await rag_pipeline.query(
+            session_id=req.session_id,
+            question=routed_question,
+            model=req.model,
+            mode=req.mode,
+            current_user=current_user_context,
+        )
+    raise HTTPException(status_code=400, detail=f"Unsupported query mode: {req.mode}")
+
+
+async def route_query_stream(
+    req: QueryRequest,
+    *,
+    current_user_context: Optional[Dict[str, Any]] = None,
+):
+    """Streaming variant of route_query with explicit mode separation."""
+    ensure_query_services_ready()
+    if req.mode == "mes":
+        logger.info("Routing streaming query to MES service.")
+        return await mes_query_service.query_stream(
+            question=req.question,
+            model=req.model,
+        )
+    if req.mode in {"mkac", "research"}:
+        logger.info("Routing streaming query to %s RAG service.", req.mode)
+        return await rag_pipeline.query_stream(
+            session_id=req.session_id,
+            question=req.question,
+            model=req.model,
+            mode=req.mode,
+            current_user=current_user_context,
+        )
+    raise HTTPException(status_code=400, detail=f"Unsupported query mode: {req.mode}")
 
 
 def build_email_body(
@@ -561,12 +627,10 @@ async def handle_email_send_query(
             answer_scope="email_action",
         )
 
-    answer, results, routed_model, answer_scope = await rag_pipeline.query(
-        session_id=req.session_id,
+    answer, results, routed_model, answer_scope = await route_query(
+        req,
         question=command.data_question,
-        model=req.model,
-        mode=req.mode,
-        current_user=current_user_context,
+        current_user_context=current_user_context,
     )
     body = build_email_body(
         original_question=req.question,
@@ -628,9 +692,9 @@ async def health():
             {
                 **mes_database.status(),
                 "sql_agent_available": bool(
-                    rag_pipeline
-                    and rag_pipeline.mes_sql_agent
-                    and rag_pipeline.mes_sql_agent.available
+                    mes_query_service
+                    and mes_query_service.mes_sql_agent
+                    and mes_query_service.mes_sql_agent.available
                 ),
             }
             if mes_database is not None
@@ -926,12 +990,9 @@ async def query_documents(req: QueryRequest, request: Request):
         if email_response is not None:
             return email_response
 
-        answer, results, routed_model, answer_scope = await rag_pipeline.query(
-            session_id=req.session_id,
-            question=req.question,
-            model=req.model,
-            mode=req.mode,
-            current_user=current_user_context,
+        answer, results, routed_model, answer_scope = await route_query(
+            req,
+            current_user_context=current_user_context,
         )
         return QueryResponse(
             answer=answer,
@@ -970,13 +1031,10 @@ async def query_stream(req: QueryRequest, request: Request):
                 return
 
             token_stream, results, routed_model, answer_scope = (
-                await rag_pipeline.query_stream(
-                session_id=req.session_id,
-                question=req.question,
-                model=req.model,
-                mode=req.mode,
-                current_user=current_user_context,
-            )
+                await route_query_stream(
+                    req,
+                    current_user_context=current_user_context,
+                )
             )
             
             # Gửi nguồn trích dẫn (sources) trước

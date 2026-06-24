@@ -30,6 +30,7 @@ from src.integrations.mes_sql_agent import (
     MesSqlAgentError,
     MesSqlQueryResult,
 )
+from src.integrations.mes_query_service import MesQueryService
 
 logger = logging.getLogger(__name__)
 
@@ -379,6 +380,12 @@ class RAGPipeline:
         self.mes_sql_agent = (
             mes_sql_agent if mes_sql_agent is not None else MesSqlAgent.from_env()
         )
+        self.mes_query_service = MesQueryService(
+            mes_client=self.mes_client,
+            mes_database=self.mes_database,
+            mes_sql_agent=self.mes_sql_agent,
+            openai_client=None,
+        )
         self.top_k = top_k
         self.score_threshold = score_threshold
         self.temperature = temperature
@@ -405,6 +412,9 @@ class RAGPipeline:
         """
         Non-streaming RAG query.
         """
+        if mode == "mes":
+            return await self.mes_query_service.query(question, model)
+
         mes_source, mes_data = await self._get_mes_route(question, mode)
         if mes_source == "mes":
             mes_lots = mes_data
@@ -514,6 +524,9 @@ class RAGPipeline:
         """
         Streaming RAG query.
         """
+        if mode == "mes":
+            return await self.mes_query_service.query_stream(question, model)
+
         mes_source, mes_data = await self._get_mes_route(question, mode)
         if mes_source == "mes":
             mes_lots = mes_data
