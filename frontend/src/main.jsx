@@ -207,6 +207,7 @@ const UI_TEXT = {
       sources: "Nguồn tham chiếu",
       webSource: "Nguồn web",
       page: "Trang {page}",
+      similarity: "Độ tương đồng {score}%",
       clickToViewPage: "Bấm để xem trang",
       clickToViewSnippet: "Bấm để xem đoạn trích",
       noSources: "Chưa có nguồn cho lượt trả lời này",
@@ -350,6 +351,7 @@ const UI_TEXT = {
       sources: "参照元",
       webSource: "Webソース",
       page: "{page}ページ",
+      similarity: "類似度 {score}%",
       clickToViewPage: "クリックしてページを表示",
       clickToViewSnippet: "クリックして抜粋を表示",
       noSources: "この回答の参照元はまだありません",
@@ -2209,7 +2211,11 @@ function App() {
                         ? t("common.webSource")
                         : t("common.page", { page: source.page || "?" })}
                     </span>
-                    <span>{Math.round((source.score || 0) * 100)}%</span>
+                    <span>
+                      {t("common.similarity", {
+                        score: Math.round((source.score || 0) * 100),
+                      })}
+                    </span>
                   </div>
                   {!source.url && (
                     <div className="source-preview-state">
@@ -2262,7 +2268,11 @@ function App() {
             </div>
             <div className="source-preview-meta">
               <span>{t("common.page", { page: sourcePreview.source.page || "?" })}</span>
-              <span>{Math.round((sourcePreview.source.score || 0) * 100)}%</span>
+              <span>
+                {t("common.similarity", {
+                  score: Math.round((sourcePreview.source.score || 0) * 100),
+                })}
+              </span>
             </div>
             {sourcePreview.source.has_page_preview && !sourcePreview.imageFailed ? (
               <div className="source-preview-image-wrap">
