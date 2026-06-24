@@ -755,6 +755,39 @@ summary:focus-visible {
   flex: 0 0 auto;
 }
 
+.language-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 34px;
+  padding: 3px;
+  color: #404955;
+  background: #ffffff;
+  border: 1px solid #d8dee5;
+  border-radius: 8px;
+}
+
+.language-toggle span {
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  height: 26px;
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  border-radius: 6px;
+}
+
+.language-toggle span.active {
+  color: #ffffff;
+  background: #0d7f73;
+}
+
+.language-toggle:hover {
+  background: #f5f7f9;
+}
+
 .panel-count {
   position: absolute;
   top: -6px;
@@ -1545,13 +1578,13 @@ summary:focus-visible {
   background: #096a60;
 }
 
-.send-button[title="Dừng trả lời"] {
+.send-button.stopping {
   color: #8b261f;
   background: #fff0ee;
   border: 1px solid #efc1bb;
 }
 
-.send-button[title="Dừng trả lời"]:hover {
+.send-button.stopping:hover {
   background: #ffe2de;
 }
 
@@ -2241,11 +2274,17 @@ html[data-theme="dark"] .mode-tabs button.active.mes {
 
 html[data-theme="dark"] .model-select,
 html[data-theme="dark"] .header-tool,
+html[data-theme="dark"] .language-toggle,
 html[data-theme="dark"] .panel-toggle,
 html[data-theme="dark"] .mobile-menu {
   color: #d7dee6;
   background: #20262e;
   border-color: #3a444f;
+}
+
+html[data-theme="dark"] .language-toggle span.active {
+  color: #0b2926;
+  background: #8ce2d8;
 }
 
 html[data-theme="dark"] .model-select-trigger {
@@ -2580,7 +2619,7 @@ html[data-theme="dark"] .send-button:hover:not(:disabled) {
   background: #8ce2d8;
 }
 
-html[data-theme="dark"] .send-button[title="Dừng trả lời"] {
+html[data-theme="dark"] .send-button.stopping {
   color: #ffb9b0;
   background: #3a2221;
   border-color: #75423d;

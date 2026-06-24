@@ -57,21 +57,12 @@ const QUICK_PROMPTS = {
 
 const MODE_OPTIONS = {
   mkac: {
-    label: "Hành chính nhân sự",
-    shortLabel: "HCNS",
-    title: "Hỏi đáp hành chính nhân sự MKAC",
     icon: Database,
   },
   mes: {
-    label: "Quản lý MES",
-    shortLabel: "MES",
-    title: "Quản lý MES",
     icon: Activity,
   },
   research: {
-    label: "Nghiên cứu tài liệu",
-    shortLabel: "Nghiên cứu",
-    title: "Nghiên cứu tài liệu",
     icon: FlaskConical,
   },
 };
@@ -83,14 +74,6 @@ const MODEL_ACCENTS = {
   grok: "accent-grok",
 };
 
-const WAITING_MESSAGES = [
-  "Đã nhận câu hỏi, đang suy luận...",
-  "Tôi hiểu rồi, bạn chờ một chút nhé...",
-  "Đang đối chiếu các nguồn phù hợp...",
-  "Đang tổng hợp câu trả lời...",
-  "Sắp có kết quả rồi...",
-];
-
 const SESSION_STORAGE_KEYS = {
   mkac: "meibook-session-mkac",
   mes: "meibook-session-mes",
@@ -99,20 +82,302 @@ const SESSION_STORAGE_KEYS = {
 const LEGACY_SESSION_STORAGE_KEY = "meibook-session";
 const SESSION_TITLE_STORAGE_KEY = "meibook-session-titles";
 const THEME_STORAGE_KEY = "meibook-theme";
+const LANGUAGE_STORAGE_KEY = "meibook-language";
 const EMPLOYEE_STORAGE_KEY = "meibook-mkac-employee";
 const THEME_OPTIONS = ["system", "light", "dark"];
-const THEME_META = {
-  system: {
-    label: "Theo hệ thống",
-    icon: Monitor,
+const LANGUAGE_OPTIONS = ["vi", "ja"];
+const THEME_ICONS = {
+  system: Monitor,
+  light: Sun,
+  dark: Moon,
+};
+
+const UI_TEXT = {
+  vi: {
+    modes: {
+      mkac: {
+        label: "Hành chính nhân sự",
+        shortLabel: "HCNS",
+        title: "Hỏi đáp hành chính nhân sự MKAC",
+        empty: "Tra cứu quy định hành chính, thông tin nội bộ và nhân sự MKAC.",
+        metric: "Tài liệu MKAC",
+        authHint: "Nhập mã nhân viên để truy cập chế độ hỏi đáp nội bộ MKAC.",
+        inputLabel: "Câu hỏi hành chính nhân sự MKAC",
+        placeholder: "Hỏi về hành chính, quy định hoặc nhân sự MKAC...",
+      },
+      mes: {
+        label: "Quản lý MES",
+        shortLabel: "MES",
+        title: "Quản lý MES",
+        empty: "Tra cứu Lot, mã hàng, mã lỗi và thống kê sản xuất từ MES.",
+        metric: "Lot MES",
+        authHint: "Nhập mã nhân viên để truy cập dữ liệu sản xuất MES.",
+        inputLabel: "Câu hỏi về MES",
+        placeholder: "Hỏi về Lot, mã hàng hoặc lỗi sản xuất...",
+        unavailable: "MES snapshot chưa sẵn sàng",
+      },
+      research: {
+        label: "Nghiên cứu tài liệu",
+        shortLabel: "Nghiên cứu",
+        title: "Nghiên cứu tài liệu",
+        emptyReady: "Sẵn sàng nghiên cứu tài liệu đã index trong phiên này.",
+        empty: "Tải tài liệu lên để bắt đầu nghiên cứu.",
+        metric: "Tài liệu",
+        inputLabel: "Câu hỏi nghiên cứu",
+        placeholderReady: "Nhập chủ đề nghiên cứu...",
+        placeholderEmpty: "Hãy tải tài liệu lên trước khi đặt câu hỏi...",
+        lockedModel: "Chế độ nghiên cứu luôn dùng Grok",
+      },
+    },
+    theme: {
+      system: "Theo hệ thống",
+      light: "Sáng",
+      dark: "Tối",
+    },
+    waiting: [
+      "Đã nhận câu hỏi, đang suy luận...",
+      "Tôi hiểu rồi, bạn chờ một chút nhé...",
+      "Đang đối chiếu các nguồn phù hợp...",
+      "Đang tổng hợp câu trả lời...",
+      "Sắp có kết quả rồi...",
+    ],
+    defaultTitles: {
+      mkac: "Hành chính nhân sự mới",
+      mes: "Phiên MES mới",
+      research: "Phiên nghiên cứu mới",
+      researchDemo: "Tài liệu nghiên cứu demo",
+    },
+    common: {
+      openDocuments: "Mở tài liệu",
+      closeDocuments: "Đóng tài liệu",
+      assistantName: "Trợ lý hỏi đáp nội bộ",
+      close: "Đóng",
+      workSession: "Phiên làm việc",
+      newSession: "Tạo phiên mới",
+      researchDocuments: "Tài liệu nghiên cứu",
+      chooseDocument: "Chọn tài liệu",
+      supportedFiles: "PDF, Office, HTML, PNG/JPG",
+      files: "tệp",
+      removeFile: "Bỏ {name}",
+      deleteFile: "Xóa {name}",
+      indexDocument: "Index tài liệu",
+      indexing: "Đang index {done}/{total}",
+      processing: "Đang xử lý",
+      indexedSummary: "Đã index {files} tệp, {chunks} đoạn",
+      noDocuments: "Chưa có tài liệu",
+      onlineMachine: "Máy 2 online",
+      checking: "Đang kiểm tra",
+      qaModes: "Chế độ hỏi đáp",
+      chooseModel: "Chọn mô hình",
+      modelList: "Danh sách mô hình",
+      interfaceTitle: "Giao diện: {theme}. Nhấn để chuyển chế độ.",
+      interfaceAria: "Giao diện hiện tại: {theme}",
+      languageTitle: "Ngôn ngữ giao diện: {language}. Nhấn để chuyển.",
+      employeeLogout: "Đăng xuất mã nhân viên",
+      clearConversation: "Xóa hội thoại hiện tại",
+      hideSources: "Ẩn nguồn",
+      showSources: "Hiện nguồn",
+      employeeAuth: "Xác thực nhân viên MKAC",
+      employeeCode: "Mã nhân viên",
+      invalidEmployee: "Mã nhân viên không hợp lệ.",
+      employeeRequired: "Vui lòng nhập mã nhân viên hợp lệ trước khi tiếp tục.",
+      continue: "Tiếp tục",
+      verifying: "Đang kiểm tra",
+      chooseToStart: "Chọn tài liệu để bắt đầu",
+      tryDemo: "Thử nghiệm với tài liệu mẫu",
+      model: "Model",
+      status: "Trạng thái",
+      stopped: "Đã dừng",
+      noResult: "Không có kết quả",
+      webSearch: "Tìm kiếm web",
+      mesData: "Dữ liệu MES",
+      mesSnapshot: "MES snapshot",
+      research: "Nghiên cứu",
+      mkacSource: "Nguồn MKAC",
+      aiInfo: "Thông tin phản hồi AI",
+      copied: "Đã sao chép",
+      copy: "Sao chép",
+      copyAnswer: "Sao chép câu trả lời",
+      copyFailed: "Không thể sao chép câu trả lời.",
+      suggestions: "Gợi ý thêm:",
+      autoAsk: "Nhấn để tự động hỏi và trả lời",
+      addResearchDocument: "Thêm tài liệu nghiên cứu",
+      send: "Gửi",
+      stop: "Dừng trả lời",
+      sources: "Nguồn tham chiếu",
+      webSource: "Nguồn web",
+      page: "Trang {page}",
+      clickToViewPage: "Bấm để xem trang",
+      clickToViewSnippet: "Bấm để xem đoạn trích",
+      noSources: "Chưa có nguồn cho lượt trả lời này",
+      previewDialog: "Xem nguồn tham chiếu",
+      closePreview: "Đóng preview",
+      noPreviewImage: "Chưa có ảnh preview cho trang này.",
+      snippet: "Đoạn trích",
+      demoNotIndexed: "Tài liệu mẫu chưa được index. Vui lòng chạy script index trước.",
+      stoppedResponse: "Đã dừng phản hồi.",
+      requestFailed: "Không thể hoàn tất yêu cầu: {message}",
+      loading: "Đang tải",
+      loadingModel: "Đang tải model",
+      loadingModelList: "Đang tải danh sách model",
+      internalDocuments: "tài liệu nội bộ",
+      sessionDocuments: "tài liệu trong phiên",
+      hello: "Xin chào, {name}",
+      errorRecords: "bản ghi lỗi",
+      online: "Online",
+      offline: "Offline",
+    },
+    answerScope: {
+      web: "Tổng hợp từ nguồn web",
+      mes: "Dựa trên dữ liệu MES trực tiếp",
+      mes_database: "Dựa trên MES snapshot cục bộ",
+      research: "Dựa trên tài liệu nghiên cứu",
+      mkac: "Dựa trên kho MKAC",
+      fallback: "Không có nguồn đối chiếu",
+    },
   },
-  light: {
-    label: "Sáng",
-    icon: Sun,
-  },
-  dark: {
-    label: "Tối",
-    icon: Moon,
+  ja: {
+    modes: {
+      mkac: {
+        label: "人事・総務",
+        shortLabel: "人事",
+        title: "MKAC 人事・総務 Q&A",
+        empty: "MKACの規程、社内情報、人事情報を検索します。",
+        metric: "MKAC資料",
+        authHint: "MKAC社内Q&Aを利用するには社員番号を入力してください。",
+        inputLabel: "MKAC 人事・総務に関する質問",
+        placeholder: "総務、規程、人事について質問してください...",
+      },
+      mes: {
+        label: "MES管理",
+        shortLabel: "MES",
+        title: "MES管理",
+        empty: "Lot、品番、エラーコード、生産統計をMESから検索します。",
+        metric: "MES Lot",
+        authHint: "MES生産データにアクセスするには社員番号を入力してください。",
+        inputLabel: "MESに関する質問",
+        placeholder: "Lot、品番、生産エラーについて質問してください...",
+        unavailable: "MESスナップショットはまだ利用できません",
+      },
+      research: {
+        label: "資料調査",
+        shortLabel: "調査",
+        title: "資料調査",
+        emptyReady: "このセッションのインデックス済み資料を調査できます。",
+        empty: "調査を始めるには資料をアップロードしてください。",
+        metric: "資料",
+        inputLabel: "調査質問",
+        placeholderReady: "調査テーマを入力してください...",
+        placeholderEmpty: "質問する前に資料をアップロードしてください...",
+        lockedModel: "資料調査モードでは常にGrokを使用します",
+      },
+    },
+    theme: {
+      system: "システム設定",
+      light: "ライト",
+      dark: "ダーク",
+    },
+    waiting: [
+      "質問を受け取りました。推論しています...",
+      "承知しました。少々お待ちください...",
+      "関連する情報源を照合しています...",
+      "回答をまとめています...",
+      "もうすぐ結果が出ます...",
+    ],
+    defaultTitles: {
+      mkac: "新しい人事・総務セッション",
+      mes: "新しいMESセッション",
+      research: "新しい資料調査セッション",
+      researchDemo: "サンプル調査資料",
+    },
+    common: {
+      openDocuments: "資料を開く",
+      closeDocuments: "資料を閉じる",
+      assistantName: "社内Q&Aアシスタント",
+      close: "閉じる",
+      workSession: "作業セッション",
+      newSession: "新しいセッション",
+      researchDocuments: "調査資料",
+      chooseDocument: "資料を選択",
+      supportedFiles: "PDF、Office、HTML、PNG/JPG",
+      files: "件のファイル",
+      removeFile: "{name}を外す",
+      deleteFile: "{name}を削除",
+      indexDocument: "資料をインデックス",
+      indexing: "インデックス中 {done}/{total}",
+      processing: "処理中",
+      indexedSummary: "{files}ファイル、{chunks}チャンクをインデックスしました",
+      noDocuments: "資料はまだありません",
+      onlineMachine: "マシン2 オンライン",
+      checking: "確認中",
+      qaModes: "Q&Aモード",
+      chooseModel: "モデルを選択",
+      modelList: "モデル一覧",
+      interfaceTitle: "表示テーマ: {theme}。クリックして切り替えます。",
+      interfaceAria: "現在の表示テーマ: {theme}",
+      languageTitle: "表示言語: {language}。クリックして切り替えます。",
+      employeeLogout: "社員番号をログアウト",
+      clearConversation: "現在の会話を削除",
+      hideSources: "参照元を隠す",
+      showSources: "参照元を表示",
+      employeeAuth: "MKAC社員認証",
+      employeeCode: "社員番号",
+      invalidEmployee: "社員番号が正しくありません。",
+      employeeRequired: "続行する前に有効な社員番号を入力してください。",
+      continue: "続行",
+      verifying: "確認中",
+      chooseToStart: "資料を選択して開始",
+      tryDemo: "サンプル資料で試す",
+      model: "モデル",
+      status: "状態",
+      stopped: "停止済み",
+      noResult: "結果なし",
+      webSearch: "Web検索",
+      mesData: "MESデータ",
+      mesSnapshot: "MESスナップショット",
+      research: "調査",
+      mkacSource: "MKACソース",
+      aiInfo: "AI応答情報",
+      copied: "コピー済み",
+      copy: "コピー",
+      copyAnswer: "回答をコピー",
+      copyFailed: "回答をコピーできませんでした。",
+      suggestions: "追加候補:",
+      autoAsk: "クリックすると自動で質問・回答します",
+      addResearchDocument: "調査資料を追加",
+      send: "送信",
+      stop: "回答を停止",
+      sources: "参照元",
+      webSource: "Webソース",
+      page: "{page}ページ",
+      clickToViewPage: "クリックしてページを表示",
+      clickToViewSnippet: "クリックして抜粋を表示",
+      noSources: "この回答の参照元はまだありません",
+      previewDialog: "参照元を表示",
+      closePreview: "プレビューを閉じる",
+      noPreviewImage: "このページのプレビュー画像はありません。",
+      snippet: "抜粋",
+      demoNotIndexed: "サンプル資料はまだインデックスされていません。先にインデックススクリプトを実行してください。",
+      stoppedResponse: "応答を停止しました。",
+      requestFailed: "リクエストを完了できません: {message}",
+      loading: "読み込み中",
+      loadingModel: "モデルを読み込み中",
+      loadingModelList: "モデル一覧を読み込み中",
+      internalDocuments: "社内資料",
+      sessionDocuments: "セッション内の資料",
+      hello: "こんにちは、{name}",
+      errorRecords: "エラー記録",
+      online: "オンライン",
+      offline: "オフライン",
+    },
+    answerScope: {
+      web: "Webソースに基づく要約",
+      mes: "MESリアルタイムデータに基づく",
+      mes_database: "ローカルMESスナップショットに基づく",
+      research: "調査資料に基づく",
+      mkac: "MKACナレッジベースに基づく",
+      fallback: "照合できる参照元はありません",
+    },
   },
 };
 
@@ -123,6 +388,21 @@ function storedTheme() {
   } catch {
     return "system";
   }
+}
+
+function storedLanguage() {
+  try {
+    const value = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    return LANGUAGE_OPTIONS.includes(value) ? value : "vi";
+  } catch {
+    return "vi";
+  }
+}
+
+function formatText(template, values = {}) {
+  return String(template || "").replace(/\{(\w+)\}/g, (_, key) =>
+    values[key] ?? "",
+  );
 }
 
 function storedEmployee() {
@@ -269,10 +549,11 @@ function formatBytes(bytes) {
   return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
-function defaultSessionTitle(workspaceMode) {
-  if (workspaceMode === "research") return "Phiên nghiên cứu mới";
-  if (workspaceMode === "mes") return "Phiên MES mới";
-  return "Hành chính nhân sự mới";
+function defaultSessionTitle(workspaceMode, language = "vi") {
+  return (
+    UI_TEXT[language]?.defaultTitles?.[workspaceMode] ||
+    UI_TEXT.vi.defaultTitles[workspaceMode]
+  );
 }
 
 function sessionTitleFromQuestion(question) {
@@ -306,12 +587,14 @@ function persistSessionTitle(sessionId, title) {
 
 function App() {
   const [theme, setTheme] = useState(storedTheme);
+  const [language, setLanguage] = useState(storedLanguage);
+  const initialLanguageRef = useRef(storedLanguage());
   const [quickAnswersConfig, setQuickAnswersConfig] = useState({ mkac: [], mes: [], threshold: 300, max: 3 });
   const [sessionIds, setSessionIds] = useState({ mkac: "", mes: "", research: "" });
   const [sessionTitles, setSessionTitles] = useState({
-    mkac: defaultSessionTitle("mkac"),
-    mes: defaultSessionTitle("mes"),
-    research: defaultSessionTitle("research"),
+    mkac: defaultSessionTitle("mkac", initialLanguageRef.current),
+    mes: defaultSessionTitle("mes", initialLanguageRef.current),
+    research: defaultSessionTitle("research", initialLanguageRef.current),
   });
   const [files, setFiles] = useState([]);
   const [pendingFiles, setPendingFiles] = useState([]);
@@ -377,6 +660,16 @@ function App() {
   const generationControllerRef = useRef(null);
   const endRef = useRef(null);
 
+  const text = UI_TEXT[language] || UI_TEXT.vi;
+  const t = (path, values = {}) => {
+    const value = path.split(".").reduce((current, key) => current?.[key], text);
+    const fallback = path
+      .split(".")
+      .reduce((current, key) => current?.[key], UI_TEXT.vi);
+    return formatText(value ?? fallback ?? path, values);
+  };
+  const modeText = (workspaceMode = mode) => text.modes[workspaceMode] || UI_TEXT.vi.modes[workspaceMode];
+
   const selectedModel = useMemo(
     () => models.find((item) => item.id === (mode === "research" ? "grok" : model)),
     [models, mode, model],
@@ -387,9 +680,12 @@ function App() {
     [models],
   );
 
-  const currentMode = MODE_OPTIONS[mode];
+  const currentMode = {
+    ...MODE_OPTIONS[mode],
+    ...modeText(mode),
+  };
   const ModeIcon = currentMode.icon;
-  const ThemeIcon = THEME_META[theme].icon;
+  const ThemeIcon = THEME_ICONS[theme];
   const sessionId = sessionIds[mode];
   const messages = messagesByMode[mode];
   const sources = sourcesByMode[mode];
@@ -584,12 +880,12 @@ function App() {
         const savedTitles = storedSessionTitles();
         setSessionTitles({
           mkac:
-            savedTitles[resolvedSessions.mkac] || defaultSessionTitle("mkac"),
+            savedTitles[resolvedSessions.mkac] || defaultSessionTitle("mkac", language),
           mes:
-            savedTitles[resolvedSessions.mes] || defaultSessionTitle("mes"),
+            savedTitles[resolvedSessions.mes] || defaultSessionTitle("mes", language),
           research:
             savedTitles[resolvedSessions.research] ||
-            defaultSessionTitle("research"),
+            defaultSessionTitle("research", language),
         });
         Object.entries(resolvedSessions).forEach(([workspaceMode, id]) => {
           localStorage.setItem(SESSION_STORAGE_KEYS[workspaceMode], id);
@@ -630,6 +926,37 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+    } catch {
+      // The in-memory language state still works when storage is unavailable.
+    }
+    document.documentElement.lang = language === "ja" ? "ja" : "vi";
+  }, [language]);
+
+  useEffect(() => {
+    setSessionTitles((current) => {
+      const next = { ...current };
+      for (const workspaceMode of Object.keys(MODE_OPTIONS)) {
+        const defaultTitles = LANGUAGE_OPTIONS.map(
+          (item) => UI_TEXT[item].defaultTitles[workspaceMode],
+        );
+        if (defaultTitles.includes(current[workspaceMode])) {
+          next[workspaceMode] = defaultSessionTitle(workspaceMode, language);
+        }
+      }
+      if (
+        LANGUAGE_OPTIONS.map((item) => UI_TEXT[item].defaultTitles.researchDemo).includes(
+          current.research,
+        )
+      ) {
+        next.research = t("defaultTitles.researchDemo");
+      }
+      return next;
+    });
+  }, [language]);
+
+  useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
     textarea.style.height = "auto";
@@ -667,12 +994,12 @@ function App() {
 
     const timer = window.setInterval(() => {
       setWaitingMessageIndex(
-        (current) => (current + 1) % WAITING_MESSAGES.length,
+        (current) => (current + 1) % text.waiting.length,
       );
     }, 2400);
 
     return () => window.clearInterval(timer);
-  }, [busy, pendingAssistantId]);
+  }, [busy, pendingAssistantId, text.waiting.length]);
 
   useEffect(() => {
     if (!sourcePreview) return undefined;
@@ -713,7 +1040,7 @@ function App() {
     localStorage.setItem(SESSION_STORAGE_KEYS[workspaceMode], data.session_id);
     setSessionTitles((current) => ({
       ...current,
-      [workspaceMode]: defaultSessionTitle(workspaceMode),
+      [workspaceMode]: defaultSessionTitle(workspaceMode, language),
     }));
     if (workspaceMode === "research") {
       setFiles([]);
@@ -727,7 +1054,7 @@ function App() {
 
   function useResearchDemoSession() {
     if (!researchDemo.ready || !researchDemo.session_id) {
-      setError("Tài liệu mẫu chưa được index. Vui lòng chạy script index trước.");
+      setError(t("common.demoNotIndexed"));
       return;
     }
     setError("");
@@ -738,7 +1065,7 @@ function App() {
     localStorage.setItem(SESSION_STORAGE_KEYS.research, researchDemo.session_id);
     setSessionTitles((current) => ({
       ...current,
-      research: "Tài liệu nghiên cứu demo",
+      research: t("defaultTitles.researchDemo"),
     }));
     setFiles(researchDemo.files || []);
     setPendingFiles([]);
@@ -815,7 +1142,7 @@ function App() {
         setCopiedMessageId((current) => (current === message.id ? "" : current));
       }, 1800);
     } catch {
-      setError("Không thể sao chép câu trả lời.");
+      setError(t("common.copyFailed"));
     }
   }
 
@@ -828,6 +1155,10 @@ function App() {
       const currentIndex = THEME_OPTIONS.indexOf(current);
       return THEME_OPTIONS[(currentIndex + 1) % THEME_OPTIONS.length];
     });
+  }
+
+  function cycleLanguage() {
+    setLanguage((current) => (current === "vi" ? "ja" : "vi"));
   }
 
   function addPendingFiles(fileList) {
@@ -904,7 +1235,7 @@ function App() {
   async function sendMessage(prompt = question) {
     const cleanQuestion = prompt.trim();
     if ((mode === "mkac" || mode === "mes") && !mkacAuthorized) {
-      setEmployeeCodeError("Vui lòng nhập mã nhân viên hợp lệ trước khi tiếp tục.");
+      setEmployeeCodeError(t("common.employeeRequired"));
       return;
     }
     if (!cleanQuestion || busy || !sessionId) return;
@@ -993,7 +1324,7 @@ function App() {
             );
           }
           if (event.type === "error") {
-            throw new Error(event.message || "Không thể tạo phản hồi.");
+            throw new Error(event.message || t("common.requestFailed", { message: "" }));
           }
         },
         controller.signal,
@@ -1018,8 +1349,8 @@ function App() {
                 content:
                   item.content ||
                   (wasStopped
-                    ? "Đã dừng phản hồi."
-                    : `Không thể hoàn tất yêu cầu: ${queryError.message}`),
+                    ? t("common.stoppedResponse")
+                    : t("common.requestFailed", { message: queryError.message })),
                 stopped: wasStopped,
               }
             : item,
@@ -1037,7 +1368,7 @@ function App() {
     const normalizedCode = employeeCodeInput.trim();
 
     if (!normalizedCode) {
-      setEmployeeCodeError("Mã nhân viên không hợp lệ.");
+      setEmployeeCodeError(t("common.invalidEmployee"));
       return;
     }
 
@@ -1053,7 +1384,7 @@ function App() {
       }
     } catch {
       setEmployee(null);
-      setEmployeeCodeError("Mã nhân viên không hợp lệ.");
+      setEmployeeCodeError(t("common.invalidEmployee"));
       try {
         localStorage.removeItem(EMPLOYEE_STORAGE_KEY);
       } catch {
@@ -1102,7 +1433,7 @@ function App() {
           <button
             className="mobile-menu icon-button"
             type="button"
-            title="Mở tài liệu"
+            title={t("common.openDocuments")}
             onClick={() => setSidebarOpen(true)}
           >
             <Menu size={20} />
@@ -1112,7 +1443,7 @@ function App() {
             <button
               className="sidebar-backdrop"
               type="button"
-              aria-label="Đóng tài liệu"
+              aria-label={t("common.closeDocuments")}
               onClick={() => setSidebarOpen(false)}
             />
           )}
@@ -1124,12 +1455,12 @@ function App() {
               </div>
               <div>
                 <strong>MKAC</strong>
-                <span>Trợ lý hỏi đáp nội bộ</span>
+                <span>{t("common.assistantName")}</span>
               </div>
               <button
                 className="icon-button close-sidebar"
                 type="button"
-                title="Đóng"
+                title={t("common.close")}
                 onClick={() => setSidebarOpen(false)}
               >
                 <X size={18} />
@@ -1138,7 +1469,7 @@ function App() {
 
             <div className="session-strip">
               <div>
-                <span>Phiên làm việc</span>
+                <span>{t("common.workSession")}</span>
                 <strong className="session-title" title={sessionTitles.research}>
                   {sessionTitles.research}
                 </strong>
@@ -1146,7 +1477,7 @@ function App() {
               <button
                 className="icon-button"
                 type="button"
-                title="Tạo phiên mới"
+                title={t("common.newSession")}
                 onClick={() => resetSession("research")}
                 disabled={busy || uploading}
               >
@@ -1156,7 +1487,7 @@ function App() {
 
             <section className="sidebar-section">
               <div className="section-heading">
-                <span>Tài liệu nghiên cứu</span>
+                <span>{t("common.researchDocuments")}</span>
                 <span className="count-badge">{files.length}</span>
               </div>
 
@@ -1182,14 +1513,14 @@ function App() {
                 onDrop={onDrop}
               >
                 <UploadCloud size={23} />
-                <span>Chọn tài liệu</span>
-                <small>PDF, Office, HTML, PNG/JPG</small>
+                <span>{t("common.chooseDocument")}</span>
+                <small>{t("common.supportedFiles")}</small>
               </button>
 
               {pendingFiles.length > 0 && (
                 <div className="pending-panel">
                   <div className="pending-header">
-                    <span>{pendingFiles.length} tệp</span>
+                    <span>{pendingFiles.length} {t("common.files")}</span>
                     <span>{formatBytes(pendingTotalSize)}</span>
                   </div>
                   <div className="pending-list">
@@ -1200,7 +1531,7 @@ function App() {
                         <button
                           className="icon-button subtle"
                           type="button"
-                          title={`Bỏ ${file.name}`}
+                          title={t("common.removeFile", { name: file.name })}
                           onClick={() => removePendingFile(index)}
                           disabled={uploading}
                         >
@@ -1217,13 +1548,16 @@ function App() {
                   >
                     {uploading ? <Loader2 className="spin" size={16} /> : <Database size={16} />}
                     {uploading
-                      ? `Đang index ${uploadProgress.done}/${uploadProgress.total}`
-                      : "Index tài liệu"}
+                      ? t("common.indexing", {
+                          done: uploadProgress.done,
+                          total: uploadProgress.total,
+                        })
+                      : t("common.indexDocument")}
                   </button>
                   {uploading && (
                     <div className="upload-progress" role="status" aria-live="polite">
                       <div className="upload-progress-copy">
-                        <span>Đang xử lý</span>
+                        <span>{t("common.processing")}</span>
                         <strong title={uploadProgress.current}>
                           {uploadProgress.current}
                         </strong>
@@ -1240,7 +1574,10 @@ function App() {
                 <div className="upload-summary" role="status" aria-live="polite">
                   <CheckCircle2 size={15} />
                   <span>
-                    Đã index {uploadSummary.files} tệp, {uploadSummary.chunks} đoạn
+                    {t("common.indexedSummary", {
+                      files: uploadSummary.files,
+                      chunks: uploadSummary.chunks,
+                    })}
                   </span>
                 </div>
               )}
@@ -1253,7 +1590,7 @@ function App() {
                     <button
                       className="icon-button subtle danger"
                       type="button"
-                      title={`Xóa ${filename}`}
+                      title={t("common.deleteFile", { name: filename })}
                       onClick={() => removeFile(filename)}
                     >
                       <Trash2 size={15} />
@@ -1263,7 +1600,7 @@ function App() {
                 {files.length === 0 && (
                   <div className="empty-files">
                     <FileText size={20} />
-                    <span>Chưa có tài liệu</span>
+                    <span>{t("common.noDocuments")}</span>
                   </div>
                 )}
               </div>
@@ -1272,7 +1609,7 @@ function App() {
             <div className="sidebar-footer">
               <div className={`service-state ${health}`}>
                 {health === "online" ? <CheckCircle2 size={15} /> : <Server size={15} />}
-                <span>{health === "online" ? "Máy 2 online" : "Đang kiểm tra"}</span>
+                <span>{health === "online" ? t("common.onlineMachine") : t("common.checking")}</span>
               </div>
               <span className="security-chip">
                 <ShieldCheck size={14} />
@@ -1302,21 +1639,22 @@ function App() {
               <span>
                 {mode === "mkac"
                   ? employee?.name
-                    ? employee.greeting || `Xin chào, ${employee.name}`
-                    : `${mkacStatus.num_documents} tài liệu nội bộ`
+                    ? employee.greeting || t("common.hello", { name: employee.name })
+                    : `${mkacStatus.num_documents} ${t("common.internalDocuments")}`
                   : mode === "mes"
                     ? mesStatus.available
-                      ? `${mesStatus.lots || 0} Lot · ${mesStatus.error_events || 0} bản ghi lỗi`
-                      : "MES snapshot chưa sẵn sàng"
-                    : `${files.length} tài liệu trong phiên`}
+                      ? `${mesStatus.lots || 0} Lot · ${mesStatus.error_events || 0} ${t("common.errorRecords")}`
+                      : modeText("mes").unavailable
+                    : `${files.length} ${t("common.sessionDocuments")}`}
               </span>
             </div>
           </div>
 
           <div className="header-actions">
-            <div className="mode-tabs" role="tablist" aria-label="Chế độ hỏi đáp">
+            <div className="mode-tabs" role="tablist" aria-label={t("common.qaModes")}>
               {Object.entries(MODE_OPTIONS).map(([key, option]) => {
                 const Icon = option.icon;
+                const optionText = modeText(key);
                 return (
                   <button
                     key={key}
@@ -1330,11 +1668,11 @@ function App() {
                     aria-selected={mode === key}
                     aria-controls={`${key}-conversation`}
                     tabIndex={mode === key ? 0 : -1}
-                    title={option.title}
+                    title={optionText.title}
                   >
                     <Icon size={17} />
-                    <span className="mode-label-full">{option.label}</span>
-                    <span className="mode-label-short">{option.shortLabel}</span>
+                    <span className="mode-label-full">{optionText.label}</span>
+                    <span className="mode-label-short">{optionText.shortLabel}</span>
                   </button>
                 );
               })}
@@ -1349,19 +1687,19 @@ function App() {
                 <button
                   className="model-select-trigger"
                   type="button"
-                  aria-label="Chọn mô hình"
+                  aria-label={t("common.chooseModel")}
                   aria-haspopup="listbox"
                   aria-expanded={modelMenuOpen}
                   onClick={() => setModelMenuOpen((open) => !open)}
                 >
-                  <span>{selectedModel?.name || "Đang tải model"}</span>
+                  <span>{selectedModel?.name || t("common.loadingModel")}</span>
                   <ChevronDown
                     className={modelMenuOpen ? "model-chevron open" : "model-chevron"}
                     size={15}
                   />
                 </button>
                 {modelMenuOpen && (
-                  <div className="model-menu" role="listbox" aria-label="Danh sách mô hình">
+                  <div className="model-menu" role="listbox" aria-label={t("common.modelList")}>
                     {mkacModels.map((item) => (
                       <button
                         key={item.id}
@@ -1386,7 +1724,7 @@ function App() {
                 )}
               </div>
             ) : (
-              <div className="model-select locked accent-grok" title="Chế độ nghiên cứu luôn dùng Grok">
+              <div className="model-select locked accent-grok" title={modeText("research").lockedModel}>
                 <Bot size={17} />
                 <span className="model-select-trigger">
                   <span>{selectedModel?.name || "Grok 4.20 Reasoning"}</span>
@@ -1397,19 +1735,34 @@ function App() {
             <button
               className="icon-button header-tool theme-toggle"
               type="button"
-              title={`Giao diện: ${THEME_META[theme].label}. Nhấn để chuyển chế độ.`}
-              aria-label={`Giao diện hiện tại: ${THEME_META[theme].label}`}
+              title={t("common.interfaceTitle", { theme: t(`theme.${theme}`) })}
+              aria-label={t("common.interfaceAria", { theme: t(`theme.${theme}`) })}
               onClick={cycleTheme}
             >
               <ThemeIcon size={18} />
+            </button>
+
+            <button
+              className="language-toggle"
+              type="button"
+              title={t("common.languageTitle", {
+                language: language === "vi" ? "VN" : "JP",
+              })}
+              aria-label={t("common.languageTitle", {
+                language: language === "vi" ? "VN" : "JP",
+              })}
+              onClick={cycleLanguage}
+            >
+              <span className={language === "vi" ? "active" : ""}>VN</span>
+              <span className={language === "ja" ? "active" : ""}>JP</span>
             </button>
 
             {mode === "mkac" && employee && (
               <button
                 className="icon-button header-tool"
                 type="button"
-                title="Đăng xuất mã nhân viên"
-                aria-label="Đăng xuất mã nhân viên"
+                title={t("common.employeeLogout")}
+                aria-label={t("common.employeeLogout")}
                 onClick={logoutEmployee}
                 disabled={busy}
               >
@@ -1420,7 +1773,7 @@ function App() {
             <button
               className="icon-button header-tool"
               type="button"
-              title="Xóa hội thoại hiện tại"
+              title={t("common.clearConversation")}
               onClick={clearConversation}
               disabled={busy || messages.length === 0}
             >
@@ -1430,7 +1783,7 @@ function App() {
             <button
               className="icon-button panel-toggle"
               type="button"
-              title={sourcePanelOpen ? "Ẩn nguồn" : "Hiện nguồn"}
+              title={sourcePanelOpen ? t("common.hideSources") : t("common.showSources")}
               onClick={() => setSourcePanelOpen((open) => !open)}
               disabled={latestSources.length === 0}
               aria-controls="source-panel"
@@ -1459,14 +1812,10 @@ function App() {
                     <div className="employee-logo">
                       <img src="/mkac-logo.png" alt="MKAC" />
                     </div>
-                    <h1>Xác thực nhân viên MKAC</h1>
-                    <p>
-                      {mode === "mes"
-                        ? "Nhập mã nhân viên để truy cập dữ liệu sản xuất MES."
-                        : "Nhập mã nhân viên để truy cập chế độ hỏi đáp nội bộ MKAC."}
-                    </p>
+                    <h1>{t("common.employeeAuth")}</h1>
+                    <p>{modeText(mode).authHint}</p>
                     <label className="employee-field">
-                      <span>Mã nhân viên</span>
+                      <span>{t("common.employeeCode")}</span>
                       <input
                         value={employeeCodeInput}
                         onChange={(event) =>
@@ -1475,7 +1824,7 @@ function App() {
                         inputMode="numeric"
                         autoComplete="off"
                         maxLength={6}
-                        placeholder="Mã nhân viên"
+                        placeholder={t("common.employeeCode")}
                         disabled={employeeVerifying}
                         autoFocus
                       />
@@ -1491,7 +1840,7 @@ function App() {
                       disabled={employeeVerifying}
                     >
                       {employeeVerifying && <Loader2 className="spin" size={16} />}
-                      {employeeVerifying ? "Đang kiểm tra" : "Tiếp tục"}
+                      {employeeVerifying ? t("common.verifying") : t("common.continue")}
                     </button>
                   </form>
                 </div>
@@ -1503,17 +1852,17 @@ function App() {
                     </div>
                     <h1>
                       {mode === "mkac" && employee?.name
-                        ? employee.greeting || `Xin chào, ${employee.name}`
+                        ? employee.greeting || t("common.hello", { name: employee.name })
                         : currentMode.title}
                     </h1>
                     <p>
                       {mode === "mkac"
-                        ? "Tra cứu quy định hành chính, thông tin nội bộ và nhân sự MKAC."
+                        ? modeText("mkac").empty
                         : mode === "mes"
-                          ? "Tra cứu Lot, mã hàng, mã lỗi và thống kê sản xuất từ MES."
+                          ? modeText("mes").empty
                           : files.length > 0
-                            ? "Sẵn sàng nghiên cứu tài liệu đã index trong phiên này."
-                            : "Tải tài liệu lên để bắt đầu nghiên cứu."}
+                            ? modeText("research").emptyReady
+                            : modeText("research").empty}
                     </p>
                     {mode === "research" && files.length === 0 && (
                       <div className="research-start-actions">
@@ -1523,7 +1872,7 @@ function App() {
                           onClick={() => fileInputRef.current?.click()}
                         >
                           <UploadCloud size={17} />
-                          Chọn tài liệu để bắt đầu
+                          {t("common.chooseToStart")}
                         </button>
                         <button
                           className="empty-upload-button secondary"
@@ -1532,7 +1881,7 @@ function App() {
                           disabled={!researchDemo.ready}
                         >
                           <FlaskConical size={17} />
-                          Thử nghiệm với tài liệu mẫu
+                          {t("common.tryDemo")}
                         </button>
                       </div>
                     )}
@@ -1566,21 +1915,23 @@ function App() {
                       </strong>
                       <span>
                         {mode === "mkac"
-                          ? "Tài liệu MKAC"
+                          ? modeText("mkac").metric
                           : mode === "mes"
-                            ? "Lot MES"
-                            : "Tài liệu"}
+                            ? modeText("mes").metric
+                            : modeText("research").metric}
                       </span>
                     </div>
                     <div>
                       <Bot size={16} />
-                      <strong>{selectedModel?.name || "Đang tải"}</strong>
-                      <span>Model</span>
+                      <strong>{selectedModel?.name || t("common.loading")}</strong>
+                      <span>{t("common.model")}</span>
                     </div>
                     <div>
                       <Activity size={16} />
-                      <strong>{health === "online" ? "Online" : "Offline"}</strong>
-                      <span>Trạng thái</span>
+                      <strong>
+                        {health === "online" ? t("common.online") : t("common.offline")}
+                      </strong>
+                      <span>{t("common.status")}</span>
                     </div>
                   </div>
                 </div>
@@ -1600,19 +1951,19 @@ function App() {
                         {message.role === "assistant" && (
                           <div className="message-meta">
                             <span>{message.model}</span>
-                            {message.stopped && <span>Đã dừng</span>}
+                            {message.stopped && <span>{t("common.stopped")}</span>}
                             <span>
                               {message.answerScope === "general"
-                                ? "Không có kết quả"
+                                ? t("common.noResult")
                                 : message.answerScope === "web"
-                                  ? "Tìm kiếm web"
+                                  ? t("common.webSearch")
                                 : message.answerScope === "mes"
-                                  ? "Dữ liệu MES"
+                                  ? t("common.mesData")
                                 : message.answerScope === "mes_database"
-                                  ? "MES snapshot"
+                                  ? t("common.mesSnapshot")
                                 : message.mode === "research"
-                                  ? "Nghiên cứu"
-                                  : "Nguồn MKAC"}
+                                  ? t("common.research")
+                                  : t("common.mkacSource")}
                             </span>
                           </div>
                         )}
@@ -1626,14 +1977,14 @@ function App() {
                           >
                             <Loader2 className="spin" size={17} />
                             <span key={waitingMessageIndex}>
-                              {WAITING_MESSAGES[waitingMessageIndex]}
+                              {text.waiting[waitingMessageIndex]}
                             </span>
                           </div>
                         ) : null}
                         {message.role === "assistant" && message.content && (
                           <div className="message-actions">
                             <details className="ai-disclosure">
-                              <summary title="Thông tin phản hồi AI">
+                              <summary title={t("common.aiInfo")}>
                                 <Sparkles size={14} />
                                 <span>AI</span>
                               </summary>
@@ -1641,23 +1992,23 @@ function App() {
                                 <strong>{message.model}</strong>
                                 <span>
                                   {message.answerScope === "web"
-                                    ? "Tổng hợp từ nguồn web"
+                                    ? t("answerScope.web")
                                     : message.answerScope === "mes"
-                                      ? "Dựa trên dữ liệu MES trực tiếp"
+                                      ? t("answerScope.mes")
                                     : message.answerScope === "mes_database"
-                                      ? "Dựa trên MES snapshot cục bộ"
+                                      ? t("answerScope.mes_database")
                                     : message.answerScope === "research"
-                                      ? "Dựa trên tài liệu nghiên cứu"
+                                      ? t("answerScope.research")
                                       : message.answerScope === "mkac"
-                                        ? "Dựa trên kho MKAC"
-                                        : "Không có nguồn đối chiếu"}
+                                        ? t("answerScope.mkac")
+                                        : t("answerScope.fallback")}
                                 </span>
                               </div>
                             </details>
                             <button
                               className="message-action-button"
                               type="button"
-                              title="Sao chép câu trả lời"
+                              title={t("common.copyAnswer")}
                               onClick={() => copyAnswer(message)}
                             >
                               {copiedMessageId === message.id ? (
@@ -1666,14 +2017,14 @@ function App() {
                                 <Copy size={14} />
                               )}
                               <span>
-                                {copiedMessageId === message.id ? "Đã sao chép" : "Sao chép"}
+                                {copiedMessageId === message.id ? t("common.copied") : t("common.copy")}
                               </span>
                             </button>
                           </div>
                         )}
                         {message.role === "assistant" && message.sources?.length > 0 && (
                           <details className="message-sources">
-                            <summary>{message.sources.length} nguồn tham chiếu</summary>
+                            <summary>{message.sources.length} {t("common.sources")}</summary>
                             {message.sources.map((source, index) => (
                               <div key={`${source.file}-${source.page}-${index}`}>
                                 {source.url ? (
@@ -1690,7 +2041,9 @@ function App() {
                                   </button>
                                 )}
                                 <span>
-                                  {source.url ? "Nguồn web" : `Trang ${source.page}`}
+                                  {source.url
+                                    ? t("common.webSource")
+                                    : t("common.page", { page: source.page })}
                                 </span>
                               </div>
                             ))}
@@ -1701,7 +2054,7 @@ function App() {
                           message.content &&
                           getSuggestions(message.content, mode, message.id).length > 0 && (
                             <div className="message-suggestions" style={{ marginTop: "1rem" }}>
-                              <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "0.5rem", fontWeight: "bold" }}>Gợi ý thêm:</p>
+                              <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "0.5rem", fontWeight: "bold" }}>{t("common.suggestions")}</p>
                               <ul className="suggestion-list">
                                 {getSuggestions(message.content, mode, message.id).map(
                                   (suggestion, i) => (
@@ -1709,7 +2062,7 @@ function App() {
                                       <button
                                         type="button"
                                         onClick={() => handleQuickAnswerClick(suggestion)}
-                                        title="Nhấn để tự động hỏi và trả lời"
+                                        title={t("common.autoAsk")}
                                       >
                                         {suggestion.question}
                                       </button>
@@ -1734,7 +2087,7 @@ function App() {
                 <button
                   className="icon-button"
                   type="button"
-                  title="Đóng"
+                  title={t("common.close")}
                   onClick={() => setError("")}
                 >
                   <X size={16} />
@@ -1748,7 +2101,7 @@ function App() {
                   <button
                     className="composer-attach icon-button"
                     type="button"
-                    title="Thêm tài liệu nghiên cứu"
+                    title={t("common.addResearchDocument")}
                     onClick={() => fileInputRef.current?.click()}
                     disabled={busy || uploading}
                   >
@@ -1769,19 +2122,19 @@ function App() {
                   maxLength={4000}
                   aria-label={
                     mode === "research"
-                      ? "Câu hỏi nghiên cứu"
+                      ? modeText("research").inputLabel
                       : mode === "mes"
-                        ? "Câu hỏi về MES"
-                        : "Câu hỏi hành chính nhân sự MKAC"
+                        ? modeText("mes").inputLabel
+                        : modeText("mkac").inputLabel
                   }
                   placeholder={
                     mode === "research"
                       ? researchReady
-                        ? "Nhập chủ đề nghiên cứu..."
-                        : "Hãy tải tài liệu lên trước khi đặt câu hỏi..."
+                        ? modeText("research").placeholderReady
+                        : modeText("research").placeholderEmpty
                       : mode === "mes"
-                        ? "Hỏi về Lot, mã hàng hoặc lỗi sản xuất..."
-                        : "Hỏi về hành chính, quy định hoặc nhân sự MKAC..."
+                        ? modeText("mes").placeholder
+                        : modeText("mkac").placeholder
                   }
                   disabled={busy || !researchReady}
                 />
@@ -1789,15 +2142,15 @@ function App() {
                   <div className="composer-context">
                   <span className={`model-dot ${MODEL_ACCENTS[requestModel] || ""}`} />
                   <span>
-                    {selectedModel?.description || "Đang tải danh sách model"}
+                    {selectedModel?.description || t("common.loadingModelList")}
                     </span>
                   </div>
                   <div className="composer-actions">
                     <span className="char-count">{question.length}/4000</span>
                     <button
-                      className="send-button"
+                      className={busy ? "send-button stopping" : "send-button"}
                       type={busy ? "button" : "submit"}
-                      title={busy ? "Dừng trả lời" : "Gửi"}
+                      title={busy ? t("common.stop") : t("common.send")}
                       onClick={busy ? stopGeneration : undefined}
                       disabled={busy ? false : !canAsk}
                     >
@@ -1816,10 +2169,10 @@ function App() {
           <aside
             id="source-panel"
             className="source-panel"
-            aria-label="Nguồn tham chiếu"
+            aria-label={t("common.sources")}
           >
             <div className="source-header">
-              <span>Nguồn tham chiếu</span>
+              <span>{t("common.sources")}</span>
               <span>{latestSources.length}</span>
             </div>
             <div className="source-list">
@@ -1851,12 +2204,18 @@ function App() {
                     )}
                   </div>
                   <div className="source-meta">
-                    <span>{source.url ? "Nguồn web" : `Trang ${source.page || "?"}`}</span>
+                    <span>
+                      {source.url
+                        ? t("common.webSource")
+                        : t("common.page", { page: source.page || "?" })}
+                    </span>
                     <span>{Math.round((source.score || 0) * 100)}%</span>
                   </div>
                   {!source.url && (
                     <div className="source-preview-state">
-                      {source.has_page_preview ? "Bấm để xem trang" : "Bấm để xem đoạn trích"}
+                      {source.has_page_preview
+                        ? t("common.clickToViewPage")
+                        : t("common.clickToViewSnippet")}
                     </div>
                   )}
                   <p>{source.preview}</p>
@@ -1865,7 +2224,7 @@ function App() {
               {latestSources.length === 0 && (
                 <div className="empty-sources">
                   <Search size={22} />
-                  <span>Chưa có nguồn cho lượt trả lời này</span>
+                  <span>{t("common.noSources")}</span>
                 </div>
               )}
             </div>
@@ -1882,12 +2241,12 @@ function App() {
             className="source-preview-modal"
             role="dialog"
             aria-modal="true"
-            aria-label="Xem nguồn tham chiếu"
+            aria-label={t("common.previewDialog")}
             onClick={(event) => event.stopPropagation()}
           >
             <div className="source-preview-header">
               <div>
-                <span>Nguồn tham chiếu</span>
+                <span>{t("common.sources")}</span>
                 <strong title={sourcePreview.source.file}>
                   {sourcePreview.source.file}
                 </strong>
@@ -1895,21 +2254,23 @@ function App() {
               <button
                 className="icon-button"
                 type="button"
-                title="Đóng preview"
+                title={t("common.closePreview")}
                 onClick={() => setSourcePreview(null)}
               >
                 <X size={18} />
               </button>
             </div>
             <div className="source-preview-meta">
-              <span>Trang {sourcePreview.source.page || "?"}</span>
+              <span>{t("common.page", { page: sourcePreview.source.page || "?" })}</span>
               <span>{Math.round((sourcePreview.source.score || 0) * 100)}%</span>
             </div>
             {sourcePreview.source.has_page_preview && !sourcePreview.imageFailed ? (
               <div className="source-preview-image-wrap">
                 <img
                   src={sourcePreviewUrl(sourcePreview.source, sourcePreview.mode)}
-                  alt={`Preview ${sourcePreview.source.file} trang ${sourcePreview.source.page}`}
+                  alt={`${sourcePreview.source.file} ${t("common.page", {
+                    page: sourcePreview.source.page || "?",
+                  })}`}
                   onError={() =>
                     setSourcePreview((current) =>
                       current ? { ...current, imageFailed: true } : current,
@@ -1920,11 +2281,11 @@ function App() {
             ) : (
               <div className="source-preview-placeholder">
                 <FileText size={28} />
-                <span>Chưa có ảnh preview cho trang này.</span>
+                <span>{t("common.noPreviewImage")}</span>
               </div>
             )}
             <div className="source-preview-text">
-              <strong>Đoạn trích</strong>
+              <strong>{t("common.snippet")}</strong>
               <p>{sourcePreview.source.preview}</p>
             </div>
           </section>
