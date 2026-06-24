@@ -1381,17 +1381,27 @@ class RAGPipeline:
         """
         Định dạng nguồn trích dẫn trả về API.
         """
-        return [
-            {
-                "file": r.chunk.source_file,
-                "page": r.chunk.page_number,
-                "score": round(r.score, 4),
-                "type": r.chunk.content_type,
-                "preview": r.chunk.text[:200] + "..." if len(r.chunk.text) > 200 else r.chunk.text,
-                "title": r.chunk.metadata.get("title"),
-                "category": r.chunk.metadata.get("category"),
-                "effective_date": r.chunk.metadata.get("effective_date"),
-                "url": r.chunk.metadata.get("url"),
-            }
-            for r in results
-        ]
+        sources = []
+        for r in results:
+            image_path = (r.chunk.metadata or {}).get("image_path")
+            sources.append(
+                {
+                    "file": r.chunk.source_file,
+                    "page": r.chunk.page_number,
+                    "score": round(r.score, 4),
+                    "type": r.chunk.content_type,
+                    "preview": (
+                        r.chunk.text[:200] + "..."
+                        if len(r.chunk.text) > 200
+                        else r.chunk.text
+                    ),
+                    "title": r.chunk.metadata.get("title"),
+                    "category": r.chunk.metadata.get("category"),
+                    "effective_date": r.chunk.metadata.get("effective_date"),
+                    "url": r.chunk.metadata.get("url"),
+                    "has_page_preview": bool(
+                        image_path and Path(image_path).is_file()
+                    ),
+                }
+            )
+        return sources

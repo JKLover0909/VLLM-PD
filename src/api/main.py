@@ -58,6 +58,11 @@ if ENABLE_AGENT:
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads"))
+RESEARCH_DEMO_DIR = Path(os.getenv("RESEARCH_DEMO_DIR", "./documents/Research"))
+RESEARCH_DEMO_SESSION_ID = os.getenv(
+    "RESEARCH_DEMO_SESSION_ID",
+    "00000000-0000-4000-8000-000000000001",
+)
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LITELLM_URL = os.getenv("LITELLM_URL", "http://localhost:4000/v1")
 LITELLM_MASTER_KEY = os.getenv("LITELLM_MASTER_KEY", "sk-local")
@@ -81,10 +86,12 @@ ALLOWED_UPLOAD_EXTENSIONS = {
     ".jpg",
     ".jpeg",
 }
+PREVIEW_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 EMPLOYEE_DIRECTORY_DB_PATH = Path(
     os.getenv("EMPLOYEE_DIRECTORY_DB_PATH", "data/employee_directory.sqlite")
 )
+MKAC_PAGE_IMAGE_DIR = Path(os.getenv("MKAC_PAGE_IMAGE_DIR", "mkac_processed/pages"))
 
 logging.basicConfig(level=LOG_LEVEL)
 logger = logging.getLogger(__name__)
@@ -140,6 +147,26 @@ def safe_upload_filename(filename: Optional[str]) -> str:
             detail=f"Unsupported file type. Allowed extensions: {allowed}",
         )
     return safe_name
+
+
+def research_demo_source_files() -> List[str]:
+    """List supported documents prepared for the built-in research demo."""
+    if not RESEARCH_DEMO_DIR.is_dir():
+        return []
+    return sorted(
+        path.name
+        for path in RESEARCH_DEMO_DIR.iterdir()
+        if path.is_file() and path.suffix.lower() in ALLOWED_UPLOAD_EXTENSIONS
+    )
+
+
+def path_is_inside(path: Path, root: Path) -> bool:
+    """Return whether path is equal to or nested inside root after resolving."""
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
 
 
 def cleanup_failed_upload(file_path: Path, page_dir: Path) -> None:
@@ -311,6 +338,16 @@ class SessionInfoResponse(BaseModel):
     num_chunks: int
     files: List[str]
     num_files: int
+
+
+class ResearchDemoResponse(BaseModel):
+    enabled: bool
+    ready: bool
+    session_id: str
+    num_chunks: int
+    num_files: int
+    files: List[str]
+    source_files: List[str]
 
 
 class EmployeeAuthRequest(BaseModel):
@@ -638,6 +675,63 @@ async def mkac_knowledge_status():
         "num_chunks": (info or {}).get("num_chunks", 0),
         "files": sorted((info or {}).get("files", [])),
     }
+
+
+@app.get("/research/demo", response_model=ResearchDemoResponse)
+async def research_demo_status():
+    """Return the pre-indexed research demo session, if it is available."""
+    session_id = normalize_session_id(RESEARCH_DEMO_SESSION_ID)
+    source_files = research_demo_source_files()
+    info = vector_store.get_session_info(session_id) if vector_store else None
+    indexed_files = sorted((info or {}).get("files", []))
+    return ResearchDemoResponse(
+        enabled=bool(source_files),
+        ready=bool(info),
+        session_id=session_id,
+        num_chunks=(info or {}).get("num_chunks", 0),
+        num_files=(info or {}).get("num_files", 0),
+        files=indexed_files,
+        source_files=source_files,
+    )
+
+
+@app.get("/sources/preview")
+async def source_page_preview(
+    session_id: str,
+    mode: Literal["mkac", "research"],
+    file: str,
+    page: int,
+):
+    """Return a page image preview for an indexed citation."""
+    filename = Path(file).name
+    if filename != file or not filename:
+        raise HTTPException(status_code=400, detail="Invalid source filename.")
+    if page <= 0:
+        raise HTTPException(status_code=400, detail="Invalid source page.")
+
+    if mode == "mkac":
+        store = mkac_vector_store
+        lookup_session_id = "mkac"
+    else:
+        store = vector_store
+        lookup_session_id = normalize_session_id(session_id)
+
+    if store is None:
+        raise HTTPException(status_code=503, detail="Vector store is not ready.")
+
+    image_path = store.get_page_image_path(lookup_session_id, filename, page)
+    if not image_path:
+        raise HTTPException(status_code=404, detail="Preview image not found.")
+
+    resolved_path = Path(image_path).resolve()
+    allowed_roots = [UPLOAD_DIR.resolve(), MKAC_PAGE_IMAGE_DIR.resolve()]
+    if not any(path_is_inside(resolved_path, root) for root in allowed_roots):
+        raise HTTPException(status_code=403, detail="Preview path is not allowed.")
+    if not resolved_path.is_file() or resolved_path.suffix.lower() not in PREVIEW_IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=404, detail="Preview image not found.")
+
+    media_type = "image/jpeg" if resolved_path.suffix.lower() in {".jpg", ".jpeg"} else "image/png"
+    return FileResponse(resolved_path, media_type=media_type)
 
 
 @app.get("/models")

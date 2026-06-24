@@ -183,6 +183,11 @@ async function createSession() {
   return response.json();
 }
 
+async function getResearchDemoStatus() {
+  const response = await api("/research/demo");
+  return response.json();
+}
+
 async function authenticateEmployee(employeeId) {
   const response = await api("/auth/employee", {
     method: "POST",
@@ -323,6 +328,13 @@ function App() {
     num_chunks: 0,
     files: [],
   });
+  const [researchDemo, setResearchDemo] = useState({
+    enabled: false,
+    ready: false,
+    session_id: "",
+    files: [],
+    num_chunks: 0,
+  });
   const [mesStatus, setMesStatus] = useState({
     available: false,
     lots: 0,
@@ -351,6 +363,7 @@ function App() {
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sourcePanelOpen, setSourcePanelOpen] = useState(false);
+  const [sourcePreview, setSourcePreview] = useState(null);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [employee, setEmployee] = useState(storedEmployee);
   const [employeeCodeInput, setEmployeeCodeInput] = useState(
@@ -493,18 +506,27 @@ function App() {
   useEffect(() => {
     async function bootstrap() {
       try {
-        const [healthResponse, modelResponse, mkacResponse, qaMkacRes, qaMesRes] = await Promise.all([
+        const [
+          healthResponse,
+          modelResponse,
+          mkacResponse,
+          qaMkacRes,
+          qaMesRes,
+          researchDemoResponse,
+        ] = await Promise.all([
           api("/health"),
           api("/models"),
           api("/knowledge/mkac/status"),
           api("/quick-answers?mode=mkac"),
           api("/quick-answers?mode=mes"),
+          getResearchDemoStatus(),
         ]);
         const healthData = await healthResponse.json();
         const modelData = await modelResponse.json();
         const mkacData = await mkacResponse.json();
         const qaMkacData = qaMkacRes.ok ? await qaMkacRes.json() : {};
         const qaMesData = qaMesRes.ok ? await qaMesRes.json() : {};
+        const researchDemoData = researchDemoResponse;
         
         setQuickAnswersConfig({
           mkac: qaMkacData.suggestions || [],
@@ -515,6 +537,7 @@ function App() {
 
         setModels(modelData.models || []);
         setMkacStatus(mkacData);
+        setResearchDemo(researchDemoData);
         setMesStatus(healthData.mes_database || {});
         setModel((current) => {
           const nextDefault = modelData.default || "openai";
@@ -533,7 +556,11 @@ function App() {
 
         await Promise.all(
           Object.keys(MODE_OPTIONS).map(async (workspaceMode) => {
-            const storedSession = storedSessions[workspaceMode];
+            const storedSession =
+              workspaceMode === "research" &&
+              storedSessions[workspaceMode] === researchDemoData.session_id
+                ? ""
+                : storedSessions[workspaceMode];
             if (storedSession) {
               try {
                 const infoResponse = await api(`/sessions/${storedSession}`);
@@ -647,6 +674,15 @@ function App() {
     return () => window.clearInterval(timer);
   }, [busy, pendingAssistantId]);
 
+  useEffect(() => {
+    if (!sourcePreview) return undefined;
+    function closePreview(event) {
+      if (event.key === "Escape") setSourcePreview(null);
+    }
+    document.addEventListener("keydown", closePreview);
+    return () => document.removeEventListener("keydown", closePreview);
+  }, [sourcePreview]);
+
   function setModeMessages(workspaceMode, updater) {
     setMessagesByMode((current) => ({
       ...current,
@@ -689,6 +725,29 @@ function App() {
     setSidebarOpen(false);
   }
 
+  function useResearchDemoSession() {
+    if (!researchDemo.ready || !researchDemo.session_id) {
+      setError("Tài liệu mẫu chưa được index. Vui lòng chạy script index trước.");
+      return;
+    }
+    setError("");
+    setSessionIds((current) => ({
+      ...current,
+      research: researchDemo.session_id,
+    }));
+    localStorage.setItem(SESSION_STORAGE_KEYS.research, researchDemo.session_id);
+    setSessionTitles((current) => ({
+      ...current,
+      research: "Tài liệu nghiên cứu demo",
+    }));
+    setFiles(researchDemo.files || []);
+    setPendingFiles([]);
+    setUploadSummary(null);
+    setModeMessages("research", []);
+    setModeSources("research", []);
+    setSidebarOpen(false);
+  }
+
   function switchMode(nextMode) {
     if (nextMode === mode || busy || uploading) return;
     setMode(nextMode);
@@ -705,6 +764,29 @@ function App() {
     setQuestion("");
     setError("");
     setSourcePanelOpen(false);
+    setSourcePreview(null);
+  }
+
+  function sourcePreviewUrl(source, sourceMode = mode) {
+    const params = new URLSearchParams({
+      session_id: sessionIds[sourceMode] || sessionId,
+      mode: sourceMode,
+      file: source.file || "",
+      page: String(source.page || 1),
+    });
+    return `/sources/preview?${params.toString()}`;
+  }
+
+  function openSourcePreview(source, sourceMode = mode) {
+    if (source.url) {
+      window.open(source.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    setSourcePreview({
+      source,
+      mode: sourceMode,
+      imageFailed: false,
+    });
   }
 
   function onModeTabKeyDown(event, currentModeKey) {
@@ -1204,8 +1286,12 @@ function App() {
       <main className={`workspace ${sourcePanelOpen ? "" : "sources-collapsed"}`}>
         <header className="workspace-header">
           <div className="header-title">
-            <div className={`mode-mark ${mode === "mkac" ? "logo-mark" : mode}`}>
-              {mode === "mkac" ? (
+            <div
+              className={`mode-mark ${
+                mode === "mkac" || mode === "mes" ? "logo-mark" : mode
+              }`}
+            >
+              {mode === "mkac" || mode === "mes" ? (
                 <img src="/mkac-logo.png" alt="MKAC" />
               ) : (
                 <ModeIcon size={20} />
@@ -1430,30 +1516,43 @@ function App() {
                             : "Tải tài liệu lên để bắt đầu nghiên cứu."}
                     </p>
                     {mode === "research" && files.length === 0 && (
-                      <button
-                        className="empty-upload-button"
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        <UploadCloud size={17} />
-                        Chọn tài liệu để bắt đầu
-                      </button>
+                      <div className="research-start-actions">
+                        <button
+                          className="empty-upload-button"
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          <UploadCloud size={17} />
+                          Chọn tài liệu để bắt đầu
+                        </button>
+                        <button
+                          className="empty-upload-button secondary"
+                          type="button"
+                          onClick={useResearchDemoSession}
+                          disabled={!researchDemo.ready}
+                        >
+                          <FlaskConical size={17} />
+                          Thử nghiệm với tài liệu mẫu
+                        </button>
+                      </div>
                     )}
                   </div>
 
-                  <div className="prompt-grid">
-                    {QUICK_PROMPTS[mode].map((prompt) => (
-                      <button
-                        key={prompt}
-                        type="button"
-                        onClick={() => sendMessage(prompt)}
-                        disabled={!researchReady || !mkacAuthorized}
-                      >
-                        <Search size={16} />
-                        <span>{prompt}</span>
-                      </button>
-                    ))}
-                  </div>
+                  {mode !== "research" || files.length > 0 ? (
+                    <div className="prompt-grid">
+                      {QUICK_PROMPTS[mode].map((prompt) => (
+                        <button
+                          key={prompt}
+                          type="button"
+                          onClick={() => sendMessage(prompt)}
+                          disabled={!researchReady || !mkacAuthorized}
+                        >
+                          <Search size={16} />
+                          <span>{prompt}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
 
                   <div className="empty-metrics">
                     <div>
@@ -1582,7 +1681,13 @@ function App() {
                                     <strong>{source.file}</strong>
                                   </a>
                                 ) : (
-                                  <strong>{source.file}</strong>
+                                  <button
+                                    className="inline-source-button"
+                                    type="button"
+                                    onClick={() => openSourcePreview(source, message.mode)}
+                                  >
+                                    <strong>{source.file}</strong>
+                                  </button>
                                 )}
                                 <span>
                                   {source.url ? "Nguồn web" : `Trang ${source.page}`}
@@ -1720,8 +1825,20 @@ function App() {
             <div className="source-list">
               {latestSources.map((source, index) => (
                 <article
-                  className="source-item"
+                  className={`source-item ${source.url ? "" : "clickable"}`}
                   key={`${source.file}-${source.page}-${index}`}
+                  role={source.url ? undefined : "button"}
+                  tabIndex={source.url ? undefined : 0}
+                  onClick={
+                    source.url ? undefined : () => openSourcePreview(source, mode)
+                  }
+                  onKeyDown={(event) => {
+                    if (source.url) return;
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openSourcePreview(source, mode);
+                    }
+                  }}
                 >
                   <div className="source-title">
                     {source.url ? <Globe2 size={16} /> : <FileText size={16} />}
@@ -1737,6 +1854,11 @@ function App() {
                     <span>{source.url ? "Nguồn web" : `Trang ${source.page || "?"}`}</span>
                     <span>{Math.round((source.score || 0) * 100)}%</span>
                   </div>
+                  {!source.url && (
+                    <div className="source-preview-state">
+                      {source.has_page_preview ? "Bấm để xem trang" : "Bấm để xem đoạn trích"}
+                    </div>
+                  )}
                   <p>{source.preview}</p>
                 </article>
               ))}
@@ -1750,6 +1872,64 @@ function App() {
           </aside>
         </div>
       </main>
+      {sourcePreview && (
+        <div
+          className="source-preview-backdrop"
+          role="presentation"
+          onClick={() => setSourcePreview(null)}
+        >
+          <section
+            className="source-preview-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Xem nguồn tham chiếu"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="source-preview-header">
+              <div>
+                <span>Nguồn tham chiếu</span>
+                <strong title={sourcePreview.source.file}>
+                  {sourcePreview.source.file}
+                </strong>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                title="Đóng preview"
+                onClick={() => setSourcePreview(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="source-preview-meta">
+              <span>Trang {sourcePreview.source.page || "?"}</span>
+              <span>{Math.round((sourcePreview.source.score || 0) * 100)}%</span>
+            </div>
+            {sourcePreview.source.has_page_preview && !sourcePreview.imageFailed ? (
+              <div className="source-preview-image-wrap">
+                <img
+                  src={sourcePreviewUrl(sourcePreview.source, sourcePreview.mode)}
+                  alt={`Preview ${sourcePreview.source.file} trang ${sourcePreview.source.page}`}
+                  onError={() =>
+                    setSourcePreview((current) =>
+                      current ? { ...current, imageFailed: true } : current,
+                    )
+                  }
+                />
+              </div>
+            ) : (
+              <div className="source-preview-placeholder">
+                <FileText size={28} />
+                <span>Chưa có ảnh preview cho trang này.</span>
+              </div>
+            )}
+            <div className="source-preview-text">
+              <strong>Đoạn trích</strong>
+              <p>{sourcePreview.source.preview}</p>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

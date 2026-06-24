@@ -300,3 +300,48 @@ class VectorStore:
         except Exception as exc:
             logger.error("Error reading indexed file metadata: %s", exc)
         return result
+
+    def get_page_image_path(
+        self,
+        session_id: str,
+        filename: str,
+        page_number: int,
+    ) -> Optional[str]:
+        """Return the indexed preview image path for one source page."""
+        try:
+            points, _ = self.client.scroll(
+                collection_name=self.COLLECTION_NAME,
+                scroll_filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="session_id",
+                            match=models.MatchValue(value=session_id),
+                        ),
+                        models.FieldCondition(
+                            key="source_file",
+                            match=models.MatchValue(value=filename),
+                        ),
+                        models.FieldCondition(
+                            key="page_number",
+                            match=models.MatchValue(value=page_number),
+                        ),
+                    ]
+                ),
+                limit=1,
+                with_payload=True,
+                with_vectors=False,
+            )
+            for point in points:
+                metadata = (point.payload or {}).get("metadata") or {}
+                image_path = metadata.get("image_path")
+                if image_path:
+                    return str(image_path)
+        except Exception as exc:
+            logger.error(
+                "Error reading page preview image for %s page %s in session %s: %s",
+                filename,
+                page_number,
+                session_id,
+                exc,
+            )
+        return None

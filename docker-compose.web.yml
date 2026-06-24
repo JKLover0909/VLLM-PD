@@ -18,6 +18,9 @@ services:
       MKAC_MANIFEST_PATH: /app/config/mkac_manifest.json
       MKAC_PAGE_IMAGE_DIR: /app/mkac_processed/pages
       MKAC_INDEX_REPORT: /app/logs/mkac_index_report.json
+      RESEARCH_DEMO_DIR: /app/documents/Research
+      RESEARCH_DEMO_SESSION_ID: 00000000-0000-4000-8000-000000000001
+      RESEARCH_DEMO_INDEX_REPORT: /app/logs/research_demo_index_report.json
       EMPLOYEE_DIRECTORY_SOURCE_DIR: /app/documents/MKAC
       EMPLOYEE_DIRECTORY_SOURCE_GLOB: "3. DANH SÁCH KHÁM SỨC KHOẺ 2026.pdf"
       EMPLOYEE_DIRECTORY_DB_PATH: /app/data/employee_directory.sqlite
@@ -34,6 +37,7 @@ services:
     volumes:
       - easyocr_cache:/root/.EasyOCR
       - ./documents/MKAC:/app/documents/MKAC
+      - ./documents/Research:/app/documents/Research:ro
       - ./config:/app/config
       - ./uploads:/app/uploads
       - ./data:/app/data
