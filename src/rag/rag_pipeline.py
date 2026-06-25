@@ -696,10 +696,19 @@ class RAGPipeline:
             and self.mes_database.is_snapshot_question(question)
         )
 
-        if highest_lot_question and not explicit_snapshot:
+        if highest_lot_question:
+            snapshot_result = await self._query_mes_database(
+                question,
+                allow_highest_lot=True,
+            )
+            if snapshot_result is not None:
+                logger.info("Routing highest Lot error question to local MES snapshot.")
+                return "mes_database", snapshot_result
+
             api_error: Exception | None = None
             if self.mes_client is not None:
                 try:
+                    logger.info("Routing highest Lot error question to MES API.")
                     return "mes", await self.mes_client.get_lots_with_highest_error()
                 except Exception as exc:
                     api_error = exc
@@ -708,12 +717,6 @@ class RAGPipeline:
                         exc,
                     )
 
-            snapshot_result = await self._query_mes_database(
-                question,
-                allow_highest_lot=True,
-            )
-            if snapshot_result is not None:
-                return "mes_database", snapshot_result
             if api_error is not None:
                 raise api_error
             raise RuntimeError("MES API và MES snapshot chưa được cấu hình.")
@@ -850,8 +853,8 @@ class RAGPipeline:
         )
         normalized = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
         return bool(
-            re.search(r"\btop\s*\d+\b", normalized)
-            or re.search(r"\b\d+\s+(?:loai\s+)?loi\b", normalized)
+            re.search(r"\b\d+\s+(?:loai\s+)?loi\b", normalized)
+            or re.search(r"\btop\s*\d+\s+(?:loai\s+)?loi\b", normalized)
             or any(
                 marker in normalized
                 for marker in ("cac loi nhieu nhat", "nhung loi nhieu nhat")

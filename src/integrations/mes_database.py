@@ -55,6 +55,7 @@ class MesDatabase:
     # Điều kiện loại Lot/sản phẩm test ra khỏi các truy vấn thống kê mặc định.
     # Lot test có product_id bắt đầu bằng "Test_" (không phân biệt hoa thường).
     EXCLUDE_TEST_FILTER = "LOWER(product_id) NOT LIKE 'test\\_%' ESCAPE '\\'"
+    DEFAULT_LIST_LIMIT = 25
 
     def __init__(self, db_path: Path | str):
         self.db_path = Path(db_path)
@@ -126,6 +127,14 @@ class MesDatabase:
         )
         has_error = self._has_error_marker(normalized)
 
+        if (
+            self._is_lot_listing_question(normalized)
+            and not lot_id
+            and not product_id
+            and not error_id
+            and not has_error
+        ):
+            return self._list_lots()
         if lot_id and has_error:
             return self._lot_error_breakdown(lot_id)
         if lot_id:
@@ -141,7 +150,7 @@ class MesDatabase:
                 return self._product_error_breakdown(product_id)
             return self._product_summary(product_id)
         if allow_highest_lot and self._is_highest_lot_error_question(normalized):
-            return self._highest_error_lots()
+            return self._highest_error_lots(limit=self._extract_top_limit(normalized))
         return None
 
     def _connect(self) -> sqlite3.Connection:
@@ -182,20 +191,34 @@ class MesDatabase:
             required_terms=required_terms,
         )
 
-    def _highest_error_lots(self) -> MesDatabaseResult:
-        rows = self._fetch_all(
-            f"""
-            SELECT lot_id, product_id, total_error_qty, error_record_count,
-                   distinct_error_count, unmapped_error_record_count
-            FROM v_lot_error_summary
-            WHERE {self.EXCLUDE_TEST_FILTER}
-              AND total_error_qty = (
-                SELECT MAX(total_error_qty) FROM v_lot_error_summary
+    def _highest_error_lots(self, limit: int = 1) -> MesDatabaseResult:
+        if limit > 1:
+            rows = self._fetch_all(
+                f"""
+                SELECT lot_id, product_id, total_error_qty, error_record_count,
+                       distinct_error_count, unmapped_error_record_count
+                FROM v_lot_error_summary
                 WHERE {self.EXCLUDE_TEST_FILTER}
+                  AND total_error_qty > 0
+                ORDER BY total_error_qty DESC, lot_id
+                LIMIT ?
+                """,
+                (limit,),
             )
-            ORDER BY lot_id
-            """
-        )
+        else:
+            rows = self._fetch_all(
+                f"""
+                SELECT lot_id, product_id, total_error_qty, error_record_count,
+                       distinct_error_count, unmapped_error_record_count
+                FROM v_lot_error_summary
+                WHERE {self.EXCLUDE_TEST_FILTER}
+                  AND total_error_qty = (
+                    SELECT MAX(total_error_qty) FROM v_lot_error_summary
+                    WHERE {self.EXCLUDE_TEST_FILTER}
+                  )
+                ORDER BY lot_id
+                """
+            )
         # Lấy thêm top lỗi chi tiết của mỗi Lot để model có thể trình bày phong phú hơn
         enriched_rows: list[dict[str, Any]] = []
         for row in rows:
@@ -217,6 +240,51 @@ class MesDatabase:
             for value in (row["lot_id"], row["product_id"], row["total_error_qty"])
         )
         return self._result("highest_error_lot", enriched_rows, answer, terms)
+
+    def _list_lots(self, limit: int = DEFAULT_LIST_LIMIT) -> MesDatabaseResult:
+        count_rows = self._fetch_all(
+            f"""
+            SELECT COUNT(*) AS total_lot_count
+            FROM lots
+            WHERE {self.EXCLUDE_TEST_FILTER}
+            """
+        )
+        total_lot_count = int(count_rows[0]["total_lot_count"]) if count_rows else 0
+        rows = self._fetch_all(
+            f"""
+            SELECT l.lot_id, l.product_id, l.status, l.pcs_lot, l.produce_date,
+                   COALESCE(s.total_error_qty, 0) AS total_error_qty
+            FROM lots AS l
+            LEFT JOIN v_lot_error_summary AS s ON s.lot_pk = l.lot_pk
+            WHERE {self.EXCLUDE_TEST_FILTER.replace("product_id", "l.product_id")}
+            ORDER BY
+                CASE WHEN l.produce_date IS NULL THEN 1 ELSE 0 END,
+                l.produce_date DESC,
+                l.lot_id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        if not rows:
+            return self._result("list_lots", [], "MES snapshot chưa có dữ liệu Lot.")
+
+        descriptions = "; ".join(
+            f"{row['lot_id']} ({row['product_id']}): "
+            f"{self._number(row['pcs_lot'])} PCS, "
+            f"{self._number(row['total_error_qty'])} lỗi"
+            for row in rows
+        )
+        answer = (
+            f"Theo MES snapshot, hiện có {self._number(total_lot_count)} Lot "
+            f"không thuộc dữ liệu test. Dưới đây là {len(rows)} Lot mới nhất: "
+            f"{descriptions}."
+        )
+        return self._result(
+            "list_lots",
+            [{"total_lot_count": total_lot_count, "items": rows}],
+            answer,
+            (str(total_lot_count), str(rows[0]["lot_id"]), str(rows[0]["product_id"])),
+        )
 
     def _lot_details(self, lot_id: str) -> MesDatabaseResult:
         rows = self._fetch_all(
@@ -477,14 +545,50 @@ class MesDatabase:
         )
 
     @staticmethod
+    def _is_lot_listing_question(normalized: str) -> bool:
+        has_lot = bool(re.search(r"\b(lot|lo)\b", normalized))
+        has_listing = any(
+            marker in normalized
+            for marker in (
+                "liet ke",
+                "danh sach",
+                "nhung lot nao",
+                "cac lot",
+                "lot nao dang co",
+                "lot hien co",
+            )
+        )
+        return has_lot and has_listing
+
+    @staticmethod
     def _is_highest_lot_error_question(normalized: str) -> bool:
         has_lot = bool(re.search(r"\b(lot|lo)\b", normalized))
         has_error = MesDatabase._has_error_marker(normalized)
-        has_maximum = any(
+        has_maximum = bool(
+            re.search(r"\b(nhieu|cao|lon)\b(?:\s+\w+){0,3}\s+nhat\b", normalized)
+        ) or any(
             marker in normalized
-            for marker in ("nhieu nhat", "cao nhat", "lon nhat", "dung dau", "top 1", "max", "most")
+            for marker in (
+                "nhieu nhat",
+                "cao nhat",
+                "lon nhat",
+                "dung dau",
+                "top",
+                "max",
+                "maximum",
+                "most",
+            )
         )
         return has_lot and has_error and has_maximum
+
+    @staticmethod
+    def _extract_top_limit(normalized: str, default: int = 1, maximum: int = 50) -> int:
+        match = re.search(r"\btop\s*(\d+)\b", normalized)
+        if not match:
+            match = re.search(r"\b(\d+)\s+(?:lot|lo)\b", normalized)
+        if not match:
+            return default
+        return max(1, min(maximum, int(match.group(1))))
 
     @staticmethod
     def _is_highest_product_error_question(normalized: str) -> bool:
@@ -526,7 +630,11 @@ class MesDatabase:
                 )
                 base += f". Trong đó các lỗi có số lượng lớn nhất: {error_lines}"
             parts.append(base)
-        return "Theo MES snapshot, Lot có tổng lỗi cao nhất là: " + "; ".join(parts) + "."
+        if len(rows) == 1:
+            prefix = "Theo MES snapshot, Lot có tổng lỗi cao nhất là: "
+        else:
+            prefix = f"Theo MES snapshot, {len(rows)} Lot có tổng lỗi cao nhất là: "
+        return prefix + "; ".join(parts) + "."
 
     @staticmethod
     def _number(value: Any) -> str:

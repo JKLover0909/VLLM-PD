@@ -52,6 +52,12 @@ class FakeMesDatabase:
         return None
 
 
+class FakeEmptyMesDatabase(FakeMesDatabase):
+    def query_question(self, question, *, allow_highest_lot=False):
+        self.calls.append((question, allow_highest_lot))
+        return None
+
+
 class FakeMesClient:
     def __init__(self, error=None):
         self.error = error
@@ -79,7 +85,7 @@ def test_mes_client_sends_bearer_payload_and_returns_all_highest_lots():
         assert request.url == "https://mes.example/api/dynamics"
         assert request.read().decode() == (
             '{"ServiceName":"mes_data","ActionName":"DEMO_GET_TOTAL_ERROR",'
-            '"Condition":{"Schema_Data":"MES_DATA_MKHC"}}'
+            '"Condition":{"Schema_Data":"MES_DATA"}}'
         )
         return httpx.Response(
             200,
@@ -211,9 +217,45 @@ def test_lot_detail_question_routes_to_snapshot_without_calling_live_api():
     assert mes_client.calls == 0
 
 
-def test_highest_lot_question_prefers_live_api():
+def test_highest_lot_question_prefers_snapshot_database():
     mes_client = FakeMesClient()
     mes_database = FakeMesDatabase()
+    pipeline = make_pipeline(mes_client, mes_database)
+
+    source, result = asyncio.run(
+        pipeline._get_mes_route("Lot nào có số lượng lỗi nhiều nhất?", "mes")
+    )
+
+    assert source == "mes_database"
+    assert result.intent == "highest_error_lot"
+    assert result.rows[0]["lot_id"] == "SNAPSHOT-LOT"
+    assert mes_client.calls == 0
+    assert mes_database.calls == [("Lot nào có số lượng lỗi nhiều nhất?", True)]
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Liệt kê danh sách 5 lot nhiều lỗi nhất",
+        "Top 5 lot có nhiều lỗi nhất",
+    ],
+)
+def test_top_n_highest_lot_questions_prefer_snapshot_database(question):
+    mes_client = FakeMesClient()
+    mes_database = FakeMesDatabase()
+    pipeline = make_pipeline(mes_client, mes_database)
+
+    source, result = asyncio.run(pipeline._get_mes_route(question, "mes"))
+
+    assert source == "mes_database"
+    assert result.intent == "highest_error_lot"
+    assert mes_client.calls == 0
+    assert mes_database.calls == [(question, True)]
+
+
+def test_live_api_is_used_when_snapshot_has_no_matching_data():
+    mes_client = FakeMesClient()
+    mes_database = FakeEmptyMesDatabase()
     pipeline = make_pipeline(mes_client, mes_database)
 
     source, result = asyncio.run(
@@ -223,7 +265,7 @@ def test_highest_lot_question_prefers_live_api():
     assert source == "mes"
     assert result[0].lot_id == "LIVE-LOT"
     assert mes_client.calls == 1
-    assert mes_database.calls == []
+    assert mes_database.calls == [("Lot nào có số lượng lỗi nhiều nhất?", True)]
 
 
 def test_explicit_snapshot_question_bypasses_live_api():
@@ -243,7 +285,7 @@ def test_explicit_snapshot_question_bypasses_live_api():
     assert mes_client.calls == 0
 
 
-def test_snapshot_is_used_when_live_api_fails():
+def test_snapshot_is_used_without_calling_live_api():
     mes_client = FakeMesClient(MesApiError("offline"))
     mes_database = FakeMesDatabase()
     pipeline = make_pipeline(mes_client, mes_database)
@@ -254,7 +296,7 @@ def test_snapshot_is_used_when_live_api_fails():
 
     assert source == "mes_database"
     assert result.intent == "highest_error_lot"
-    assert mes_client.calls == 1
+    assert mes_client.calls == 0
 
 
 def test_mes_database_answer_rejects_internal_field_names():

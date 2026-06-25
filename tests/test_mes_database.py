@@ -71,6 +71,8 @@ def mes_database(tmp_path: Path) -> MesDatabase:
         ("Mã hàng PRODUCT-A có những lỗi nào?", "product_error_breakdown"),
         ("Sản phẩm nào có tổng lỗi cao nhất?", "highest_error_product"),
         ("Những Lot nào có mã lỗi E001?", "lots_for_error"),
+        ("Liệt kê các lot", "list_lots"),
+        ("Có những lot nào?", "list_lots"),
     ],
 )
 def test_routes_allowlisted_mes_questions(mes_database, question, intent):
@@ -80,6 +82,16 @@ def test_routes_allowlisted_mes_questions(mes_database, question, intent):
     assert result.intent == intent
     assert result.rows
     assert result.imported_at == "2026-06-20T03:52:08+00:00"
+
+
+def test_list_lots_returns_recent_lots_without_sql_agent(mes_database):
+    result = mes_database.query_question("Danh sách các lot hiện có")
+
+    assert result is not None
+    assert result.intent == "list_lots"
+    assert result.rows[0]["total_lot_count"] == 2
+    assert result.rows[0]["items"][0]["lot_id"] == "000002-01-000"
+    assert "000002-01-000" in result.fallback_answer
 
 
 def test_highest_lot_requires_explicit_permission(mes_database):
@@ -92,6 +104,22 @@ def test_highest_lot_requires_explicit_permission(mes_database):
     assert result.intent == "highest_error_lot"
     assert result.rows[0]["lot_id"] == "000002-01-000"
     assert result.rows[0]["total_error_qty"] == 100
+
+
+def test_top_n_highest_error_lots(mes_database):
+    result = mes_database.query_question(
+        "Liệt kê danh sách 2 lot nhiều lỗi nhất",
+        allow_highest_lot=True,
+    )
+
+    assert result is not None
+    assert result.intent == "highest_error_lot"
+    assert [row["lot_id"] for row in result.rows] == [
+        "000002-01-000",
+        "000001-01-000",
+    ]
+    assert "000002-01-000" in result.fallback_answer
+    assert "000001-01-000" in result.fallback_answer
 
 
 def test_unrelated_question_is_not_routed_to_mes(mes_database):

@@ -8,9 +8,9 @@ LOT_COLUMNS = (
     "ID,CREATE_DATE,EDIT_DATE,PRODUCT_ID,LOT_ID,PT_ID,PT_VERSION_ID,ROUTE_ID,"
     "LOT_TYPE,STATUS,IS_RELEASE,SALE_ORDER_ID,BOARD_LOT,SHEET_LOT,PREV_STATUS,"
     "DATE_CODE,PRODUCE_DATE,PRODUCE_DATE_PROCESS_ID,PRODUCE_DATE_PROCESS_ORDER,"
-    "IS_RELEASE_SPLIT_LOT,PCS_LOT,CREATE_TIME_UNIX,RELEASE_DATE_UNIX,RELEASE_DATE,"
+    "IS_RELEASE_SPLIT_LOT,PCS_LOT,RELEASE_DATE_UNIX,RELEASE_DATE,CREATE_TIME_UNIX,"
     "PRODUCTION_TYPE,USER_ID,PREV_RELEASE,PRODUCTION_PERIOD_TYPE,USER_ID_UPDATE,"
-    "TIME_UPDATE_UNIX,TIME_UPDATE"
+    "TIME_UPDATE,TIME_UPDATE_UNIX"
 )
 ERROR_COLUMNS = (
     "ID,EDIT_DATE,CREATE_DATE,LOT_ID,ROUTE_ID,PROCESS_ID,PROCESS_ORDER,ERROR_TYPE,"
@@ -27,16 +27,16 @@ CATALOG_COLUMNS = (
 def _write_raw_files(raw_dir: Path) -> None:
     raw_dir.mkdir()
     (raw_dir / "M_LOT_202601010000.sql").write_text(
-        f"INSERT INTO MES_DATA_MKHC.M_LOT ({LOT_COLUMNS}) VALUES\n"
+        f"INSERT INTO MES_DATA.M_LOT ({LOT_COLUMNS}) VALUES\n"
         "(1,TIMESTAMP'2026-01-01 08:00:00',NULL,'PRODUCT-1','LOT-1','PT-1','1',"
         "'ROUTE-1','0','1','Y','-',10,100,NULL,NULL,'2026-01-01','PROC-1',1,'Y',"
-        "200,1,2,TIMESTAMP'2026-01-01 00:00:00','1','user',NULL,NULL,NULL,NULL,NULL);",
+        "200,2,TIMESTAMP'2026-01-01 00:00:00',1,'1','user',NULL,NULL,NULL,NULL,NULL);",
         encoding="utf-8",
     )
     (raw_dir / "D_ERROR_202601010000.sql").write_text(
-        f"INSERT INTO MES_DATA_MKHC.D_ERROR ({ERROR_COLUMNS}) VALUES\n"
+        f"INSERT INTO MES_DATA.D_ERROR ({ERROR_COLUMNS}) VALUES\n"
         "(10,NULL,TIMESTAMP'2026-01-01 09:00:00','LOT-1','ROUTE-1','PROC-1',1,'1',"
-        "'E-1',5,'user',NULL,NULL,NULL,NULL,NULL,3,TIMESTAMP'2026-01-01 09:00:00',NULL),\n"
+        "'E-1',5,'user',NULL,NULL,NULL,NULL,'null',3,TIMESTAMP'2026-01-01 09:00:00',NULL),\n"
         "(11,NULL,TIMESTAMP'2026-01-01 09:30:00','LOT-1','ROUTE-1','PROC-2',2,'1',"
         "'0002',7,'user',NULL,NULL,NULL,NULL,NULL,3,TIMESTAMP'2026-01-01 09:30:00',NULL),\n"
         "(NULL,NULL,TIMESTAMP'2026-01-01 10:00:00','ORPHAN','ROUTE-1','PROC-X',2,'1',"
@@ -44,7 +44,7 @@ def _write_raw_files(raw_dir: Path) -> None:
         encoding="utf-8",
     )
     (raw_dir / "P_ERROR_202601010000.sql").write_text(
-        f"INSERT INTO MES_DATA_MKHC.P_ERROR ({CATALOG_COLUMNS}) VALUES\n"
+        f"INSERT INTO MES_DATA.P_ERROR ({CATALOG_COLUMNS}) VALUES\n"
         "(20,TIMESTAMP'2026-01-01 07:00:00',NULL,'E-1','Short','1','1',NULL,'N',"
         "'PROC-1','Ngắn mạch',NULL,'Short circuit',NULL,NULL,'user'),\n"
         "(21,TIMESTAMP'2026-01-01 07:00:00',NULL,'0002','Scratch','1','1',NULL,'N',"
@@ -77,12 +77,16 @@ def test_build_mes_database_preserves_orphans_and_builds_summary(tmp_path):
         orphan_count = connection.execute(
             "SELECT COUNT(*) FROM error_events WHERE lot_pk IS NULL"
         ).fetchone()[0]
+        null_text_value = connection.execute(
+            "SELECT process_order_create FROM error_events WHERE error_id='E-1'"
+        ).fetchone()[0]
         metadata = dict(connection.execute("SELECT key, value FROM schema_metadata"))
 
     assert summary == ("LOT-1", "PRODUCT-1", 12)
     assert exact_detail == ("Ngắn mạch", 1)
     assert fallback_detail == ("Xước", 1)
     assert orphan_count == 1
+    assert null_text_value is None
     assert metadata["orphan_error_event_count"] == "1"
     assert metadata["unmapped_error_name_count"] == "1"
 

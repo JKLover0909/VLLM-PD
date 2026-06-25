@@ -17,10 +17,11 @@ from typing import Any, Iterable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCE_DIR = REPO_ROOT / "database" / "raw"
+DEFAULT_SOURCE_DIR = REPO_ROOT / "database" / "raw_mkac"
 DEFAULT_SCHEMA_PATH = REPO_ROOT / "database" / "schema" / "mes.sql"
 DEFAULT_DB_PATH = REPO_ROOT / "data" / "mes.sqlite"
 SCHEMA_VERSION = "1"
+RAW_SCHEMA_PREFIX = "MES_DATA"
 
 RAW_TABLE_COLUMNS = {
     "M_LOT": (
@@ -96,10 +97,10 @@ def _load_raw_dump(
     source_path: Path,
 ) -> None:
     sql = source_path.read_text(encoding="utf-8-sig")
-    qualified_name = f"MES_DATA_MKHC.{table}"
+    qualified_name = f"{RAW_SCHEMA_PREFIX}.{table}"
     if qualified_name not in sql:
         raise ValueError(f"{source_path.name} không chứa dữ liệu cho {qualified_name}")
-    sql = sql.replace("MES_DATA_MKHC.", "").replace("TIMESTAMP'", "'")
+    sql = sql.replace(f"{RAW_SCHEMA_PREFIX}.", "").replace("TIMESTAMP'", "'")
     connection.executescript(sql)
 
 
@@ -115,6 +116,8 @@ def _optional_text(value: Any) -> str | None:
     if value is None:
         return None
     text = str(value).strip()
+    if not text or text.lower() == "null":
+        return None
     return unicodedata.normalize("NFC", text) if text else None
 
 
@@ -126,9 +129,10 @@ def _required_text(value: Any, field: str) -> str:
 
 
 def _optional_int(value: Any) -> int | None:
-    if value is None or str(value).strip() == "":
+    text = _optional_text(value)
+    if text is None:
         return None
-    return int(str(value).strip())
+    return int(text)
 
 
 def _required_non_negative_int(value: Any, field: str) -> int:

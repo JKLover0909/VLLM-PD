@@ -69,7 +69,7 @@ class MesClient:
         payload = {
             "ServiceName": "mes_data",
             "ActionName": "DEMO_GET_TOTAL_ERROR",
-            "Condition": {"Schema_Data": "MES_DATA_MKHC"},
+            "Condition": {"Schema_Data": os.getenv("MES_API_SCHEMA_DATA", "MES_DATA")},
         }
         headers = {"Authorization": f"Bearer {self.token}"}
 
