@@ -21,6 +21,8 @@ def mes_database(tmp_path: Path) -> MesDatabase:
             [
                 (1, 101, "PRODUCT-A", "000001-01-000", "1", 1000, "2026-06-01"),
                 (2, 102, "PRODUCT-B", "000002-01-000", "2", 2000, "2026-06-02"),
+                (3, 103, "Testlot", "000003-01-000", "2", 3000, "2026-06-03"),
+                (4, 104, "m_test_lot", "001208-01-000", "2", 4000, "2026-06-04"),
             ],
         )
         connection.executemany(
@@ -46,6 +48,8 @@ def mes_database(tmp_path: Path) -> MesDatabase:
                 (1, 1, 1, "000001-01-000", "PROC-1", "1", "E001", 50),
                 (2, 1, 2, "000001-01-000", "PROC-2", "1", "E002", 10),
                 (3, 2, 1, "000002-01-000", "PROC-1", "1", "E001", 100),
+                (4, 3, 1, "000003-01-000", "PROC-1", "1", "E001", 10000),
+                (5, 4, 1, "001208-01-000", "PROC-1", "1", "E001", 9000),
             ],
         )
         connection.executemany(
@@ -91,7 +95,13 @@ def test_list_lots_returns_recent_lots_without_sql_agent(mes_database):
     assert result.intent == "list_lots"
     assert result.rows[0]["total_lot_count"] == 2
     assert result.rows[0]["items"][0]["lot_id"] == "000002-01-000"
+    assert all(
+        "test" not in item["product_id"].lower()
+        for item in result.rows[0]["items"]
+    )
     assert "000002-01-000" in result.fallback_answer
+    assert "test" not in result.fallback_answer.lower()
+    assert "Testlot" not in result.fallback_answer
 
 
 def test_highest_lot_requires_explicit_permission(mes_database):
@@ -104,6 +114,7 @@ def test_highest_lot_requires_explicit_permission(mes_database):
     assert result.intent == "highest_error_lot"
     assert result.rows[0]["lot_id"] == "000002-01-000"
     assert result.rows[0]["total_error_qty"] == 100
+    assert "Testlot" not in result.fallback_answer
 
 
 def test_top_n_highest_error_lots(mes_database):
@@ -118,8 +129,10 @@ def test_top_n_highest_error_lots(mes_database):
         "000002-01-000",
         "000001-01-000",
     ]
+    assert all("test" not in row["product_id"].lower() for row in result.rows)
     assert "000002-01-000" in result.fallback_answer
     assert "000001-01-000" in result.fallback_answer
+    assert "Testlot" not in result.fallback_answer
 
 
 def test_unrelated_question_is_not_routed_to_mes(mes_database):

@@ -50,7 +50,7 @@ Quy tắc:
 5. Tên lỗi rỗng nghĩa là *Lỗi chưa rõ tên*; không được tự đặt tên lỗi.
 6. Nói rõ đây là dữ liệu MES snapshot khi kết luận có thể bị hiểu là dữ liệu
    thời gian thực.
-7. Dữ liệu test không bị loại trừ, đúng như trường filters trong JSON.
+7. Dữ liệu đã được lọc theo chính sách hiển thị trong trường filters của JSON.
 8. Tuyệt đối không để lộ tên field JSON/SQL như total_error_qty,
    error_record_count, lot_count, top_errors, error_qty hoặc các tên kỹ thuật tương tự.
 9. Nếu JSON chứa danh sách lỗi chi tiết (top_errors) của một Lot, hãy tự động trình bày thêm danh sách đó (nếu câu trả lời chính chưa liệt kê). Ví dụ:

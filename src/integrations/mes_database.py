@@ -27,7 +27,7 @@ class MesDatabaseResult:
         return {
             "source": "mes_snapshot",
             "snapshot_imported_at": self.imported_at,
-            "filters": {"exclude_test_data": False},
+            "filters": {"exclude_test_data": True},
             "intent": self.intent,
             "rows": self.rows,
         }
@@ -52,9 +52,6 @@ class MesDatabase:
         "du lieu cuc bo",
         "du lieu da luu",
     )
-    # Điều kiện loại Lot/sản phẩm test ra khỏi các truy vấn thống kê mặc định.
-    # Lot test có product_id bắt đầu bằng "Test_" (không phân biệt hoa thường).
-    EXCLUDE_TEST_FILTER = "LOWER(product_id) NOT LIKE 'test\\_%' ESCAPE '\\'"
     DEFAULT_LIST_LIMIT = 25
 
     def __init__(self, db_path: Path | str):
@@ -191,14 +188,32 @@ class MesDatabase:
             required_terms=required_terms,
         )
 
+    @staticmethod
+    def _exclude_test_filter(
+        product_column: str | None = "product_id",
+        lot_column: str | None = "lot_id",
+    ) -> str:
+        # Dữ liệu test trong MES đang có nhiều kiểu tên: Test_..., Testlot,
+        # M_Test_..., 1504_DTest_... Vì vậy phải loại theo token "test"
+        # ở cả mã hàng và mã Lot, không chỉ prefix Test_.
+        clauses: list[str] = []
+        if product_column:
+            clauses.append(
+                f"LOWER(COALESCE({product_column}, '')) NOT LIKE '%test%'"
+            )
+        if lot_column:
+            clauses.append(f"LOWER(COALESCE({lot_column}, '')) NOT LIKE '%test%'")
+        return " AND ".join(clauses) if clauses else "1 = 1"
+
     def _highest_error_lots(self, limit: int = 1) -> MesDatabaseResult:
+        exclude_test = self._exclude_test_filter()
         if limit > 1:
             rows = self._fetch_all(
                 f"""
                 SELECT lot_id, product_id, total_error_qty, error_record_count,
                        distinct_error_count, unmapped_error_record_count
                 FROM v_lot_error_summary
-                WHERE {self.EXCLUDE_TEST_FILTER}
+                WHERE {exclude_test}
                   AND total_error_qty > 0
                 ORDER BY total_error_qty DESC, lot_id
                 LIMIT ?
@@ -211,10 +226,10 @@ class MesDatabase:
                 SELECT lot_id, product_id, total_error_qty, error_record_count,
                        distinct_error_count, unmapped_error_record_count
                 FROM v_lot_error_summary
-                WHERE {self.EXCLUDE_TEST_FILTER}
+                WHERE {exclude_test}
                   AND total_error_qty = (
                     SELECT MAX(total_error_qty) FROM v_lot_error_summary
-                    WHERE {self.EXCLUDE_TEST_FILTER}
+                    WHERE {exclude_test}
                   )
                 ORDER BY lot_id
                 """
@@ -223,10 +238,11 @@ class MesDatabase:
         enriched_rows: list[dict[str, Any]] = []
         for row in rows:
             top_errors = self._fetch_all(
-                """
+                f"""
                 SELECT error_id, error_name, total_error_qty AS error_qty
                 FROM v_lot_error_breakdown
                 WHERE lot_id = ?
+                  AND {self._exclude_test_filter()}
                 ORDER BY total_error_qty DESC, error_id
                 LIMIT 3
                 """,
@@ -242,11 +258,15 @@ class MesDatabase:
         return self._result("highest_error_lot", enriched_rows, answer, terms)
 
     def _list_lots(self, limit: int = DEFAULT_LIST_LIMIT) -> MesDatabaseResult:
+        exclude_test_lots = self._exclude_test_filter()
+        exclude_test_lots_alias = self._exclude_test_filter(
+            "l.product_id", "l.lot_id"
+        )
         count_rows = self._fetch_all(
             f"""
             SELECT COUNT(*) AS total_lot_count
             FROM lots
-            WHERE {self.EXCLUDE_TEST_FILTER}
+            WHERE {exclude_test_lots}
             """
         )
         total_lot_count = int(count_rows[0]["total_lot_count"]) if count_rows else 0
@@ -256,7 +276,7 @@ class MesDatabase:
                    COALESCE(s.total_error_qty, 0) AS total_error_qty
             FROM lots AS l
             LEFT JOIN v_lot_error_summary AS s ON s.lot_pk = l.lot_pk
-            WHERE {self.EXCLUDE_TEST_FILTER.replace("product_id", "l.product_id")}
+            WHERE {exclude_test_lots_alias}
             ORDER BY
                 CASE WHEN l.produce_date IS NULL THEN 1 ELSE 0 END,
                 l.produce_date DESC,
@@ -276,7 +296,7 @@ class MesDatabase:
         )
         answer = (
             f"Theo MES snapshot, hiện có {self._number(total_lot_count)} Lot "
-            f"không thuộc dữ liệu test. Dưới đây là {len(rows)} Lot mới nhất: "
+            f"đủ điều kiện hiển thị. Dưới đây là {len(rows)} Lot mới nhất: "
             f"{descriptions}."
         )
         return self._result(
@@ -412,7 +432,7 @@ class MesDatabase:
 
     def _product_error_breakdown(self, product_id: str) -> MesDatabaseResult:
         rows = self._fetch_all(
-            """
+            f"""
             SELECT l.product_id, e.error_id,
                    COALESCE(c.error_name_vi, c.error_name, c.error_name_en) AS error_name,
                    e.process_id, COUNT(e.error_pk) AS error_record_count,
@@ -421,6 +441,7 @@ class MesDatabase:
             JOIN lots AS l ON l.lot_pk = e.lot_pk
             LEFT JOIN error_catalog AS c ON c.error_catalog_pk = e.error_catalog_pk
             WHERE l.product_id = ?
+              AND {self._exclude_test_filter("l.product_id", "l.lot_id")}
             GROUP BY l.product_id, e.error_id, e.process_id, e.error_catalog_pk
             ORDER BY total_error_qty DESC, e.error_id
             LIMIT 10
@@ -448,14 +469,15 @@ class MesDatabase:
         )
 
     def _highest_error_products(self) -> MesDatabaseResult:
+        exclude_test_products = self._exclude_test_filter("product_id", None)
         rows = self._fetch_all(
             f"""
             SELECT product_id, lot_count, error_record_count, total_error_qty
             FROM v_product_error_summary
-            WHERE {self.EXCLUDE_TEST_FILTER}
+            WHERE {exclude_test_products}
               AND total_error_qty = (
                 SELECT MAX(total_error_qty) FROM v_product_error_summary
-                WHERE {self.EXCLUDE_TEST_FILTER}
+                WHERE {exclude_test_products}
             )
             ORDER BY product_id
             """
@@ -475,7 +497,7 @@ class MesDatabase:
 
     def _lots_for_error(self, error_id: str) -> MesDatabaseResult:
         rows = self._fetch_all(
-            """
+            f"""
             SELECT e.lot_id, l.product_id, e.error_id,
                    COALESCE(c.error_name_vi, c.error_name, c.error_name_en) AS error_name,
                    SUM(e.quantity) AS total_error_qty
@@ -483,6 +505,7 @@ class MesDatabase:
             LEFT JOIN lots AS l ON l.lot_pk = e.lot_pk
             LEFT JOIN error_catalog AS c ON c.error_catalog_pk = e.error_catalog_pk
             WHERE e.error_id = ?
+              AND {self._exclude_test_filter("l.product_id", "e.lot_id")}
             GROUP BY e.lot_id, l.product_id, e.error_id, e.error_catalog_pk
             ORDER BY total_error_qty DESC, e.lot_id
             LIMIT 10

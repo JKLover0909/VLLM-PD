@@ -36,7 +36,7 @@ class MesSqlQueryResult:
         return {
             "source": "mes_snapshot",
             "snapshot_imported_at": self.imported_at,
-            "filters": {"exclude_test_data": False},
+            "filters": {"exclude_test_data": True},
             "columns": self.columns,
             "rows": self.rows,
             "truncated": self.truncated,
@@ -84,6 +84,7 @@ class MesSqlAgent:
         "ifnull",
         "instr",
         "length",
+        "like",
         "lower",
         "ltrim",
         "max",
@@ -168,7 +169,8 @@ class MesSqlAgent:
                     "PRAGMA, ATTACH, DDL hay câu lệnh ghi. Khi câu hỏi không thể "
                     "trả lời từ schema, đặt can_answer=false. Cụm 'loại lỗi' "
                     "nghĩa là nhóm error_id + error_name. Luôn đặt alias dễ hiểu "
-                    "và LIMIT phù hợp. Chỉ trả đúng JSON: "
+                    "và LIMIT phù hợp. Các view MES đã loại dữ liệu Lot/sản phẩm "
+                    "test; không cố truy xuất lại dữ liệu test. Chỉ trả đúng JSON: "
                     '{"can_answer":true,"sql":"...","reason":"..."}.'
                 ),
             },

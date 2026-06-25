@@ -28,6 +28,7 @@ def sql_agent(tmp_path: Path) -> MesSqlAgent:
             [
                 (1, 1, "PRODUCT-A", "LOT-A", "1", 100),
                 (2, 2, "PRODUCT-B", "LOT-B", "1", 200),
+                (3, 3, "Testlot", "LOT-TEST", "1", 300),
             ],
         )
         connection.executemany(
@@ -53,6 +54,7 @@ def sql_agent(tmp_path: Path) -> MesSqlAgent:
                 (1, 1, 1, "LOT-A", "P1", "1", "E1", 5),
                 (2, 2, 1, "LOT-B", "P1", "1", "E1", 20),
                 (3, 2, 2, "LOT-B", "P2", "1", "E2", 10),
+                (4, 3, 1, "LOT-TEST", "P1", "1", "E1", 999),
             ],
         )
         connection.execute(
@@ -94,6 +96,19 @@ def test_executes_compound_top_lot_top_errors_query(sql_agent):
     assert result.rows[0]["lot_id"] == "LOT-B"
     assert result.rows[0]["error_quantity"] == 20
     assert result.imported_at == "2026-06-20"
+
+
+def test_sql_agent_views_hide_test_lots(sql_agent):
+    result = sql_agent.execute(
+        """
+        SELECT lot_id, product_id, total_error_qty
+        FROM v_lot_error_summary
+        ORDER BY total_error_qty DESC
+        """
+    )
+
+    assert [row["lot_id"] for row in result.rows] == ["LOT-B", "LOT-A"]
+    assert all("test" not in row["product_id"].lower() for row in result.rows)
 
 
 @pytest.mark.parametrize(

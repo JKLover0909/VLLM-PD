@@ -142,7 +142,9 @@ SELECT
     CASE WHEN e.error_catalog_pk IS NULL THEN 0 ELSE 1 END AS error_name_mapped
 FROM error_events AS e
 LEFT JOIN lots AS l ON l.lot_pk = e.lot_pk
-LEFT JOIN error_catalog AS c ON c.error_catalog_pk = e.error_catalog_pk;
+LEFT JOIN error_catalog AS c ON c.error_catalog_pk = e.error_catalog_pk
+WHERE LOWER(COALESCE(e.lot_id, '')) NOT LIKE '%test%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE '%test%';
 
 CREATE VIEW v_lot_error_summary AS
 SELECT
@@ -159,6 +161,8 @@ SELECT
         AS unmapped_error_record_count
 FROM lots AS l
 LEFT JOIN error_events AS e ON e.lot_pk = l.lot_pk
+WHERE LOWER(COALESCE(l.lot_id, '')) NOT LIKE '%test%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE '%test%'
 GROUP BY l.lot_pk;
 
 CREATE VIEW v_lot_error_breakdown AS
@@ -174,6 +178,8 @@ SELECT
 FROM error_events AS e
 LEFT JOIN lots AS l ON l.lot_pk = e.lot_pk
 LEFT JOIN error_catalog AS c ON c.error_catalog_pk = e.error_catalog_pk
+WHERE LOWER(COALESCE(e.lot_id, '')) NOT LIKE '%test%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE '%test%'
 GROUP BY
     e.lot_id,
     l.product_id,
@@ -190,4 +196,6 @@ SELECT
     COALESCE(SUM(e.quantity), 0) AS total_error_qty
 FROM lots AS l
 LEFT JOIN error_events AS e ON e.lot_pk = l.lot_pk
+WHERE LOWER(COALESCE(l.lot_id, '')) NOT LIKE '%test%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE '%test%'
 GROUP BY l.product_id;

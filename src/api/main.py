@@ -47,6 +47,7 @@ from src.integrations.gmail_sender import (
     GmailSenderError,
     parse_email_send_command,
 )
+from src.i18n.translation import TranslationError, TranslationService
 
 ENABLE_AGENT = os.getenv("ENABLE_AGENT", "true").lower() in {"1", "true", "yes", "on"}
 agent_executor = None
@@ -112,6 +113,7 @@ web_searcher: Optional[WebSearcher] = None
 employee_directory = EmployeeDirectory(EMPLOYEE_DIRECTORY_DB_PATH)
 mes_database = MesDatabase.from_env()
 gmail_sender = GmailSender.from_env()
+translation_service = TranslationService.from_env()
 rate_limit_events: Dict[str, Deque[float]] = defaultdict(deque)
 rate_limit_lock = asyncio.Lock()
 upload_processing_semaphore = asyncio.Semaphore(UPLOAD_PROCESSING_CONCURRENCY)
@@ -327,6 +329,7 @@ class QueryRequest(BaseModel):
     stream: bool = True
     model: Literal["auto", "local", "openai", "grok"] = "openai"
     mode: Literal["mkac", "mes", "research"] = "mkac"
+    ui_language: Literal["vi", "ja"] = "vi"
     employee_id: Optional[str] = None
     conversation_context: List[Dict[str, Any]] = Field(default_factory=list)
 
@@ -453,6 +456,38 @@ def employee_context_for_query(
     if people_context:
         context["queried_people"] = people_context
     return context
+
+
+async def localize_query_request(req: QueryRequest) -> QueryRequest:
+    """Translate Japanese UI questions into Vietnamese for the core backend."""
+    if req.ui_language != "ja" or translation_service is None:
+        return req
+    translated = await translation_service.translate_query(
+        req.question,
+        ui_language=req.ui_language,
+        mode=req.mode,
+    )
+    if translated.backend_question == req.question:
+        return req
+    logger.info(
+        "Translated UI query language=%s mode=%s original=%r backend=%r",
+        req.ui_language,
+        req.mode,
+        translated.original_question,
+        translated.backend_question,
+    )
+    return req.model_copy(update={"question": translated.backend_question})
+
+
+async def translate_answer_for_ui(answer: str, req: QueryRequest) -> str:
+    """Translate Vietnamese backend answers back to the selected UI language."""
+    if req.ui_language != "ja" or translation_service is None:
+        return answer
+    return await translation_service.translate_answer(
+        answer,
+        ui_language=req.ui_language,
+        mode=req.mode,
+    )
 
 
 def ensure_query_services_ready() -> None:
@@ -705,6 +740,10 @@ async def health():
             if gmail_sender is not None
             else {"enabled": False, "available": False}
         ),
+        "translation": {
+            "enabled": translation_service is not None,
+            "model": getattr(translation_service, "model", ""),
+        },
         "document_processing": {
             "active": upload_active,
             "waiting": upload_waiting,
@@ -983,17 +1022,30 @@ async def query_documents(req: QueryRequest, request: Request):
     await enforce_rate_limit(request, "query", QUERY_RATE_LIMIT, 60)
     normalize_session_id(req.session_id)
     current_employee = authorize_query(req)
-    current_user_context = employee_context_for_query(req, current_employee)
 
     try:
-        email_response = await handle_email_send_query(req, current_user_context)
+        localized_req = await localize_query_request(req)
+        current_user_context = employee_context_for_query(
+            localized_req,
+            current_employee,
+        )
+        email_response = await handle_email_send_query(localized_req, current_user_context)
         if email_response is not None:
+            translated_email_answer = await translate_answer_for_ui(
+                email_response.answer,
+                req,
+            )
+            if translated_email_answer != email_response.answer:
+                return email_response.model_copy(
+                    update={"answer": translated_email_answer}
+                )
             return email_response
 
         answer, results, routed_model, answer_scope = await route_query(
-            req,
+            localized_req,
             current_user_context=current_user_context,
         )
+        answer = await translate_answer_for_ui(answer, req)
         return QueryResponse(
             answer=answer,
             sources=rag_pipeline.format_sources(results),
@@ -1003,6 +1055,8 @@ async def query_documents(req: QueryRequest, request: Request):
             answer_scope=answer_scope,
         )
     except GmailSenderError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    except TranslationError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     except Exception as e:
         logger.error(f"RAG query error: {e}", exc_info=True)
@@ -1017,22 +1071,49 @@ async def query_stream(req: QueryRequest, request: Request):
     await enforce_rate_limit(request, "query", QUERY_RATE_LIMIT, 60)
     normalize_session_id(req.session_id)
     current_employee = authorize_query(req)
-    current_user_context = employee_context_for_query(req, current_employee)
+    try:
+        localized_req = await localize_query_request(req)
+        current_user_context = employee_context_for_query(
+            localized_req,
+            current_employee,
+        )
+    except TranslationError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
     async def event_generator():
         import json
         try:
-            email_response = await handle_email_send_query(req, current_user_context)
+            email_response = await handle_email_send_query(
+                localized_req,
+                current_user_context,
+            )
             if email_response is not None:
+                translated_email_answer = await translate_answer_for_ui(
+                    email_response.answer,
+                    req,
+                )
                 yield f"data: {json.dumps({'type': 'sources', 'sources': email_response.sources})}\n\n"
                 yield f"data: {json.dumps({'type': 'meta', 'model': email_response.model, 'mode': email_response.mode, 'answer_scope': email_response.answer_scope})}\n\n"
-                yield f"data: {json.dumps({'type': 'token', 'content': email_response.answer})}\n\n"
+                yield f"data: {json.dumps({'type': 'token', 'content': translated_email_answer})}\n\n"
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                return
+
+            if req.ui_language == "ja":
+                answer, results, routed_model, answer_scope = await route_query(
+                    localized_req,
+                    current_user_context=current_user_context,
+                )
+                translated_answer = await translate_answer_for_ui(answer, req)
+                sources = rag_pipeline.format_sources(results)
+                yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
+                yield f"data: {json.dumps({'type': 'meta', 'model': routed_model, 'mode': req.mode, 'answer_scope': answer_scope})}\n\n"
+                yield f"data: {json.dumps({'type': 'token', 'content': translated_answer})}\n\n"
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 return
 
             token_stream, results, routed_model, answer_scope = (
                 await route_query_stream(
-                    req,
+                    localized_req,
                     current_user_context=current_user_context,
                 )
             )

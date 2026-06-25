@@ -4,7 +4,7 @@
   "source_policy": {
     "is_realtime": false,
     "exclude_test_data_by_default": true,
-    "test_lot_pattern": "product_id LIKE 'Test\\_%' (không phân biệt hoa thường) là Lot/sản phẩm test, phải loại khỏi kết quả thống kê mặc định",
+    "test_lot_pattern": "Lot/sản phẩm test là bản ghi có lot_id hoặc product_id chứa chuỗi 'test' không phân biệt hoa thường; các view public đã loại sẵn nhóm này",
     "unknown_error_name": "Không suy đoán tên khi error_name rỗng"
   },
   "views": {
@@ -78,7 +78,7 @@
     "Cụm 'tổng lỗi' nghĩa là SUM(quantity) hoặc total_error_qty, không phải COUNT bản ghi.",
     "Cụm 'loại lỗi' mặc định nghĩa là nhóm theo error_id và error_name, không phải error_type.",
     "Khi tổng hợp một mã lỗi qua nhiều công đoạn, SUM(total_error_qty) và GROUP BY error_id, error_name.",
-    "QUAN TRỌNG: Luôn loại Lot và sản phẩm test khỏi kết quả thống kê bằng cách thêm điều kiện: lower(substr(product_id, 1, 5)) != 'test_' vào mệnh đề WHERE của mọi truy vấn xếp hạng hoặc tổng hợp (trừ khi người dùng hỏi cụ thể về một Lot/sản phẩm test). Áp dụng điều kiện này ở cả subquery tính MAX.",
+    "QUAN TRỌNG: Các view public đã loại sẵn Lot và sản phẩm test theo quy tắc lower(lot_id/product_id) chứa 'test'. Không dùng bảng gốc và không cố truy xuất lại dữ liệu test.",
     "Không giải nghĩa status vì snapshot chưa có bảng mã trạng thái.",
     "Tên lỗi rỗng phải hiển thị là '*Lỗi chưa rõ tên*'."
   ]

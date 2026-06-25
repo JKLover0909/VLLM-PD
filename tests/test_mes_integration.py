@@ -126,6 +126,38 @@ def test_mes_client_sends_bearer_payload_and_returns_all_highest_lots():
     ]
 
 
+def test_mes_client_filters_test_lots_before_selecting_highest():
+    transport = httpx.MockTransport(
+        lambda _: httpx.Response(
+            200,
+            json={
+                "code": 200,
+                "data": [
+                    {
+                        "Lot_Id": "LOT-TEST",
+                        "Product_Id": "Testlot",
+                        "Total_Error_Qty": "99999",
+                    },
+                    {
+                        "Lot_Id": "LOT-REAL",
+                        "Product_Id": "PRODUCT-A",
+                        "Total_Error_Qty": "120",
+                    },
+                ],
+            },
+        )
+    )
+    client = MesClient(
+        "https://mes.example/api/dynamics",
+        "demo-token",
+        transport=transport,
+    )
+
+    result = asyncio.run(client.get_lots_with_highest_error())
+
+    assert result == [MesLotError("LOT-REAL", "PRODUCT-A", 120)]
+
+
 def test_mes_client_rejects_invalid_error_quantity():
     transport = httpx.MockTransport(
         lambda _: httpx.Response(

@@ -62,6 +62,9 @@ class MesClient:
 
     async def get_lots_with_highest_error(self) -> list[MesLotError]:
         rows = await self._fetch_lot_errors()
+        rows = [row for row in rows if not self._is_test_lot(row)]
+        if not rows:
+            raise MesApiError("MES API không có dữ liệu Lot phù hợp để hiển thị.")
         highest = max(row.total_error_qty for row in rows)
         return [row for row in rows if row.total_error_qty == highest]
 
@@ -127,3 +130,7 @@ class MesClient:
             product_id=product_id,
             total_error_qty=quantity,
         )
+
+    @staticmethod
+    def _is_test_lot(row: MesLotError) -> bool:
+        return "test" in row.lot_id.lower() or "test" in row.product_id.lower()

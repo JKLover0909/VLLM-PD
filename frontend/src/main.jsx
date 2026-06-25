@@ -1287,6 +1287,7 @@ function App() {
           stream: true,
           model: requestModel,
           mode: requestMode,
+          ui_language: language,
           employee_id: (requestMode === "mkac" || requestMode === "mes") ? employee?.id : undefined,
           conversation_context: conversationContext,
         },
