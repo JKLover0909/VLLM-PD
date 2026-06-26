@@ -103,6 +103,7 @@ const SESSION_TITLE_STORAGE_KEY = "meibook-session-titles";
 const THEME_STORAGE_KEY = "meibook-theme";
 const LANGUAGE_STORAGE_KEY = "meibook-language";
 const EMPLOYEE_STORAGE_KEY = "meibook-mkac-employee";
+const GUEST_EMPLOYEE_ID = "000000";
 const THEME_OPTIONS = ["system", "light", "dark"];
 const LANGUAGE_OPTIONS = ["vi", "ja"];
 const THEME_ICONS = {
@@ -200,6 +201,7 @@ const UI_TEXT = {
       employeeCode: "Mã nhân viên",
       invalidEmployee: "Mã nhân viên không hợp lệ.",
       employeeRequired: "Vui lòng nhập mã nhân viên hợp lệ trước khi tiếp tục.",
+      guestWelcome: "Chào mừng đến với hệ thống Meibook,",
       continue: "Tiếp tục",
       verifying: "Đang kiểm tra",
       chooseToStart: "Chọn tài liệu để bắt đầu",
@@ -358,6 +360,7 @@ const UI_TEXT = {
       employeeCode: "社員番号",
       invalidEmployee: "社員番号が正しくありません。",
       employeeRequired: "続行する前に有効な社員番号を入力してください。",
+      guestWelcome: "Meibookシステムへようこそ。",
       continue: "続行",
       verifying: "確認中",
       chooseToStart: "資料を選択して開始",
@@ -441,6 +444,7 @@ function storedTheme() {
 
 function storedLanguage() {
   try {
+    if (storedEmployee()?.id === GUEST_EMPLOYEE_ID) return "ja";
     const value = localStorage.getItem(LANGUAGE_STORAGE_KEY);
     return LANGUAGE_OPTIONS.includes(value) ? value : "vi";
   } catch {
@@ -461,6 +465,10 @@ function storedEmployee() {
   } catch {
     return null;
   }
+}
+
+function isGuestEmployee(employee) {
+  return employee?.id === GUEST_EMPLOYEE_ID;
 }
 
 function createClientId() {
@@ -665,6 +673,9 @@ const EMPLOYEE_POSITION_JA = {
 
 function employeeGreetingFor(employee, language, t) {
   if (!employee?.name) return "";
+  if (isGuestEmployee(employee)) {
+    return language === "ja" ? t("common.guestWelcome") : UI_TEXT.vi.common.guestWelcome;
+  }
   if (language !== "ja") {
     return employee.greeting || t("common.hello", { name: employee.name });
   }
@@ -910,6 +921,9 @@ function App() {
         if (cancelled) return;
         setEmployee(data.employee);
         setEmployeeCodeInput(data.employee.id);
+        if (isGuestEmployee(data.employee)) {
+          setLanguage("ja");
+        }
         localStorage.setItem(EMPLOYEE_STORAGE_KEY, JSON.stringify(data.employee));
       } catch {
         if (cancelled) return;
@@ -1528,6 +1542,9 @@ function App() {
     try {
       const data = await authenticateEmployee(normalizedCode);
       setEmployee(data.employee);
+      if (isGuestEmployee(data.employee)) {
+        setLanguage("ja");
+      }
       try {
         localStorage.setItem(EMPLOYEE_STORAGE_KEY, JSON.stringify(data.employee));
       } catch {
@@ -1829,52 +1846,7 @@ function App() {
               })}
             </div>
 
-            {mode !== "research" ? (
-              <div
-                ref={modelSelectRef}
-                className={`model-select ${MODEL_ACCENTS[model] || ""}`}
-              >
-                <Bot size={17} />
-                <button
-                  className="model-select-trigger"
-                  type="button"
-                  aria-label={t("common.chooseModel")}
-                  aria-haspopup="listbox"
-                  aria-expanded={modelMenuOpen}
-                  onClick={() => setModelMenuOpen((open) => !open)}
-                >
-                  <span>{selectedModel?.name || t("common.loadingModel")}</span>
-                  <ChevronDown
-                    className={modelMenuOpen ? "model-chevron open" : "model-chevron"}
-                    size={15}
-                  />
-                </button>
-                {modelMenuOpen && (
-                  <div className="model-menu" role="listbox" aria-label={t("common.modelList")}>
-                    {mkacModels.map((item) => (
-                      <button
-                        key={item.id}
-                        className={model === item.id ? "selected" : ""}
-                        type="button"
-                        role="option"
-                        aria-selected={model === item.id}
-                        onClick={() => {
-                          setModel(item.id);
-                          setModelMenuOpen(false);
-                        }}
-                      >
-                        <span className={`model-dot ${MODEL_ACCENTS[item.id] || ""}`} />
-                        <span className="model-option-copy">
-                          <strong>{item.name}</strong>
-                          <small>{item.description}</small>
-                        </span>
-                        {model === item.id && <Check size={16} />}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
+            {mode === "research" && (
               <div className="model-select locked accent-grok" title={modeText("research").lockedModel}>
                 <Bot size={17} />
                 <span className="model-select-trigger">

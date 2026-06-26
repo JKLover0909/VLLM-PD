@@ -5,6 +5,7 @@ import pytest
 
 from src.integrations.mes_client import MesApiError, MesClient, MesLotError
 from src.integrations.mes_database import MesDatabaseResult
+from src.integrations.mes_query_service import MesQueryService
 from src.rag.rag_pipeline import RAGPipeline
 
 
@@ -68,6 +69,19 @@ class FakeMesClient:
         if self.error:
             raise self.error
         return [MesLotError("LIVE-LOT", "LIVE-PRODUCT", 15920)]
+
+
+class FailingCompletions:
+    async def create(self, **kwargs):
+        raise RuntimeError("LLM unavailable")
+
+
+class FailingChat:
+    completions = FailingCompletions()
+
+
+class FailingOpenAIClient:
+    chat = FailingChat()
 
 
 def make_pipeline(mes_client, mes_database):
@@ -270,6 +284,7 @@ def test_highest_lot_question_prefers_snapshot_database():
     [
         "Liệt kê danh sách 5 lot nhiều lỗi nhất",
         "Top 5 lot có nhiều lỗi nhất",
+        "List the top 5 real production lots by total error quantity and exclude test lots.",
     ],
 )
 def test_top_n_highest_lot_questions_prefer_snapshot_database(question):
@@ -372,19 +387,46 @@ def test_mkac_mode_does_not_route_mes_questions():
     assert mes_database.calls == []
 
 
-def test_compound_highest_lot_question_is_reserved_for_sql_agent():
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Trong Lot có số lượng lỗi nhiều nhất, 3 loại lỗi nhiều nhất là gì?",
+        "Trong lot có số lượng lỗi nhiều nhất, hãy cho biết mã hàng, tổng lỗi và 3 mã lỗi xuất hiện nhiều nhất kèm tên lỗi.",
+        "For the lot with the highest error quantity, show the product code and the top three error codes with Vietnamese error names.",
+    ],
+)
+def test_compound_highest_lot_question_is_reserved_for_sql_agent(question):
     mes_client = FakeMesClient()
     mes_database = FakeMesDatabase()
     pipeline = make_pipeline(mes_client, mes_database)
 
-    source, result = asyncio.run(
-        pipeline._get_mes_route(
-            "Trong Lot có số lượng lỗi nhiều nhất, 3 loại lỗi nhiều nhất là gì?",
-            "mes",
-        )
-    )
+    source, result = asyncio.run(pipeline._get_mes_route(question, "mes"))
 
     assert source is None
     assert result is None
     assert mes_client.calls == 0
     assert mes_database.calls == []
+
+
+def test_mes_query_service_falls_back_compound_highest_lot_to_snapshot():
+    mes_database = FakeMesDatabase()
+    service = MesQueryService(
+        mes_client=FakeMesClient(),
+        mes_database=mes_database,
+        mes_sql_agent=None,
+        openai_client=FailingOpenAIClient(),
+    )
+    question = (
+        "Trong lot có số lượng lỗi nhiều nhất, hãy cho biết mã hàng, tổng lỗi "
+        "và 3 mã lỗi xuất hiện nhiều nhất kèm tên lỗi."
+    )
+
+    answer, results, routed_model, answer_scope = asyncio.run(
+        service.query(question, "openai")
+    )
+
+    assert results == []
+    assert routed_model == "openai-model"
+    assert answer_scope == "mes_database"
+    assert "Snapshot Lot" in answer
+    assert mes_database.calls[-1] == (question, True)

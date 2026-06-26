@@ -73,8 +73,10 @@ def mes_database(tmp_path: Path) -> MesDatabase:
         ("Mã lỗi E001 là lỗi gì?", "error_name"),
         ("Mã hàng PRODUCT-A có tổng bao nhiêu lỗi?", "product_error_summary"),
         ("Mã hàng PRODUCT-A có những lỗi nào?", "product_error_breakdown"),
+        ("For product code PRODUCT-A, how many errors are recorded?", "product_error_summary"),
         ("Sản phẩm nào có tổng lỗi cao nhất?", "highest_error_product"),
         ("Những Lot nào có mã lỗi E001?", "lots_for_error"),
+        ("Which lots have error code E001?", "lots_for_error"),
         ("Liệt kê các lot", "list_lots"),
         ("Có những lot nào?", "list_lots"),
     ],
@@ -133,6 +135,36 @@ def test_top_n_highest_error_lots(mes_database):
     assert "000002-01-000" in result.fallback_answer
     assert "000001-01-000" in result.fallback_answer
     assert "Testlot" not in result.fallback_answer
+
+
+def test_english_top_n_highest_error_lots_does_not_extract_product_from_production(mes_database):
+    result = mes_database.query_question(
+        "List the top 2 real production lots by total error quantity and exclude test lots.",
+        allow_highest_lot=True,
+    )
+
+    assert result is not None
+    assert result.intent == "highest_error_lot"
+    assert [row["lot_id"] for row in result.rows] == [
+        "000002-01-000",
+        "000001-01-000",
+    ]
+    assert "ion" not in result.fallback_answer
+    assert "Testlot" not in result.fallback_answer
+
+
+def test_top_error_codes_does_not_change_highest_lot_limit(mes_database):
+    result = mes_database.query_question(
+        (
+            "For the lot with the highest error quantity, show the product code "
+            "and the top three error codes with Vietnamese error names."
+        ),
+        allow_highest_lot=True,
+    )
+
+    assert result is not None
+    assert result.intent == "highest_error_lot"
+    assert [row["lot_id"] for row in result.rows] == ["000002-01-000"]
 
 
 def test_unrelated_question_is_not_routed_to_mes(mes_database):

@@ -8,6 +8,7 @@ from typing import Any, Optional, TypedDict
 
 
 EMPLOYEE_ID_PATTERN = re.compile(r"^\d{6}$")
+GUEST_EMPLOYEE_ID = "000000"
 
 
 def normalize_text(value: str) -> str:
@@ -41,6 +42,18 @@ class EmployeeDirectory:
         normalized_id = employee_id.strip()
         if not EMPLOYEE_ID_PATTERN.fullmatch(normalized_id):
             return None
+        if normalized_id == GUEST_EMPLOYEE_ID:
+            return {
+                "id": GUEST_EMPLOYEE_ID,
+                "name": "Guest",
+                "gender": "",
+                "position": "",
+                "department": "",
+                "greeting": "Chào mừng đến với hệ thống Meibook,",
+                "department_size": 0,
+                "department_heads": [],
+                "department_deputies": [],
+            }
         if not self.db_path.is_file():
             return None
 

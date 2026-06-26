@@ -112,6 +112,22 @@ class MesQueryService:
             answer, routed_model = sql_answer
             return answer, [], routed_model, "mes_database"
 
+        if self.is_highest_lot_error_question(question) and self.is_compound_mes_question(question):
+            snapshot_result = await self._query_database(
+                question,
+                allow_highest_lot=True,
+            )
+            if snapshot_result is not None:
+                logger.info(
+                    "Falling back compound highest Lot question to snapshot summary."
+                )
+                answer, routed_model = await self._generate_database_answer(
+                    question,
+                    snapshot_result,
+                    model,
+                )
+                return answer, [], routed_model, "mes_database"
+
         return MES_UNSUPPORTED_ANSWER, [], self.resolve_model(model), "mes_database"
 
     async def query_stream(
@@ -474,13 +490,25 @@ class MesQueryService:
         )
         normalized = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
 
-        has_lot = bool(re.search(r"\b(lot|lo|lo san xuat)\b", normalized))
+        has_lot = bool(re.search(r"\b(lot|lots|lo|lo san xuat)\b", normalized))
         has_error = bool(re.search(r"\bng\b", normalized)) or any(
             marker in normalized
-            for marker in ("loi", "error", "defect", "hang loi", "san pham loi")
+            for marker in (
+                "loi",
+                "error",
+                "errors",
+                "defect",
+                "defects",
+                "hang loi",
+                "san pham loi",
+            )
         )
         has_maximum = bool(
             re.search(r"\b(nhieu|cao|lon)\b(?:\s+\w+){0,3}\s+nhat\b", normalized)
+            or re.search(
+                r"\btop\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)?\b",
+                normalized,
+            )
         ) or any(
             marker in normalized
             for marker in (
@@ -494,6 +522,9 @@ class MesQueryService:
                 "max",
                 "maximum",
                 "most",
+                "highest",
+                "largest",
+                "greatest",
             )
         )
         return has_lot and has_error and has_maximum
@@ -508,12 +539,30 @@ class MesQueryService:
             char for char in normalized if unicodedata.category(char) != "Mn"
         )
         normalized = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
+        number_token = (
+            r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
+        )
         return bool(
-            re.search(r"\b\d+\s+(?:loai\s+)?loi\b", normalized)
-            or re.search(r"\btop\s*\d+\s+(?:loai\s+)?loi\b", normalized)
+            re.search(rf"\b{number_token}\s+(?:ma\s+|loai\s+)?loi\b", normalized)
+            or re.search(
+                rf"\btop\s*{number_token}\s+(?:ma\s+|loai\s+)?loi\b",
+                normalized,
+            )
+            or re.search(
+                rf"\btop\s*{number_token}\s+(?:error|defect)\s+(?:code|codes|type|types)\b",
+                normalized,
+            )
+            or re.search(
+                rf"\b{number_token}\s+(?:error|defect)\s+(?:code|codes|type|types)\b",
+                normalized,
+            )
             or any(
                 marker in normalized
                 for marker in ("cac loi nhieu nhat", "nhung loi nhieu nhat")
+            )
+            or (
+                ("error code" in normalized or "error codes" in normalized)
+                and any(marker in normalized for marker in ("top", "highest", "most"))
             )
         )
 

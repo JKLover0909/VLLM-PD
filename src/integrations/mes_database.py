@@ -114,13 +114,19 @@ class MesDatabase:
 
         normalized = normalize_mes_text(question)
         lot_id = self._extract_lot_id(question)
+        if allow_highest_lot and self._is_highest_lot_error_question(normalized):
+            return self._highest_error_lots(limit=self._extract_top_limit(normalized))
+
         product_id = self._extract_code_after(
             question,
-            r"(?:mã\s+hàng|mã\s+sản\s+phẩm|sản\s+phẩm|product)",
+            (
+                r"(?:mã\s+hàng|mã\s+sản\s+phẩm|sản\s+phẩm|"
+                r"\bproduct\s+code\b|\bproduct\s+id\b|\bpart\s+number\b|\bitem\s+code\b)"
+            ),
         )
         error_id = self._extract_code_after(
             question,
-            r"(?:mã\s+lỗi|lỗi\s+mã|error\s+code)",
+            r"(?:mã\s+lỗi|lỗi\s+mã|\berror\s+code\b|\bdefect\s+code\b)",
         )
         has_error = self._has_error_marker(normalized)
 
@@ -146,8 +152,6 @@ class MesDatabase:
             if self._asks_breakdown(normalized):
                 return self._product_error_breakdown(product_id)
             return self._product_summary(product_id)
-        if allow_highest_lot and self._is_highest_lot_error_question(normalized):
-            return self._highest_error_lots(limit=self._extract_top_limit(normalized))
         return None
 
     def _connect(self) -> sqlite3.Connection:
@@ -546,30 +550,89 @@ class MesDatabase:
         if not match:
             return None
         code = match.group(1).strip()
-        if normalize_mes_text(code) in {"nao", "gi", "co", "la", "cua"}:
+        normalized_code = normalize_mes_text(code)
+        natural_language_tokens = {
+            "nao",
+            "gi",
+            "co",
+            "la",
+            "cua",
+            "xuat",
+            "hien",
+            "nhieu",
+            "cao",
+            "lon",
+            "trong",
+            "voi",
+            "the",
+            "a",
+            "an",
+            "by",
+            "for",
+            "of",
+            "with",
+            "quantity",
+            "quantities",
+            "name",
+            "names",
+            "top",
+            "highest",
+            "largest",
+            "greatest",
+            "most",
+            "production",
+            "real",
+            "lots",
+            "lot",
+        }
+        if normalized_code in natural_language_tokens:
+            return None
+        if not re.search(r"\d|[_-]", code):
             return None
         return code
 
     @staticmethod
     def _has_error_marker(normalized: str) -> bool:
-        return bool(re.search(r"\b(ng|loi|error|defect)\b", normalized))
+        return bool(re.search(r"\b(ng|loi|error|errors|defect|defects)\b", normalized))
 
     @staticmethod
     def _asks_breakdown(normalized: str) -> bool:
         return any(
             marker in normalized
             for marker in ("nhung loi", "cac loi", "loi nao", "chi tiet loi", "pho bien")
+        ) or any(
+            marker in normalized
+            for marker in (
+                "breakdown",
+                "error breakdown",
+                "error code",
+                "error codes",
+                "defect code",
+                "defect codes",
+                "top error",
+                "top errors",
+                "by error",
+            )
         )
 
     @staticmethod
     def _asks_lots_for_error(normalized: str) -> bool:
-        return bool(re.search(r"\b(lot|lo)\b", normalized)) and any(
-            marker in normalized for marker in ("nao", "danh sach", "top", "nhieu nhat")
+        return bool(re.search(r"\b(lot|lots|lo)\b", normalized)) and any(
+            marker in normalized
+            for marker in (
+                "nao",
+                "danh sach",
+                "top",
+                "nhieu nhat",
+                "list",
+                "show",
+                "which",
+            )
         )
 
     @staticmethod
     def _is_lot_listing_question(normalized: str) -> bool:
-        has_lot = bool(re.search(r"\b(lot|lo)\b", normalized))
+        has_lot = bool(re.search(r"\b(lot|lots|lo)\b", normalized))
         has_listing = any(
             marker in normalized
             for marker in (
@@ -579,13 +642,18 @@ class MesDatabase:
                 "cac lot",
                 "lot nao dang co",
                 "lot hien co",
+                "list",
+                "show",
+                "which lots",
+                "current lots",
+                "available lots",
             )
         )
         return has_lot and has_listing
 
     @staticmethod
     def _is_highest_lot_error_question(normalized: str) -> bool:
-        has_lot = bool(re.search(r"\b(lot|lo)\b", normalized))
+        has_lot = bool(re.search(r"\b(lot|lots|lo)\b", normalized))
         has_error = MesDatabase._has_error_marker(normalized)
         has_maximum = bool(
             re.search(r"\b(nhieu|cao|lon)\b(?:\s+\w+){0,3}\s+nhat\b", normalized)
@@ -600,25 +668,74 @@ class MesDatabase:
                 "max",
                 "maximum",
                 "most",
+                "highest",
+                "largest",
+                "greatest",
             )
         )
         return has_lot and has_error and has_maximum
 
     @staticmethod
     def _extract_top_limit(normalized: str, default: int = 1, maximum: int = 50) -> int:
-        match = re.search(r"\btop\s*(\d+)\b", normalized)
+        match = re.search(
+            r"\btop\s*(\d+)(?:\s+\w+){0,5}\s+(?:lot|lots|lo)\b",
+            normalized,
+        )
         if not match:
-            match = re.search(r"\b(\d+)\s+(?:lot|lo)\b", normalized)
+            match = re.search(r"\b(\d+)\s+(?:lot|lots|lo)\b", normalized)
+        if not match:
+            word_numbers = {
+                "one": 1,
+                "two": 2,
+                "three": 3,
+                "four": 4,
+                "five": 5,
+                "six": 6,
+                "seven": 7,
+                "eight": 8,
+                "nine": 9,
+                "ten": 10,
+            }
+            word_match = re.search(
+                (
+                    r"\btop\s+(one|two|three|four|five|six|seven|eight|nine|ten)"
+                    r"(?:\s+\w+){0,5}\s+(?:lot|lots|lo)\b"
+                ),
+                normalized,
+            )
+            if word_match:
+                return word_numbers[word_match.group(1)]
         if not match:
             return default
         return max(1, min(maximum, int(match.group(1))))
 
     @staticmethod
     def _is_highest_product_error_question(normalized: str) -> bool:
-        has_product = any(marker in normalized for marker in ("san pham", "ma hang", "product"))
+        has_product = any(
+            marker in normalized
+            for marker in (
+                "san pham",
+                "ma hang",
+                "product code",
+                "product id",
+                "part number",
+                "item code",
+            )
+        )
         has_maximum = any(
             marker in normalized
-            for marker in ("nhieu nhat", "cao nhat", "lon nhat", "dung dau", "top 1", "max", "most")
+            for marker in (
+                "nhieu nhat",
+                "cao nhat",
+                "lon nhat",
+                "dung dau",
+                "top 1",
+                "max",
+                "most",
+                "highest",
+                "largest",
+                "greatest",
+            )
         )
         return has_product and MesDatabase._has_error_marker(normalized) and has_maximum
 
