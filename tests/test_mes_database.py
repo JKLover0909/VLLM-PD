@@ -56,8 +56,8 @@ def mes_database(tmp_path: Path) -> MesDatabase:
             "INSERT INTO schema_metadata (key, value) VALUES (?, ?)",
             [
                 ("imported_at", "2026-06-20T03:52:08+00:00"),
-                ("lot_count", "2"),
-                ("error_event_count", "3"),
+                ("lot_count", "4"),
+                ("error_event_count", "5"),
                 ("error_catalog_count", "2"),
                 ("unmapped_error_name_count", "0"),
             ],
@@ -176,4 +176,8 @@ def test_status_reads_snapshot_metadata(mes_database):
 
     assert status["available"] is True
     assert status["lots"] == 2
+    assert status["raw_lots"] == 4
+    assert status["excluded_test_lots"] == 2
     assert status["error_events"] == 3
+    assert status["raw_error_events"] == 5
+    assert status["excluded_test_error_events"] == 2

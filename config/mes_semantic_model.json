@@ -5,7 +5,8 @@
     "is_realtime": false,
     "exclude_test_data_by_default": true,
     "test_lot_pattern": "Lot/sản phẩm test là bản ghi có lot_id hoặc product_id chứa chuỗi 'test' không phân biệt hoa thường; các view public đã loại sẵn nhóm này",
-    "unknown_error_name": "Không suy đoán tên khi error_name rỗng"
+    "unknown_error_name": "Không suy đoán tên khi error_name rỗng",
+    "time_columns": "error_time là thời điểm phát sinh lỗi; produce_date là ngày sản xuất Lot. Không dùng produce_date để trả lời thời điểm lỗi phát sinh."
   },
   "views": {
     "v_lot_error_summary": {
@@ -16,7 +17,7 @@
         "product_id": "Mã sản phẩm hoặc mã hàng",
         "status": "Mã trạng thái Lot, chưa có bảng giải nghĩa",
         "pcs_lot": "Tổng số PCS của Lot",
-        "produce_date": "Ngày sản xuất",
+        "produce_date": "Ngày sản xuất Lot, định dạng YYYY-MM-DD; chỉ dùng khi người dùng hỏi Lot theo ngày sản xuất",
         "error_record_count": "Số lần ghi nhận lỗi, không phải tổng số lượng lỗi",
         "distinct_error_count": "Số mã lỗi khác nhau",
         "total_error_qty": "Tổng số lượng lỗi của Lot",
@@ -62,7 +63,7 @@
         "error_name_vi": "Tên lỗi tiếng Việt",
         "error_name_en": "Tên lỗi tiếng Anh",
         "quantity": "Số lượng của bản ghi lỗi",
-        "error_time": "Thời gian lỗi",
+        "error_time": "Thời gian phát sinh lỗi, định dạng YYYY-MM-DD HH:MM:SS; dùng date(error_time) để thống kê theo ngày và strftime('%Y-%m', error_time) để thống kê theo tháng",
         "error_judgement": "Kết quả đánh giá lỗi",
         "lot_mapped": "1 nếu nối được Lot",
         "error_name_mapped": "1 nếu nối được tên lỗi"
@@ -78,6 +79,13 @@
     "Cụm 'tổng lỗi' nghĩa là SUM(quantity) hoặc total_error_qty, không phải COUNT bản ghi.",
     "Cụm 'loại lỗi' mặc định nghĩa là nhóm theo error_id và error_name, không phải error_type.",
     "Khi tổng hợp một mã lỗi qua nhiều công đoạn, SUM(total_error_qty) và GROUP BY error_id, error_name.",
+    "Câu hỏi về ngày/tháng/năm/khoảng thời gian của lỗi phải ưu tiên view v_error_details và cột error_time, tổng hợp bằng SUM(quantity).",
+    "Khi hỏi ngày nào có lỗi nhiều nhất, GROUP BY date(error_time), ORDER BY SUM(quantity) DESC.",
+    "Khi hỏi tháng nào có lỗi nhiều nhất, GROUP BY strftime('%Y-%m', error_time), ORDER BY SUM(quantity) DESC.",
+    "Khi lọc một ngày cụ thể, dùng error_time >= 'YYYY-MM-DD' AND error_time < date('YYYY-MM-DD', '+1 day') để không bỏ sót giờ phút giây.",
+    "Khi lọc một tháng cụ thể, dùng error_time >= 'YYYY-MM-01' AND error_time < date('YYYY-MM-01', '+1 month').",
+    "Khi hỏi Top/Liệt kê Lot có tổng lỗi cao nhất trong một ngày/tháng/năm, mặc định lọc theo v_error_details.error_time và GROUP BY lot_id, product_id; không dùng produce_date nếu câu hỏi không nói rõ 'ngày sản xuất'.",
+    "Câu hỏi về Lot sản xuất theo ngày mới dùng v_lot_error_summary.produce_date; không nhầm produce_date với error_time.",
     "QUAN TRỌNG: Các view public đã loại sẵn Lot và sản phẩm test theo quy tắc lower(lot_id/product_id) chứa 'test'. Không dùng bảng gốc và không cố truy xuất lại dữ liệu test.",
     "Không giải nghĩa status vì snapshot chưa có bảng mã trạng thái.",
     "Tên lỗi rỗng phải hiển thị là '*Lỗi chưa rõ tên*'."

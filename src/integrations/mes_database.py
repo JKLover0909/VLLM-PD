@@ -81,12 +81,36 @@ class MesDatabase:
                 metadata = dict(
                     connection.execute("SELECT key, value FROM schema_metadata")
                 )
+                raw_lots = int(metadata.get("lot_count", 0))
+                raw_error_events = int(metadata.get("error_event_count", 0))
+                display_lots = connection.execute(
+                    f"""
+                    SELECT COUNT(*)
+                    FROM lots
+                    WHERE {self._exclude_test_filter()}
+                    """
+                ).fetchone()[0]
+                display_error_events = connection.execute(
+                    f"""
+                    SELECT COUNT(*)
+                    FROM error_events AS e
+                    LEFT JOIN lots AS l ON l.lot_pk = e.lot_pk
+                    WHERE {self._exclude_test_filter("l.product_id", "e.lot_id")}
+                    """
+                ).fetchone()[0]
             return {
                 "available": True,
                 "db_path": str(self.db_path),
                 "imported_at": metadata.get("imported_at", ""),
-                "lots": int(metadata.get("lot_count", 0)),
-                "error_events": int(metadata.get("error_event_count", 0)),
+                "lots": int(display_lots or 0),
+                "raw_lots": raw_lots,
+                "excluded_test_lots": max(raw_lots - int(display_lots or 0), 0),
+                "error_events": int(display_error_events or 0),
+                "raw_error_events": raw_error_events,
+                "excluded_test_error_events": max(
+                    raw_error_events - int(display_error_events or 0),
+                    0,
+                ),
                 "error_catalog": int(metadata.get("error_catalog_count", 0)),
                 "unmapped_error_names": int(
                     metadata.get("unmapped_error_name_count", 0)

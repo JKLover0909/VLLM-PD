@@ -107,12 +107,24 @@ class MesQueryService:
             )
             return answer, [], routed_model, "mes_database"
 
+        deterministic_sql_answer = await self._generate_time_sql_answer(
+            question,
+            model,
+        )
+        if deterministic_sql_answer is not None:
+            answer, routed_model = deterministic_sql_answer
+            return answer, [], routed_model, "mes_database"
+
         sql_answer = await self._generate_sql_answer(question, model)
         if sql_answer is not None:
             answer, routed_model = sql_answer
             return answer, [], routed_model, "mes_database"
 
-        if self.is_highest_lot_error_question(question) and self.is_compound_mes_question(question):
+        if (
+            self.is_highest_lot_error_question(question)
+            and self.is_compound_mes_question(question)
+            and not self.is_time_related_mes_question(question)
+        ):
             snapshot_result = await self._query_database(
                 question,
                 allow_highest_lot=True,
@@ -147,7 +159,10 @@ class MesQueryService:
         question: str,
     ) -> tuple[str | None, list[MesLotError] | MesDatabaseResult | None]:
         highest_lot_question = self.is_highest_lot_error_question(question)
-        if highest_lot_question and self.is_compound_mes_question(question):
+        time_related_question = self.is_time_related_mes_question(question)
+        if highest_lot_question and (
+            self.is_compound_mes_question(question) or time_related_question
+        ):
             return None, None
         explicit_snapshot = bool(
             self.mes_database
@@ -298,6 +313,44 @@ class MesQueryService:
                 logger.warning("MES SQL agent failed: %s", exc)
                 return None
         return None
+
+    async def _generate_time_sql_answer(
+        self,
+        question: str,
+        model: str,
+    ) -> tuple[str, str] | None:
+        if self.mes_sql_agent is None or not self.mes_sql_agent.available:
+            return None
+        sql = self.time_sql_for_question(question)
+        if not sql:
+            return None
+        routed_model = self.resolve_model(model)
+        try:
+            result = await asyncio.to_thread(self.mes_sql_agent.execute, sql)
+            logger.info("MES deterministic time SQL executed rows=%s", len(result.rows))
+        except MesSqlAgentError as exc:
+            logger.warning("MES deterministic time SQL rejected: %s", exc)
+            return None
+        if routed_model in LOCAL_MODEL_ALIASES:
+            return self.mes_sql_agent.fallback_answer(result), routed_model
+        try:
+            answer_response = await self.openai_client.chat.completions.create(
+                model=routed_model,
+                messages=self.mes_sql_agent.answer_messages(question, result),
+                temperature=0.1,
+                max_tokens=800,
+                **self.provider_options(routed_model),
+            )
+            candidate = answer_response.choices[0].message.content or ""
+            candidate = self.normalize_sql_answer(candidate)
+            if self.sql_answer_is_natural(candidate) and self.sql_answer_matches_result(
+                candidate,
+                result,
+            ):
+                return candidate, routed_model
+        except Exception as exc:
+            logger.warning("LLM deterministic MES time answer failed: %s", exc)
+        return self.mes_sql_agent.fallback_answer(result), routed_model
 
     async def _query_database(
         self,
@@ -450,17 +503,47 @@ class MesQueryService:
     @staticmethod
     def sql_answer_matches_result(answer: str, result: MesSqlQueryResult) -> bool:
         normalized = answer.lower()
+        normalized_numbers = answer.replace(".", "").replace(",", "")
         for row in result.rows[:5]:
+            checked_row_value = False
             for key in ("lot_id", "product_id", "error_id"):
                 value = row.get(key)
+                checked_row_value = checked_row_value or bool(value)
                 if value and str(value).lower() not in normalized:
                     return False
             error_name = row.get("error_name")
+            checked_row_value = checked_row_value or bool(error_name)
             if error_name and str(error_name).strip():
                 if str(error_name).lower() not in normalized:
                     return False
             elif "error_name" in row and "chưa rõ tên" not in normalized:
                 return False
+            if checked_row_value:
+                continue
+
+            for key, value in row.items():
+                if value is None or value == "":
+                    continue
+                key_lower = key.lower()
+                if any(
+                    marker in key_lower
+                    for marker in ("date", "time", "month", "day", "period")
+                ):
+                    if str(value).lower() not in normalized:
+                        return False
+                elif isinstance(value, (int, float)) and any(
+                    marker in key_lower
+                    for marker in (
+                        "total",
+                        "qty",
+                        "quantity",
+                        "count",
+                        "sum",
+                    )
+                ):
+                    compact_value = str(int(value) if float(value).is_integer() else value)
+                    if compact_value not in normalized_numbers:
+                        return False
         return True
 
     @staticmethod
@@ -563,6 +646,253 @@ class MesQueryService:
             or (
                 ("error code" in normalized or "error codes" in normalized)
                 and any(marker in normalized for marker in ("top", "highest", "most"))
+            )
+        )
+
+    @staticmethod
+    def is_time_related_mes_question(question: str) -> bool:
+        original = (question or "").lower()
+        normalized = unicodedata.normalize(
+            "NFD",
+            original.replace("đ", "d"),
+        )
+        normalized = "".join(
+            char for char in normalized if unicodedata.category(char) != "Mn"
+        )
+        normalized = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
+        has_explicit_date_value = bool(
+            re.search(r"\b20\d{2}[-/]\d{1,2}(?:[-/]\d{1,2})?\b", original)
+        )
+        if has_explicit_date_value:
+            return True
+        return any(
+            marker in normalized
+            for marker in (
+                "ngay",
+                "hom nay",
+                "hom qua",
+                "theo ngay",
+                "moi ngay",
+                "thang",
+                "theo thang",
+                "moi thang",
+                "nam",
+                "tuan",
+                "khoang thoi gian",
+                "tu ngay",
+                "den ngay",
+                "gan day",
+                "moi nhat",
+                "date",
+                "day",
+                "daily",
+                "today",
+                "yesterday",
+                "month",
+                "monthly",
+                "year",
+                "yearly",
+                "week",
+                "weekly",
+                "between",
+                "from",
+                "recent",
+                "latest",
+            )
+        ) or any(
+            marker in original
+            for marker in ("今日", "昨日", "日", "月", "年", "期間", "いつ")
+        )
+
+    @classmethod
+    def time_sql_for_question(cls, question: str) -> str:
+        original = (question or "").lower()
+        normalized = cls.normalized_text(question)
+        if not cls.is_time_related_mes_question(question):
+            return ""
+
+        explicit_month = cls.extract_month(question)
+        explicit_date = cls.extract_date(question)
+        limit = cls.extract_top_limit(normalized)
+        has_lot = bool(re.search(r"\b(lot|lots|lo|lo san xuat)\b", normalized))
+        has_error = bool(
+            re.search(r"\b(ng|loi|error|errors|defect|defects)\b", normalized)
+            or any(marker in original for marker in ("エラー", "不良", "欠陥"))
+        )
+        asks_error_type = any(
+            marker in normalized
+            for marker in (
+                "ma loi",
+                "loai loi",
+                "loi pho bien",
+                "pho bien nhat",
+                "error code",
+                "error codes",
+                "defect code",
+                "defect codes",
+                "top error",
+                "top errors",
+            )
+        )
+        asks_top = cls.has_top_marker(normalized) or any(
+            marker in original for marker in ("上位", "最も", "多い", "最大")
+        )
+        asks_month = "thang" in normalized or "month" in normalized or "月" in original
+        asks_day = "ngay" in normalized or "day" in normalized or "日" in original
+
+        if explicit_date and has_lot and has_error and asks_top:
+            return f"""
+                SELECT lot_id, product_id, SUM(quantity) AS total_error_qty
+                FROM v_error_details
+                WHERE error_time >= '{explicit_date}'
+                  AND error_time < date('{explicit_date}', '+1 day')
+                GROUP BY lot_id, product_id
+                ORDER BY total_error_qty DESC, lot_id
+                LIMIT {limit}
+            """
+
+        if explicit_month and has_lot and has_error and asks_top:
+            month_start = f"{explicit_month}-01"
+            return f"""
+                SELECT lot_id, product_id, SUM(quantity) AS total_error_qty
+                FROM v_error_details
+                WHERE error_time >= '{month_start}'
+                  AND error_time < date('{month_start}', '+1 month')
+                GROUP BY lot_id, product_id
+                ORDER BY total_error_qty DESC, lot_id
+                LIMIT {limit}
+            """
+
+        if explicit_month and asks_error_type and has_error:
+            month_start = f"{explicit_month}-01"
+            return f"""
+                SELECT error_id, error_name, SUM(quantity) AS total_error_qty
+                FROM v_error_details
+                WHERE error_time >= '{month_start}'
+                  AND error_time < date('{month_start}', '+1 month')
+                GROUP BY error_id, error_name
+                ORDER BY total_error_qty DESC, error_id
+                LIMIT {limit}
+            """
+
+        if asks_month and asks_error_type and asks_top and has_error:
+            return f"""
+                WITH top_month AS (
+                    SELECT strftime('%Y-%m', error_time) AS error_month
+                    FROM v_error_details
+                    WHERE error_time IS NOT NULL
+                    GROUP BY strftime('%Y-%m', error_time)
+                    ORDER BY SUM(quantity) DESC
+                    LIMIT 1
+                )
+                SELECT t.error_month, e.error_id, e.error_name,
+                       SUM(e.quantity) AS total_error_qty
+                FROM v_error_details AS e
+                JOIN top_month AS t
+                  ON strftime('%Y-%m', e.error_time) = t.error_month
+                GROUP BY t.error_month, e.error_id, e.error_name
+                ORDER BY total_error_qty DESC, e.error_id
+                LIMIT {limit}
+            """
+
+        if asks_month and has_error and asks_top and not has_lot:
+            return """
+                SELECT strftime('%Y-%m', error_time) AS error_month,
+                       SUM(quantity) AS total_error_qty,
+                       COUNT(*) AS error_record_count
+                FROM v_error_details
+                WHERE error_time IS NOT NULL
+                GROUP BY strftime('%Y-%m', error_time)
+                ORDER BY total_error_qty DESC
+                LIMIT 1
+            """
+
+        if asks_day and has_error and asks_top and not has_lot:
+            return """
+                SELECT date(error_time) AS error_date,
+                       SUM(quantity) AS total_error_qty,
+                       COUNT(*) AS error_record_count
+                FROM v_error_details
+                WHERE error_time IS NOT NULL
+                GROUP BY date(error_time)
+                ORDER BY total_error_qty DESC
+                LIMIT 1
+            """
+        return ""
+
+    @staticmethod
+    def normalized_text(question: str) -> str:
+        normalized = unicodedata.normalize(
+            "NFD",
+            (question or "").lower().replace("đ", "d"),
+        )
+        normalized = "".join(
+            char for char in normalized if unicodedata.category(char) != "Mn"
+        )
+        return re.sub(r"[^a-z0-9]+", " ", normalized).strip()
+
+    @staticmethod
+    def extract_date(question: str) -> str:
+        original = question or ""
+        match = re.search(r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b", original)
+        if not match:
+            return ""
+        year, month, day = match.groups()
+        return f"{year}-{int(month):02d}-{int(day):02d}"
+
+    @staticmethod
+    def extract_month(question: str) -> str:
+        original = question or ""
+        match = re.search(r"\b(20\d{2})[-/](\d{1,2})(?:[-/]\d{1,2})?\b", original)
+        if match:
+            year, month = match.groups()
+            return f"{year}-{int(month):02d}"
+        normalized = MesQueryService.normalized_text(question)
+        match = re.search(r"\bthang\s+(\d{1,2})\s+nam\s+(20\d{2})\b", normalized)
+        if match:
+            month, year = match.groups()
+            return f"{year}-{int(month):02d}"
+        match = re.search(r"\b(20\d{2})\s+nam\s+thang\s+(\d{1,2})\b", normalized)
+        if match:
+            year, month = match.groups()
+            return f"{year}-{int(month):02d}"
+        japanese_match = re.search(r"(20\d{2})年\s*(\d{1,2})月", original)
+        if japanese_match:
+            year, month = japanese_match.groups()
+            return f"{year}-{int(month):02d}"
+        return ""
+
+    @staticmethod
+    def extract_top_limit(normalized: str, default: int = 5, maximum: int = 50) -> int:
+        match = re.search(r"\btop\s*(\d+)\b", normalized)
+        if not match:
+            match = re.search(
+                r"\b(\d+)\s+(?:lot|lots|lo|ma loi|loai loi|error|errors)\b",
+                normalized,
+            )
+        if not match:
+            return default
+        return max(1, min(maximum, int(match.group(1))))
+
+    @staticmethod
+    def has_top_marker(normalized: str) -> bool:
+        return bool(
+            re.search(r"\b(nhieu|cao|lon|pho bien)\b(?:\s+\w+){0,3}\s+nhat\b", normalized)
+            or re.search(r"\btop\s*\d*\b", normalized)
+        ) or any(
+            marker in normalized
+            for marker in (
+                "nhieu nhat",
+                "cao nhat",
+                "lon nhat",
+                "pho bien nhat",
+                "dung dau",
+                "max",
+                "maximum",
+                "most",
+                "highest",
+                "largest",
+                "greatest",
             )
         )
 

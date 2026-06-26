@@ -689,7 +689,10 @@ class RAGPipeline:
             return None, None
 
         highest_lot_question = self._is_highest_lot_error_question(question)
-        if highest_lot_question and self._is_compound_mes_question(question):
+        time_related_question = self._is_time_related_mes_question(question)
+        if highest_lot_question and (
+            self._is_compound_mes_question(question) or time_related_question
+        ):
             return None, None
         explicit_snapshot = bool(
             self.mes_database
@@ -813,17 +816,47 @@ class RAGPipeline:
     @staticmethod
     def _mes_sql_answer_matches_result(answer: str, result: MesSqlQueryResult) -> bool:
         normalized = answer.lower()
+        normalized_numbers = answer.replace(".", "").replace(",", "")
         for row in result.rows[:5]:
+            checked_row_value = False
             for key in ("lot_id", "product_id", "error_id"):
                 value = row.get(key)
+                checked_row_value = checked_row_value or bool(value)
                 if value and str(value).lower() not in normalized:
                     return False
             error_name = row.get("error_name")
+            checked_row_value = checked_row_value or bool(error_name)
             if error_name and str(error_name).strip():
                 if str(error_name).lower() not in normalized:
                     return False
             elif "error_name" in row and "chưa rõ tên" not in normalized:
                 return False
+            if checked_row_value:
+                continue
+
+            for key, value in row.items():
+                if value is None or value == "":
+                    continue
+                key_lower = key.lower()
+                if any(
+                    marker in key_lower
+                    for marker in ("date", "time", "month", "day", "period")
+                ):
+                    if str(value).lower() not in normalized:
+                        return False
+                elif isinstance(value, (int, float)) and any(
+                    marker in key_lower
+                    for marker in (
+                        "total",
+                        "qty",
+                        "quantity",
+                        "count",
+                        "sum",
+                    )
+                ):
+                    compact_value = str(int(value) if float(value).is_integer() else value)
+                    if compact_value not in normalized_numbers:
+                        return False
         return True
 
     @staticmethod
@@ -877,6 +910,61 @@ class RAGPipeline:
                 ("error code" in normalized or "error codes" in normalized)
                 and any(marker in normalized for marker in ("top", "highest", "most"))
             )
+        )
+
+    @staticmethod
+    def _is_time_related_mes_question(question: str) -> bool:
+        original = (question or "").lower()
+        normalized = unicodedata.normalize(
+            "NFD",
+            original.replace("đ", "d"),
+        )
+        normalized = "".join(
+            char for char in normalized if unicodedata.category(char) != "Mn"
+        )
+        normalized = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
+        has_explicit_date_value = bool(
+            re.search(r"\b20\d{2}[-/]\d{1,2}(?:[-/]\d{1,2})?\b", original)
+        )
+        if has_explicit_date_value:
+            return True
+        return any(
+            marker in normalized
+            for marker in (
+                "ngay",
+                "hom nay",
+                "hom qua",
+                "theo ngay",
+                "moi ngay",
+                "thang",
+                "theo thang",
+                "moi thang",
+                "nam",
+                "tuan",
+                "khoang thoi gian",
+                "tu ngay",
+                "den ngay",
+                "gan day",
+                "moi nhat",
+                "date",
+                "day",
+                "daily",
+                "today",
+                "yesterday",
+                "month",
+                "monthly",
+                "year",
+                "yearly",
+                "week",
+                "weekly",
+                "between",
+                "from",
+                "recent",
+                "latest",
+            )
+        ) or any(
+            marker in original
+            for marker in ("今日", "昨日", "日", "月", "年", "期間", "いつ")
         )
 
     async def _query_mes_database(

@@ -6,6 +6,7 @@ import pytest
 from src.integrations.mes_client import MesApiError, MesClient, MesLotError
 from src.integrations.mes_database import MesDatabaseResult
 from src.integrations.mes_query_service import MesQueryService
+from src.integrations.mes_sql_agent import MesSqlQueryResult
 from src.rag.rag_pipeline import RAGPipeline
 
 
@@ -406,6 +407,66 @@ def test_compound_highest_lot_question_is_reserved_for_sql_agent(question):
     assert result is None
     assert mes_client.calls == 0
     assert mes_database.calls == []
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Lot nào có nhiều lỗi nhất trong ngày 2025-07-24?",
+        "Top 5 lot lỗi nhiều nhất trong tháng 2025-07 là những lot nào?",
+        "Which lot had the most defects on 2025-07-24?",
+    ],
+)
+def test_time_bound_highest_lot_question_is_reserved_for_sql_agent(question):
+    mes_client = FakeMesClient()
+    mes_database = FakeMesDatabase()
+    pipeline = make_pipeline(mes_client, mes_database)
+
+    source, result = asyncio.run(pipeline._get_mes_route(question, "mes"))
+
+    assert source is None
+    assert result is None
+    assert mes_client.calls == 0
+    assert mes_database.calls == []
+
+
+def test_mes_query_service_does_not_fallback_time_bound_lot_to_overall_snapshot():
+    mes_database = FakeMesDatabase()
+    service = MesQueryService(
+        mes_client=FakeMesClient(),
+        mes_database=mes_database,
+        mes_sql_agent=None,
+        openai_client=FailingOpenAIClient(),
+    )
+
+    answer, results, routed_model, answer_scope = asyncio.run(
+        service.query("Lot nào có nhiều lỗi nhất trong ngày 2025-07-24?", "openai")
+    )
+
+    assert "SNAPSHOT-LOT" not in answer
+    assert "Lot" in answer
+    assert results == []
+    assert routed_model == "openai-model"
+    assert answer_scope == "mes_database"
+    assert mes_database.calls == []
+
+
+def test_sql_answer_validation_checks_time_and_metric_values():
+    result = MesSqlQueryResult(
+        columns=["error_date", "total_error_qty"],
+        rows=[{"error_date": "2026-06-02", "total_error_qty": 30000}],
+        imported_at="2026-06-20",
+        truncated=False,
+    )
+
+    assert MesQueryService.sql_answer_matches_result(
+        "Theo MES snapshot, ngày 2026-06-02 có 30.000 lỗi.",
+        result,
+    )
+    assert not MesQueryService.sql_answer_matches_result(
+        "Theo MES snapshot, ngày có nhiều lỗi nhất có số lượng rất cao.",
+        result,
+    )
 
 
 def test_mes_query_service_falls_back_compound_highest_lot_to_snapshot():

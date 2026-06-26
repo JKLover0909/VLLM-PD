@@ -47,14 +47,14 @@ def sql_agent(tmp_path: Path) -> MesSqlAgent:
             """
             INSERT INTO error_events (
                 error_pk, lot_pk, error_catalog_pk, lot_id, process_id,
-                error_type, error_id, quantity
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                error_type, error_id, quantity, error_time
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                (1, 1, 1, "LOT-A", "P1", "1", "E1", 5),
-                (2, 2, 1, "LOT-B", "P1", "1", "E1", 20),
-                (3, 2, 2, "LOT-B", "P2", "1", "E2", 10),
-                (4, 3, 1, "LOT-TEST", "P1", "1", "E1", 999),
+                (1, 1, 1, "LOT-A", "P1", "1", "E1", 5, "2026-06-01 08:00:00"),
+                (2, 2, 1, "LOT-B", "P1", "1", "E1", 20, "2026-06-02 09:00:00"),
+                (3, 2, 2, "LOT-B", "P2", "1", "E2", 10, "2026-06-02 10:00:00"),
+                (4, 3, 1, "LOT-TEST", "P1", "1", "E1", 999, "2026-06-03 11:00:00"),
             ],
         )
         connection.execute(
@@ -111,6 +111,47 @@ def test_sql_agent_views_hide_test_lots(sql_agent):
     assert all("test" not in row["product_id"].lower() for row in result.rows)
 
 
+def test_executes_daily_error_aggregation_without_test_lots(sql_agent):
+    result = sql_agent.execute(
+        """
+        SELECT date(error_time) AS error_date,
+               SUM(quantity) AS total_error_qty,
+               COUNT(*) AS error_record_count
+        FROM v_error_details
+        WHERE error_time IS NOT NULL
+        GROUP BY date(error_time)
+        ORDER BY total_error_qty DESC
+        LIMIT 5
+        """
+    )
+
+    assert result.rows[0] == {
+        "error_date": "2026-06-02",
+        "total_error_qty": 30,
+        "error_record_count": 2,
+    }
+    assert [row["error_date"] for row in result.rows] == [
+        "2026-06-02",
+        "2026-06-01",
+    ]
+
+
+def test_executes_monthly_error_aggregation(sql_agent):
+    result = sql_agent.execute(
+        """
+        SELECT strftime('%Y-%m', error_time) AS error_month,
+               SUM(quantity) AS total_error_qty
+        FROM v_error_details
+        WHERE error_time >= '2026-06-01'
+          AND error_time < date('2026-06-01', '+1 month')
+        GROUP BY strftime('%Y-%m', error_time)
+        ORDER BY total_error_qty DESC
+        """
+    )
+
+    assert result.rows == [{"error_month": "2026-06", "total_error_qty": 35}]
+
+
 @pytest.mark.parametrize(
     "sql",
     [
@@ -163,3 +204,21 @@ def test_fallback_answer_formats_top_error_breakdown():
     assert "mã hàng PRODUCT-B" in answer
     assert "E1 - Lỗi một: 31.240" in answer
     assert "E2 - *Lỗi chưa rõ tên*: 7.800" in answer
+
+
+def test_fallback_answer_formats_time_aggregation():
+    result = MesSqlQueryResult(
+        columns=["error_date", "total_error_qty"],
+        rows=[
+            {"error_date": "2026-06-02", "total_error_qty": 30000},
+            {"error_date": "2026-06-01", "total_error_qty": 5000},
+        ],
+        imported_at="2026-06-20",
+        truncated=False,
+    )
+
+    answer = MesSqlAgent.fallback_answer(result)
+
+    assert "lỗi theo thời gian" in answer
+    assert "2026-06-02: 30.000" in answer
+    assert "2026-06-01: 5.000" in answer

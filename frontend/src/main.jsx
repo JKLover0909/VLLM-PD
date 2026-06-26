@@ -202,6 +202,7 @@ const UI_TEXT = {
       invalidEmployee: "Mã nhân viên không hợp lệ.",
       employeeRequired: "Vui lòng nhập mã nhân viên hợp lệ trước khi tiếp tục.",
       guestWelcome: "Chào mừng đến với hệ thống Meibook,",
+      languageConverting: "Đang chuyển đổi ngôn ngữ...",
       continue: "Tiếp tục",
       verifying: "Đang kiểm tra",
       chooseToStart: "Chọn tài liệu để bắt đầu",
@@ -361,6 +362,7 @@ const UI_TEXT = {
       invalidEmployee: "社員番号が正しくありません。",
       employeeRequired: "続行する前に有効な社員番号を入力してください。",
       guestWelcome: "Meibookシステムへようこそ。",
+      languageConverting: "言語を変換しています...",
       continue: "続行",
       verifying: "確認中",
       chooseToStart: "資料を選択して開始",
@@ -2099,8 +2101,13 @@ function App() {
                             aria-live="polite"
                           >
                             <Loader2 className="spin" size={17} />
-                            <span key={waitingMessageIndex}>
-                              {text.waiting[waitingMessageIndex]}
+                            <span className="waiting-copy">
+                              <span key={waitingMessageIndex}>
+                                {text.waiting[waitingMessageIndex]}
+                              </span>
+                              {language === "ja" && (
+                                <small>{t("common.languageConverting")}</small>
+                              )}
                             </span>
                           </div>
                         ) : null}

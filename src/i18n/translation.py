@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -31,6 +32,7 @@ class TranslationService:
     """Translate Japanese UI input/output while keeping the core Vietnamese."""
 
     SUPPORTED_LANGUAGES = {"vi", "ja"}
+    JAPANESE_SCRIPT_PATTERN = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
 
     def __init__(
         self,
@@ -63,6 +65,16 @@ class TranslationService:
         language = (value or "vi").strip().lower()
         return "ja" if language == "ja" else "vi"
 
+    @classmethod
+    def should_translate_query(cls, question: str, ui_language: str | None) -> bool:
+        language = cls.normalize_language(ui_language)
+        clean_question = (question or "").strip()
+        return (
+            language == "ja"
+            and bool(clean_question)
+            and bool(cls.JAPANESE_SCRIPT_PATTERN.search(clean_question))
+        )
+
     async def translate_query(
         self,
         question: str,
@@ -73,6 +85,8 @@ class TranslationService:
         language = self.normalize_language(ui_language)
         clean_question = (question or "").strip()
         if not self.enabled or language == "vi" or not clean_question:
+            return TranslatedQuery(clean_question, clean_question, language)
+        if not self.should_translate_query(clean_question, language):
             return TranslatedQuery(clean_question, clean_question, language)
 
         translated = await self._complete(

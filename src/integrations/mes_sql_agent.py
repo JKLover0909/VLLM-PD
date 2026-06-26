@@ -52,6 +52,11 @@ class MesSqlAgent:
         "v_product_error_summary",
         "v_error_details",
     }
+    INTERNAL_TABLES = {
+        "lots",
+        "error_events",
+        "error_catalog",
+    }
     PROHIBITED_NODE_KEYS = {
         "alter",
         "attach",
@@ -183,7 +188,14 @@ class MesSqlAgent:
                     "nhất, dùng CTE tìm lot_id đứng đầu từ "
                     "v_lot_error_summary, sau đó lọc "
                     "v_lot_error_breakdown theo lot_id, SUM(total_error_qty), "
-                    "GROUP BY error_id,error_name và lấy top N."
+                    "GROUP BY error_id,error_name và lấy top N.\n"
+                    "Nếu hỏi lỗi theo ngày/tháng/khoảng thời gian, dùng "
+                    "v_error_details.error_time, tổng hợp bằng SUM(quantity), "
+                    "nhóm theo date(error_time) hoặc strftime('%Y-%m', error_time). "
+                    "Nếu hỏi top Lot có tổng lỗi cao nhất trong ngày/tháng/năm, "
+                    "cũng dùng v_error_details.error_time rồi GROUP BY lot_id, "
+                    "product_id. Chỉ dùng v_lot_error_summary.produce_date khi "
+                    "câu hỏi nói rõ 'ngày sản xuất'."
                 ),
             },
         ]
@@ -366,6 +378,51 @@ class MesSqlAgent:
                     f"{MesSqlAgent._format_vietnamese_number(row.get(error_quantity_column))}"
                 )
             return prefix + ", các loại lỗi nhiều nhất là " + "; ".join(items) + "."
+        if {"lot_id", "product_id"}.issubset(first_row) and error_quantity_column:
+            items = []
+            for row in result.rows[:10]:
+                items.append(
+                    f"Lot {row.get('lot_id') or 'chưa rõ'}, mã hàng "
+                    f"{row.get('product_id') or 'chưa rõ'}: "
+                    f"{MesSqlAgent._format_vietnamese_number(row.get(error_quantity_column))}"
+                )
+            return (
+                "Theo MES snapshot, các Lot có tổng lỗi cao nhất là "
+                + "; ".join(items)
+                + "."
+            )
+        if "error_id" in first_row and error_quantity_column:
+            time_column = MesSqlAgent._find_time_column(first_row)
+            time_prefix = ""
+            if time_column:
+                time_prefix = f" trong {first_row.get(time_column)}"
+            items = []
+            for row in result.rows[:10]:
+                error_id = str(row.get("error_id") or "chưa rõ")
+                error_name = row.get("error_name")
+                items.append(
+                    f"{error_id} - {error_name or '*Lỗi chưa rõ tên*'}: "
+                    f"{MesSqlAgent._format_vietnamese_number(row.get(error_quantity_column))}"
+                )
+            return (
+                f"Theo MES snapshot, các loại lỗi nhiều nhất{time_prefix} là "
+                + "; ".join(items)
+                + "."
+            )
+        time_column = MesSqlAgent._find_time_column(first_row)
+        if time_column and error_quantity_column:
+            items = []
+            for row in result.rows[:10]:
+                time_value = row.get(time_column)
+                items.append(
+                    f"{time_value or 'chưa rõ'}: "
+                    f"{MesSqlAgent._format_vietnamese_number(row.get(error_quantity_column))}"
+                )
+            return (
+                "Theo MES snapshot, kết quả lỗi theo thời gian là "
+                + "; ".join(items)
+                + "."
+            )
         summaries = [
             " · ".join(
                 MesSqlAgent._format_vietnamese_number(value)
@@ -376,6 +433,28 @@ class MesSqlAgent:
             for row in result.rows[:10]
         ]
         return "Kết quả từ MES snapshot: " + "; ".join(summaries) + "."
+
+    @staticmethod
+    def _find_time_column(row: dict[str, Any]) -> str:
+        preferred = (
+            "error_date",
+            "error_day",
+            "day",
+            "date",
+            "error_month",
+            "month",
+            "period",
+            "produce_date",
+            "error_time",
+        )
+        for column in preferred:
+            if column in row:
+                return column
+        for column in row:
+            normalized = column.lower()
+            if "date" in normalized or "time" in normalized or "month" in normalized:
+                return column
+        return ""
 
     @staticmethod
     def _format_vietnamese_number(value: Any) -> str:
@@ -420,6 +499,7 @@ class MesSqlAgent:
             source_name = (source or "").lower()
             if (
                 table_name in self.ALLOWED_VIEWS
+                or table_name in self.INTERNAL_TABLES
                 or source_name in self.ALLOWED_VIEWS
                 or table_name == "sqlite_master"
             ):

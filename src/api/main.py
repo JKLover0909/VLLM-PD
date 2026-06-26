@@ -462,11 +462,15 @@ async def localize_query_request(req: QueryRequest) -> QueryRequest:
     """Translate Japanese UI questions into Vietnamese for the core backend."""
     if req.ui_language != "ja" or translation_service is None:
         return req
-    translated = await translation_service.translate_query(
-        req.question,
-        ui_language=req.ui_language,
-        mode=req.mode,
-    )
+    try:
+        translated = await translation_service.translate_query(
+            req.question,
+            ui_language=req.ui_language,
+            mode=req.mode,
+        )
+    except TranslationError as exc:
+        logger.warning("Cannot translate query for UI; using original question: %s", exc)
+        return req
     if translated.backend_question == req.question:
         return req
     logger.info(
@@ -483,11 +487,15 @@ async def translate_answer_for_ui(answer: str, req: QueryRequest) -> str:
     """Translate Vietnamese backend answers back to the selected UI language."""
     if req.ui_language != "ja" or translation_service is None:
         return answer
-    return await translation_service.translate_answer(
-        answer,
-        ui_language=req.ui_language,
-        mode=req.mode,
-    )
+    try:
+        return await translation_service.translate_answer(
+            answer,
+            ui_language=req.ui_language,
+            mode=req.mode,
+        )
+    except TranslationError as exc:
+        logger.warning("Cannot translate answer for UI; returning original answer: %s", exc)
+        return answer
 
 
 async def translate_sources_for_ui(

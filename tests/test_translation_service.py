@@ -62,6 +62,22 @@ def test_japanese_query_is_translated_for_vietnamese_backend():
     assert "一番不良が多いロットは？" in call["messages"][1]["content"]
 
 
+def test_japanese_ui_vietnamese_query_bypasses_translation_model():
+    client = FakeClient(["unused"])
+    service = TranslationService(client=client, model="translation-model")
+
+    result = asyncio.run(
+        service.translate_query(
+            "Gửi thông tin này cho email 12wuu115@gmail.com",
+            ui_language="ja",
+            mode="mes",
+        )
+    )
+
+    assert result.backend_question == "Gửi thông tin này cho email 12wuu115@gmail.com"
+    assert client.chat.completions.calls == []
+
+
 def test_japanese_answer_translation_preserves_backend_content_request():
     client = FakeClient(["MESスナップショットによると、Lot 000866-05-000です。"])
     service = TranslationService(client=client, model="translation-model")
