@@ -38,21 +38,40 @@ import {
 import "./styles.css";
 
 const QUICK_PROMPTS = {
-  mkac: [
-    "Meiko Automation có bao nhiêu phòng ban, gồm các phòng ban nào?",
-    "Quy định làm thêm giờ ở MKAC như thế nào?",
-    "Các sản phẩm chính của MKAC là gì?",
-  ],
-  mes: [
-    "Mã Lot nào có số lượng lỗi nhiều nhất?",
-    "Lot 000432-01-000 có những lỗi gì?",
-    "Mã hàng 3736-0008 có tổng bao nhiêu lỗi?",
-  ],
-  research: [
-    "Lập báo cáo nghiên cứu tổng hợp từ các tài liệu",
-    "So sánh các quan điểm và chỉ ra điểm mâu thuẫn",
-    "Đề xuất các câu hỏi nghiên cứu tiếp theo",
-  ],
+  vi: {
+    mkac: [
+      "Meiko Automation có bao nhiêu phòng ban, gồm các phòng ban nào?",
+      "Quy định làm thêm giờ ở MKAC như thế nào?",
+      "Các sản phẩm chính của MKAC là gì?",
+    ],
+    mes: [
+      "Mã Lot nào có số lượng lỗi nhiều nhất?",
+      "Lot 000432-01-000 có những lỗi gì?",
+      "Mã hàng 3736-0008 có tổng bao nhiêu lỗi?",
+    ],
+    research: [
+      "Lập báo cáo nghiên cứu tổng hợp từ các tài liệu",
+      "So sánh các quan điểm và chỉ ra điểm mâu thuẫn",
+      "Đề xuất các câu hỏi nghiên cứu tiếp theo",
+    ],
+  },
+  ja: {
+    mkac: [
+      "Meiko Automationにはいくつの部署があり、どの部署がありますか？",
+      "MKACの残業規定はどうなっていますか？",
+      "MKACの主な製品は何ですか？",
+    ],
+    mes: [
+      "エラー数が最も多いLotはどれですか？",
+      "Lot 000432-01-000にはどのようなエラーがありますか？",
+      "品番3736-0008の総エラー数はいくつですか？",
+    ],
+    research: [
+      "資料から総合的な調査レポートを作成してください",
+      "各見解を比較し、矛盾点を示してください",
+      "次に調査すべき質問を提案してください",
+    ],
+  },
 };
 
 const MODE_OPTIONS = {
@@ -236,6 +255,20 @@ const UI_TEXT = {
       mkac: "Dựa trên kho MKAC",
       fallback: "Không có nguồn đối chiếu",
     },
+    models: {
+      local: {
+        name: "Local Model",
+        description: "Chạy model nội bộ/local cho hỏi đáp MKAC dạng text.",
+      },
+      openai: {
+        name: "Cloud Model",
+        description: "Mặc định cho hỏi đáp MKAC, dùng model cloud ổn định.",
+      },
+      grok: {
+        name: "Research Model",
+        description: "Dành riêng cho chế độ nghiên cứu tài liệu và hình ảnh.",
+      },
+    },
   },
   ja: {
     modes: {
@@ -379,6 +412,20 @@ const UI_TEXT = {
       research: "調査資料に基づく",
       mkac: "MKACナレッジベースに基づく",
       fallback: "照合できる参照元はありません",
+    },
+    models: {
+      local: {
+        name: "ローカルモデル",
+        description: "MKACのテキストQ&A向けに社内/ローカルモデルを使用します。",
+      },
+      openai: {
+        name: "クラウドモデル",
+        description: "MKAC Q&Aの標準モデルです。安定したクラウドモデルを使用します。",
+      },
+      grok: {
+        name: "調査モデル",
+        description: "資料調査と画像を含む質問専用のモデルです。",
+      },
     },
   },
 };
@@ -587,6 +634,79 @@ function persistSessionTitle(sessionId, title) {
   }
 }
 
+function quickPromptsFor(workspaceMode, language = "vi") {
+  return (
+    QUICK_PROMPTS[language]?.[workspaceMode] ||
+    QUICK_PROMPTS.vi[workspaceMode] ||
+    []
+  );
+}
+
+function localizedModelInfo(modelInfo, language = "vi") {
+  if (!modelInfo) return modelInfo;
+  const localized = UI_TEXT[language]?.models?.[modelInfo.id];
+  if (!localized) return modelInfo;
+  return {
+    ...modelInfo,
+    name: localized.name || modelInfo.name,
+    description: localized.description || modelInfo.description,
+  };
+}
+
+const EMPLOYEE_POSITION_JA = {
+  "Tổng Giám đốc": "社長",
+  "Phó Tổng Giám đốc": "副社長",
+  "Giám đốc": "取締役",
+  "Phó Giám đốc": "副取締役",
+  "Trưởng phòng": "部長",
+  "Phó phòng": "副部長",
+  "Nhân viên": "社員",
+};
+
+function employeeGreetingFor(employee, language, t) {
+  if (!employee?.name) return "";
+  if (language !== "ja") {
+    return employee.greeting || t("common.hello", { name: employee.name });
+  }
+  const position = EMPLOYEE_POSITION_JA[employee.position?.trim()];
+  return position
+    ? `こんにちは、${employee.name}さん（${position}）`
+    : `こんにちは、${employee.name}さん`;
+}
+
+const ERROR_TRANSLATIONS_JA = [
+  [/Mã nhân viên không hợp lệ/i, "社員番号が正しくありません。"],
+  [/Invalid or missing agent API key/i, "Agent APIキーが無効、または未設定です。"],
+  [/Gmail send chưa sẵn sàng/i, "Gmail送信機能はまだ利用できません。設定とOAuthトークンを確認してください。"],
+  [/Chưa có nội dung trước đó để gửi/i, "送信できる直前の内容がありません。先に結果を取得するか、送信内容を明記してください。"],
+  [/Không thể dịch nội dung cho giao diện/i, "画面表示用の翻訳を完了できませんでした。"],
+  [/MES API không phản hồi trong thời gian cho phép/i, "MES APIが許可時間内に応答しませんでした。"],
+  [/MES query service is not ready/i, "MES検索サービスはまだ準備できていません。"],
+  [/RAG pipeline is not ready/i, "RAGパイプラインはまだ準備できていません。"],
+  [/Vector store is not ready/i, "ベクトルデータベースはまだ準備できていません。"],
+  [/Session not found or empty/i, "セッションが見つからないか、まだ空です。"],
+  [/Preview image not found/i, "プレビュー画像が見つかりません。"],
+  [/Preview path is not allowed/i, "このプレビュー画像の参照は許可されていません。"],
+  [/Invalid source filename/i, "参照元ファイル名が正しくありません。"],
+  [/Invalid source page/i, "参照元ページ番号が正しくありません。"],
+  [/Unsupported query mode/i, "未対応の質問モードです。"],
+  [/Query failed:\s*/i, "質問処理に失敗しました: "],
+  [/Indexing failed:\s*/i, "インデックス処理に失敗しました: "],
+  [/File exceeds/i, "ファイルサイズがアップロード上限を超えています。"],
+  [/Could not extract any content from the file/i, "ファイルから内容を抽出できませんでした。"],
+];
+
+function localizeErrorMessage(message, language = "vi") {
+  const text = String(message || "").trim();
+  if (language !== "ja" || !text) return text;
+  for (const [pattern, replacement] of ERROR_TRANSLATIONS_JA) {
+    if (pattern.test(text)) {
+      return text.replace(pattern, replacement);
+    }
+  }
+  return text;
+}
+
 function App() {
   const [theme, setTheme] = useState(storedTheme);
   const [language, setLanguage] = useState(storedLanguage);
@@ -672,14 +792,18 @@ function App() {
   };
   const modeText = (workspaceMode = mode) => text.modes[workspaceMode] || UI_TEXT.vi.modes[workspaceMode];
 
+  const localizedModels = useMemo(
+    () => models.map((item) => localizedModelInfo(item, language)),
+    [models, language],
+  );
   const selectedModel = useMemo(
-    () => models.find((item) => item.id === (mode === "research" ? "grok" : model)),
-    [models, mode, model],
+    () => localizedModels.find((item) => item.id === (mode === "research" ? "grok" : model)),
+    [localizedModels, mode, model],
   );
   const requestModel = mode === "research" ? "grok" : model;
   const mkacModels = useMemo(
-    () => models.filter((item) => !item.hidden_in_mkac && item.id !== "grok"),
-    [models],
+    () => localizedModels.filter((item) => !item.hidden_in_mkac && item.id !== "grok"),
+    [localizedModels],
   );
 
   const currentMode = {
@@ -808,30 +932,17 @@ function App() {
           healthResponse,
           modelResponse,
           mkacResponse,
-          qaMkacRes,
-          qaMesRes,
           researchDemoResponse,
         ] = await Promise.all([
           api("/health"),
-          api("/models"),
+          api(`/models?language=${encodeURIComponent(language)}`),
           api("/knowledge/mkac/status"),
-          api("/quick-answers?mode=mkac"),
-          api("/quick-answers?mode=mes"),
           getResearchDemoStatus(),
         ]);
         const healthData = await healthResponse.json();
         const modelData = await modelResponse.json();
         const mkacData = await mkacResponse.json();
-        const qaMkacData = qaMkacRes.ok ? await qaMkacRes.json() : {};
-        const qaMesData = qaMesRes.ok ? await qaMesRes.json() : {};
         const researchDemoData = researchDemoResponse;
-        
-        setQuickAnswersConfig({
-          mkac: qaMkacData.suggestions || [],
-          mes: qaMesData.suggestions || [],
-          threshold: qaMkacData.short_answer_threshold || 300,
-          max: qaMkacData.max_suggestions || 3,
-        });
 
         setModels(modelData.models || []);
         setMkacStatus(mkacData);
@@ -895,11 +1006,41 @@ function App() {
         localStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
       } catch (bootstrapError) {
         setHealth("offline");
-        setError(bootstrapError.message);
+        setError(localizeErrorMessage(bootstrapError.message, language));
       }
     }
     bootstrap();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadQuickAnswers() {
+      try {
+        const [qaMkacRes, qaMesRes] = await Promise.all([
+          api(`/quick-answers?mode=mkac&language=${encodeURIComponent(language)}`),
+          api(`/quick-answers?mode=mes&language=${encodeURIComponent(language)}`),
+        ]);
+        const qaMkacData = await qaMkacRes.json();
+        const qaMesData = await qaMesRes.json();
+        if (cancelled) return;
+        setQuickAnswersConfig({
+          mkac: qaMkacData.suggestions || [],
+          mes: qaMesData.suggestions || [],
+          threshold: qaMkacData.short_answer_threshold || 300,
+          max: qaMkacData.max_suggestions || 3,
+        });
+      } catch {
+        if (cancelled) return;
+        setQuickAnswersConfig({ mkac: [], mes: [], threshold: 300, max: 3 });
+      }
+    }
+
+    loadQuickAnswers();
+    return () => {
+      cancelled = true;
+    };
+  }, [language]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1102,6 +1243,7 @@ function App() {
       mode: sourceMode,
       file: source.file || "",
       page: String(source.page || 1),
+      language,
     });
     return `/sources/preview?${params.toString()}`;
   }
@@ -1216,7 +1358,7 @@ function App() {
       });
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (uploadError) {
-      setError(uploadError.message);
+      setError(localizeErrorMessage(uploadError.message, language));
     } finally {
       setUploading(false);
     }
@@ -1230,7 +1372,7 @@ function App() {
       });
       setFiles((current) => current.filter((item) => item !== filename));
     } catch (removeError) {
-      setError(removeError.message);
+      setError(localizeErrorMessage(removeError.message, language));
     }
   }
 
@@ -1327,7 +1469,12 @@ function App() {
             );
           }
           if (event.type === "error") {
-            throw new Error(event.message || t("common.requestFailed", { message: "" }));
+            throw new Error(
+              localizeErrorMessage(
+                event.message || t("common.requestFailed", { message: "" }),
+                language,
+              ),
+            );
           }
         },
         controller.signal,
@@ -1343,7 +1490,8 @@ function App() {
           // Ignore storage failures.
         }
       }
-      if (!wasStopped) setError(queryError.message);
+      const localizedMessage = localizeErrorMessage(queryError.message, language);
+      if (!wasStopped) setError(localizedMessage);
       setModeMessages(requestMode, (current) =>
         current.map((item) =>
           item.id === assistantId
@@ -1353,7 +1501,7 @@ function App() {
                   item.content ||
                   (wasStopped
                     ? t("common.stoppedResponse")
-                    : t("common.requestFailed", { message: queryError.message })),
+                    : t("common.requestFailed", { message: localizedMessage })),
                 stopped: wasStopped,
               }
             : item,
@@ -1642,7 +1790,7 @@ function App() {
               <span>
                 {mode === "mkac"
                   ? employee?.name
-                    ? employee.greeting || t("common.hello", { name: employee.name })
+                    ? employeeGreetingFor(employee, language, t)
                     : `${mkacStatus.num_documents} ${t("common.internalDocuments")}`
                   : mode === "mes"
                     ? mesStatus.available
@@ -1855,7 +2003,7 @@ function App() {
                     </div>
                     <h1>
                       {mode === "mkac" && employee?.name
-                        ? employee.greeting || t("common.hello", { name: employee.name })
+                        ? employeeGreetingFor(employee, language, t)
                         : currentMode.title}
                     </h1>
                     <p>
@@ -1892,7 +2040,7 @@ function App() {
 
                   {mode !== "research" || files.length > 0 ? (
                     <div className="prompt-grid">
-                      {QUICK_PROMPTS[mode].map((prompt) => (
+                      {quickPromptsFor(mode, language).map((prompt) => (
                         <button
                           key={prompt}
                           type="button"

@@ -348,6 +348,13 @@ def test_mes_database_answer_rejects_internal_field_names():
         "Mã hàng 3736-0008 có 40.727 lỗi (total_error_qty).",
         result,
     )
+    assert not RAGPipeline._mes_database_answer_has_required_terms(
+        (
+            "Mã hàng 3736-0008 có tổng 40.727 lỗi. "
+            "Đây là dữ liệu trong JSON đã được lọc theo chính sách hiển thị."
+        ),
+        result,
+    )
 
 
 def test_mkac_mode_does_not_route_mes_questions():

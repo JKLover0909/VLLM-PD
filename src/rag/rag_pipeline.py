@@ -86,22 +86,22 @@ Nếu có nhiều Lot đồng hạng, phải nêu đầy đủ tất cả các L
 
 MES_DATABASE_SYSTEM_PROMPT = """Bạn là trợ lý phân tích dữ liệu sản xuất bo mạch MKAC.
 
-Chỉ trả lời từ JSON MES snapshot được cung cấp. Không tự viết SQL, không suy đoán
-nguyên nhân lỗi và không bổ sung dữ liệu bên ngoài JSON.
+Chỉ trả lời từ dữ liệu MES snapshot được cung cấp. Không tự viết SQL, không suy
+đoán nguyên nhân lỗi và không bổ sung dữ liệu bên ngoài.
 
 Quy tắc:
 1. Trả lời bằng tiếng Việt tự nhiên, trực tiếp và ngắn gọn.
 2. Giữ nguyên mã Lot, mã hàng, mã lỗi, công đoạn và các con số.
 3. Dùng dấu chấm phân cách hàng nghìn khi trình bày số lượng.
-4. total_error_qty là tổng số lượng lỗi; error_record_count là số lần ghi nhận,
-   hai đại lượng này không được đánh đồng.
+4. Tổng số lượng lỗi và số lần ghi nhận lỗi là hai đại lượng khác nhau, không
+   được đánh đồng.
 5. Tên lỗi rỗng nghĩa là *Lỗi chưa rõ tên*; không được tự đặt tên lỗi.
 6. Nói rõ đây là dữ liệu MES snapshot khi kết luận có thể bị hiểu là dữ liệu
    thời gian thực.
-7. Dữ liệu đã được lọc theo chính sách hiển thị trong trường filters của JSON.
-8. Tuyệt đối không để lộ tên field JSON/SQL như total_error_qty,
-   error_record_count, lot_count, top_errors, error_qty hoặc các tên kỹ thuật tương tự.
-9. Nếu JSON chứa danh sách lỗi chi tiết (top_errors) của một Lot, hãy tự động trình bày thêm danh sách đó (nếu câu trả lời chính chưa liệt kê). Ví dụ:
+7. Không nhắc tới JSON, SQL, filters, chính sách hiển thị hoặc cơ chế nội bộ.
+8. Tuyệt đối không để lộ tên trường kỹ thuật trong dữ liệu đầu vào.
+9. Nếu dữ liệu chứa danh sách lỗi chi tiết của một Lot, hãy tự động trình bày
+   thêm danh sách đó (nếu câu trả lời chính chưa liệt kê). Ví dụ:
    trong đó 3 lỗi có số lượng lỗi lớn nhất là:
    1. B114D - Thừa đồng: 4.293
    2. 0002 - *Lỗi chưa rõ tên*: 2.000
@@ -925,9 +925,9 @@ class RAGPipeline:
                 "role": "user",
                 "content": (
                     f"Câu hỏi: {question}\n\n"
-                    f"Dữ liệu MES snapshot:\n{payload}\n\n"
+                    f"Thông tin MES để trả lời:\n{payload}\n\n"
                     f"Câu trả lời kiểm chứng để tham khảo: {result.fallback_answer}\n"
-                    "Hãy diễn đạt tự nhiên, không nhắc tên field nội bộ."
+                    "Hãy diễn đạt tự nhiên, không nhắc tới cấu trúc dữ liệu nội bộ."
                 ),
             },
         ]
@@ -949,6 +949,14 @@ class RAGPipeline:
             "lot_id",
             "error_id",
             "process_id",
+            "json",
+            "sql",
+            "filters",
+            "filter",
+            "chính sách hiển thị",
+            "chinh sach hien thi",
+            "表示ポリシー",
+            "フィルタ",
         )
         if any(field in answer.lower() for field in forbidden_fields):
             return False

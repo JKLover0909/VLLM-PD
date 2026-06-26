@@ -4,15 +4,21 @@
   "mkac": [
     {
       "question": "MKAC có bao nhiêu phòng ban?",
-      "answer": "Công ty Cổ phần Meiko Automation (MKAC) hiện có các phòng ban chính như: Hành chính Nhân sự, Kế toán, Kinh doanh, Kỹ thuật, Sản xuất, Quản lý Chất lượng (QA/QC), Mua hàng và Kho."
+      "answer": "Công ty Cổ phần Meiko Automation (MKAC) hiện có các phòng ban chính như: Hành chính Nhân sự, Kế toán, Kinh doanh, Kỹ thuật, Sản xuất, Quản lý Chất lượng (QA/QC), Mua hàng và Kho.",
+      "question_ja": "MKACにはいくつの部署がありますか？",
+      "answer_ja": "Meiko Automation株式会社（MKAC）には、主に人事・総務、経理、営業、技術、生産、品質管理（QA/QC）、購買、倉庫などの部署があります。"
     },
     {
       "question": "Quy định làm thêm giờ ở MKAC như thế nào?",
-      "answer": "Việc làm thêm giờ (OT) phải được sự đồng ý của quản lý trực tiếp và đăng ký trước. Tổng số giờ OT không được vượt quá quy định của Luật Lao động (không quá 40 giờ/tháng và 200 giờ/năm). Tiền lương OT được tính theo tỷ lệ 150% (ngày thường), 200% (ngày nghỉ), 300% (ngày lễ)."
+      "answer": "Việc làm thêm giờ (OT) phải được sự đồng ý của quản lý trực tiếp và đăng ký trước. Tổng số giờ OT không được vượt quá quy định của Luật Lao động (không quá 40 giờ/tháng và 200 giờ/năm). Tiền lương OT được tính theo tỷ lệ 150% (ngày thường), 200% (ngày nghỉ), 300% (ngày lễ).",
+      "question_ja": "MKACの残業規定はどうなっていますか？",
+      "answer_ja": "残業（OT）は直属上司の承認を受け、事前登録する必要があります。残業時間は労働法の上限（原則40時間/月、200時間/年）を超えてはいけません。残業手当は平日150%、休日200%、祝日300%で計算されます。"
     },
     {
       "question": "Quy trình đặt xe ô tô, Grab, Taxi như thế nào?",
-      "answer": "Nhân viên cần đi công tác bằng ô tô, Grab hoặc Taxi phải điền form đăng ký, được Trưởng bộ phận phê duyệt và nộp cho phòng Hành chính Nhân sự trước ít nhất 1 ngày làm việc (trừ trường hợp khẩn cấp)."
+      "answer": "Nhân viên cần đi công tác bằng ô tô, Grab hoặc Taxi phải điền form đăng ký, được Trưởng bộ phận phê duyệt và nộp cho phòng Hành chính Nhân sự trước ít nhất 1 ngày làm việc (trừ trường hợp khẩn cấp).",
+      "question_ja": "社用車、Grab、Taxiの手配手順は？",
+      "answer_ja": "出張で社用車、Grab、Taxiを利用する場合、社員は申請フォームを記入し、部門長の承認を受けたうえで、緊急時を除き少なくとも1営業日前までに人事・総務部へ提出します。"
     },
     {
       "question": "Quy định nghỉ phép hàng năm tại MKAC?",
@@ -66,23 +72,33 @@
   "mes": [
     {
       "question": "Mã Lot nào có số lượng lỗi nhiều nhất?",
-      "answer": "Hệ thống phát hiện Lot có mã '000316-02-000' thường xuyên ghi nhận số lượng lỗi cao nhất trong các ca sản xuất gần đây."
+      "answer": "Hệ thống phát hiện Lot có mã '000316-02-000' thường xuyên ghi nhận số lượng lỗi cao nhất trong các ca sản xuất gần đây.",
+      "question_ja": "エラー数が最も多いLotはどれですか？",
+      "answer_ja": "システム上では、最近の生産データにおいてLot '000316-02-000' が最も多くのエラーを記録する傾向があります。"
     },
     {
       "question": "Lot 000432-01-000 có những lỗi gì?",
-      "answer": "Trong cơ sở dữ liệu, Lot 000432-01-000 chủ yếu gặp các lỗi liên quan đến trầy xước bề mặt và sai lệch kích thước lắp ráp."
+      "answer": "Trong cơ sở dữ liệu, Lot 000432-01-000 chủ yếu gặp các lỗi liên quan đến trầy xước bề mặt và sai lệch kích thước lắp ráp.",
+      "question_ja": "Lot 000432-01-000にはどのようなエラーがありますか？",
+      "answer_ja": "データベース上では、Lot 000432-01-000 は主に表面の傷や組立寸法のずれに関連するエラーが記録されています。"
     },
     {
       "question": "Mã hàng 3736-0008 có tổng bao nhiêu lỗi?",
-      "answer": "Theo thống kê, mã hàng 3736-0008 hiện đang ghi nhận tổng cộng khoảng 12 bản ghi sự kiện lỗi trong hệ thống."
+      "answer": "Theo thống kê, mã hàng 3736-0008 hiện đang ghi nhận tổng cộng khoảng 12 bản ghi sự kiện lỗi trong hệ thống.",
+      "question_ja": "品番3736-0008の総エラー数はいくつですか？",
+      "answer_ja": "統計上、品番3736-0008 は現在システム内で合計約12件のエラーイベント記録があります。"
     },
     {
       "question": "Sản phẩm nào có tổng lỗi cao nhất?",
-      "answer": "Sản phẩm có mã hàng '3736-0008' hiện đang dẫn đầu về tổng số lượng lỗi phát sinh trong quy trình kiểm tra chất lượng."
+      "answer": "Sản phẩm có mã hàng '3736-0008' hiện đang dẫn đầu về tổng số lượng lỗi phát sinh trong quy trình kiểm tra chất lượng.",
+      "question_ja": "総エラー数が最も多い製品はどれですか？",
+      "answer_ja": "品番 '3736-0008' の製品が、品質検査工程で発生した総エラー数において現在最も多く記録されています。"
     },
     {
       "question": "Trong Lot lỗi nhiều nhất, loại lỗi nào phổ biến nhất?",
-      "answer": "Trong các Lot có nhiều lỗi, loại lỗi phổ biến nhất là 'Bavia' (Mã lỗi: E012) và 'Xước' (Mã lỗi: E005)."
+      "answer": "Trong các Lot có nhiều lỗi, loại lỗi phổ biến nhất là 'Bavia' (Mã lỗi: E012) và 'Xước' (Mã lỗi: E005).",
+      "question_ja": "エラー数が最も多いLotで、最も多いエラー種類は何ですか？",
+      "answer_ja": "エラー数が多いLotでは、代表的なエラー種類として 'Bavia'（エラーコード: E012）と 'Xước'（エラーコード: E005）が多く見られます。"
     },
     {
       "question": "Hiện tại có bao nhiêu Lot trong hệ thống?",

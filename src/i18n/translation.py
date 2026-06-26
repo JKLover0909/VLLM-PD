@@ -137,6 +137,41 @@ class TranslationService:
             max_tokens=1800 if mode == "research" else 1000,
         )
 
+    async def translate_ui_text(
+        self,
+        text: str,
+        *,
+        ui_language: str | None,
+        mode: str,
+        purpose: str = "ui",
+    ) -> str:
+        """Translate short dynamic UI fragments such as source snippets."""
+        language = self.normalize_language(ui_language)
+        clean_text = text or ""
+        if not self.enabled or language == "vi" or not clean_text.strip():
+            return clean_text
+
+        return await self._complete(
+            system=(
+                "Bạn là lớp dịch các đoạn text ngắn cho giao diện Meibook tiếng Nhật. "
+                "Hãy dịch từ tiếng Việt sang tiếng Nhật tự nhiên, giữ đúng ý và không "
+                "thêm nhận xét."
+            ),
+            user=(
+                f"Chế độ hệ thống: {mode}\n"
+                f"Loại nội dung: {purpose}\n"
+                "Dịch đoạn sau sang tiếng Nhật.\n\n"
+                "Quy tắc bắt buộc:\n"
+                "- Giữ nguyên mã Lot, mã hàng, mã lỗi, mã nhân viên, email, URL, "
+                "tên file, số trang, số liệu và ký hiệu kỹ thuật.\n"
+                "- Nếu là đoạn trích tài liệu, chỉ dịch nội dung đoạn trích; không "
+                "thêm tiêu đề hoặc giải thích.\n"
+                "- Chỉ trả về bản dịch.\n\n"
+                f"Đoạn text:\n{clean_text}"
+            ),
+            max_tokens=700,
+        )
+
     async def _complete(self, *, system: str, user: str, max_tokens: int) -> str:
         try:
             response = await self.client.chat.completions.create(

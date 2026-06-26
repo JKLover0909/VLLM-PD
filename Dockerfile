@@ -36,6 +36,7 @@ COPY src ./src
 COPY config ./config
 COPY documents ./documents
 COPY scripts ./scripts
+COPY database/schema ./database/schema
 COPY litellm_config.yaml ./litellm_config.yaml
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 

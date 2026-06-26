@@ -490,6 +490,32 @@ async def translate_answer_for_ui(answer: str, req: QueryRequest) -> str:
     )
 
 
+async def translate_sources_for_ui(
+    sources: List[Dict[str, Any]],
+    req: QueryRequest,
+) -> List[Dict[str, Any]]:
+    """Translate short citation previews for non-Vietnamese UI languages."""
+    if req.ui_language != "ja" or translation_service is None:
+        return sources
+
+    translated_sources: List[Dict[str, Any]] = []
+    for source in sources:
+        translated_source = dict(source)
+        preview = translated_source.get("preview")
+        if isinstance(preview, str) and preview.strip():
+            try:
+                translated_source["preview"] = await translation_service.translate_ui_text(
+                    preview,
+                    ui_language=req.ui_language,
+                    mode=req.mode,
+                    purpose="source preview",
+                )
+            except TranslationError as exc:
+                logger.warning("Cannot translate source preview for UI: %s", exc)
+        translated_sources.append(translated_source)
+    return translated_sources
+
+
 def ensure_query_services_ready() -> None:
     if rag_pipeline is None:
         raise HTTPException(status_code=503, detail="RAG pipeline is not ready.")
@@ -804,13 +830,20 @@ async def source_page_preview(
     mode: Literal["mkac", "research"],
     file: str,
     page: int,
+    language: Literal["vi", "ja"] = "vi",
 ):
     """Return a page image preview for an indexed citation."""
+    def preview_error(status_code: int, vi_detail: str, ja_detail: str) -> None:
+        raise HTTPException(
+            status_code=status_code,
+            detail=ja_detail if language == "ja" else vi_detail,
+        )
+
     filename = Path(file).name
     if filename != file or not filename:
-        raise HTTPException(status_code=400, detail="Invalid source filename.")
+        preview_error(400, "Invalid source filename.", "参照元ファイル名が正しくありません。")
     if page <= 0:
-        raise HTTPException(status_code=400, detail="Invalid source page.")
+        preview_error(400, "Invalid source page.", "参照元ページ番号が正しくありません。")
 
     if mode == "mkac":
         store = mkac_vector_store
@@ -820,43 +853,71 @@ async def source_page_preview(
         lookup_session_id = normalize_session_id(session_id)
 
     if store is None:
-        raise HTTPException(status_code=503, detail="Vector store is not ready.")
+        preview_error(503, "Vector store is not ready.", "ベクトルデータベースはまだ準備できていません。")
 
     image_path = store.get_page_image_path(lookup_session_id, filename, page)
     if not image_path:
-        raise HTTPException(status_code=404, detail="Preview image not found.")
+        preview_error(404, "Preview image not found.", "プレビュー画像が見つかりません。")
 
     resolved_path = Path(image_path).resolve()
     allowed_roots = [UPLOAD_DIR.resolve(), MKAC_PAGE_IMAGE_DIR.resolve()]
     if not any(path_is_inside(resolved_path, root) for root in allowed_roots):
-        raise HTTPException(status_code=403, detail="Preview path is not allowed.")
+        preview_error(403, "Preview path is not allowed.", "このプレビュー画像の参照は許可されていません。")
     if not resolved_path.is_file() or resolved_path.suffix.lower() not in PREVIEW_IMAGE_EXTENSIONS:
-        raise HTTPException(status_code=404, detail="Preview image not found.")
+        preview_error(404, "Preview image not found.", "プレビュー画像が見つかりません。")
 
     media_type = "image/jpeg" if resolved_path.suffix.lower() in {".jpg", ".jpeg"} else "image/png"
     return FileResponse(resolved_path, media_type=media_type)
 
 
 @app.get("/models")
-async def list_models():
+async def list_models(language: Literal["vi", "ja"] = "vi"):
     """Danh sách model người dùng có thể chọn trên frontend."""
+    model_text = {
+        "vi": {
+            "local": {
+                "name": "Local Model",
+                "description": "Chạy model nội bộ/local cho hỏi đáp MKAC dạng text.",
+            },
+            "openai": {
+                "name": "Cloud Model",
+                "description": "Mặc định cho hỏi đáp MKAC, dùng model cloud ổn định.",
+            },
+            "grok": {
+                "name": "Research Model",
+                "description": "Dành riêng cho chế độ nghiên cứu tài liệu và hình ảnh.",
+            },
+        },
+        "ja": {
+            "local": {
+                "name": "ローカルモデル",
+                "description": "MKACのテキストQ&A向けに社内/ローカルモデルを使用します。",
+            },
+            "openai": {
+                "name": "クラウドモデル",
+                "description": "MKAC Q&Aの標準モデルです。安定したクラウドモデルを使用します。",
+            },
+            "grok": {
+                "name": "調査モデル",
+                "description": "資料調査と画像を含む質問専用のモデルです。",
+            },
+        },
+    }
+    text = model_text.get(language, model_text["vi"])
     return {
         "default": "openai",
         "models": [
             {
                 "id": "local",
-                "name": "Local Model",
-                "description": "Chạy model nội bộ/local cho hỏi đáp MKAC dạng text.",
+                **text["local"],
             },
             {
                 "id": "openai",
-                "name": "Cloud Model",
-                "description": "Mặc định cho hỏi đáp MKAC, dùng model cloud ổn định.",
+                **text["openai"],
             },
             {
                 "id": "grok",
-                "name": "Research Model",
-                "description": "Dành riêng cho chế độ nghiên cứu tài liệu và hình ảnh.",
+                **text["grok"],
                 "hidden_in_mkac": True,
             },
         ],
@@ -883,22 +944,32 @@ def _load_quick_answers() -> dict:
 
 
 @app.get("/quick-answers")
-async def quick_answers(mode: str = "mkac"):
+async def quick_answers(mode: str = "mkac", language: Literal["vi", "ja"] = "vi"):
     """Trả về danh sách câu hỏi gợi ý theo chế độ."""
     data = _load_quick_answers()
     items = data.get(mode, [])
+    suggestions = []
+    for item in items:
+        question = item.get("question", "")
+        answer = item.get("answer", "")
+        if language == "ja":
+            question = item.get("question_ja", "")
+            answer = item.get("answer_ja", "")
+        if not question or not answer:
+            continue
+        suggestions.append(
+            {
+                "question": question,
+                "keywords": item.get("keywords", []),
+                "answer": answer,
+            }
+        )
     return {
         "mode": mode,
+        "language": language,
         "short_answer_threshold": data.get("short_answer_threshold", 300),
         "max_suggestions": data.get("max_suggestions", 3),
-        "suggestions": [
-            {
-                "question": item["question"],
-                "keywords": item.get("keywords", []),
-                "answer": item.get("answer", "")
-            }
-            for item in items
-        ],
+        "suggestions": suggestions,
     }
 
 
@@ -1035,20 +1106,33 @@ async def query_documents(req: QueryRequest, request: Request):
                 email_response.answer,
                 req,
             )
+            translated_email_sources = await translate_sources_for_ui(
+                email_response.sources,
+                req,
+            )
             if translated_email_answer != email_response.answer:
                 return email_response.model_copy(
-                    update={"answer": translated_email_answer}
+                    update={
+                        "answer": translated_email_answer,
+                        "sources": translated_email_sources,
+                    }
                 )
-            return email_response
+            return email_response.model_copy(
+                update={"sources": translated_email_sources}
+            )
 
         answer, results, routed_model, answer_scope = await route_query(
             localized_req,
             current_user_context=current_user_context,
         )
         answer = await translate_answer_for_ui(answer, req)
+        sources = await translate_sources_for_ui(
+            rag_pipeline.format_sources(results),
+            req,
+        )
         return QueryResponse(
             answer=answer,
-            sources=rag_pipeline.format_sources(results),
+            sources=sources,
             session_id=req.session_id,
             model=routed_model,
             mode=req.mode,
@@ -1092,7 +1176,11 @@ async def query_stream(req: QueryRequest, request: Request):
                     email_response.answer,
                     req,
                 )
-                yield f"data: {json.dumps({'type': 'sources', 'sources': email_response.sources})}\n\n"
+                translated_email_sources = await translate_sources_for_ui(
+                    email_response.sources,
+                    req,
+                )
+                yield f"data: {json.dumps({'type': 'sources', 'sources': translated_email_sources})}\n\n"
                 yield f"data: {json.dumps({'type': 'meta', 'model': email_response.model, 'mode': email_response.mode, 'answer_scope': email_response.answer_scope})}\n\n"
                 yield f"data: {json.dumps({'type': 'token', 'content': translated_email_answer})}\n\n"
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
@@ -1104,7 +1192,10 @@ async def query_stream(req: QueryRequest, request: Request):
                     current_user_context=current_user_context,
                 )
                 translated_answer = await translate_answer_for_ui(answer, req)
-                sources = rag_pipeline.format_sources(results)
+                sources = await translate_sources_for_ui(
+                    rag_pipeline.format_sources(results),
+                    req,
+                )
                 yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
                 yield f"data: {json.dumps({'type': 'meta', 'model': routed_model, 'mode': req.mode, 'answer_scope': answer_scope})}\n\n"
                 yield f"data: {json.dumps({'type': 'token', 'content': translated_answer})}\n\n"
