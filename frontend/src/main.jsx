@@ -85,6 +85,7 @@ const MODE_OPTIONS = {
     icon: FlaskConical,
   },
 };
+const VISIBLE_MODE_KEYS = ["mkac", "mes"];
 
 const MODEL_ACCENTS = {
   auto: "accent-auto",
@@ -948,21 +949,17 @@ function App() {
           healthResponse,
           modelResponse,
           mkacResponse,
-          researchDemoResponse,
         ] = await Promise.all([
           api("/health"),
           api(`/models?language=${encodeURIComponent(language)}`),
           api("/knowledge/mkac/status"),
-          getResearchDemoStatus(),
         ]);
         const healthData = await healthResponse.json();
         const modelData = await modelResponse.json();
         const mkacData = await mkacResponse.json();
-        const researchDemoData = researchDemoResponse;
 
         setModels(modelData.models || []);
         setMkacStatus(mkacData);
-        setResearchDemo(researchDemoData);
         setMesStatus(healthData.mes_database || {});
         setModel((current) => {
           const nextDefault = modelData.default || "openai";
@@ -974,26 +971,17 @@ function App() {
         const storedSessions = {
           mkac: localStorage.getItem(SESSION_STORAGE_KEYS.mkac),
           mes: localStorage.getItem(SESSION_STORAGE_KEYS.mes),
-          research:
-            localStorage.getItem(SESSION_STORAGE_KEYS.research) || legacySession,
         };
         const resolvedSessions = {};
 
         await Promise.all(
-          Object.keys(MODE_OPTIONS).map(async (workspaceMode) => {
-            const storedSession =
-              workspaceMode === "research" &&
-              storedSessions[workspaceMode] === researchDemoData.session_id
-                ? ""
-                : storedSessions[workspaceMode];
+          VISIBLE_MODE_KEYS.map(async (workspaceMode) => {
+            const storedSession = storedSessions[workspaceMode];
             if (storedSession) {
               try {
                 const infoResponse = await api(`/sessions/${storedSession}`);
-                const info = await infoResponse.json();
+                await infoResponse.json();
                 resolvedSessions[workspaceMode] = storedSession;
-                if (workspaceMode === "research") {
-                  setFiles(info.files || []);
-                }
                 return;
               } catch (sessionError) {
                 localStorage.removeItem(SESSION_STORAGE_KEYS[workspaceMode]);
@@ -1012,9 +1000,7 @@ function App() {
             savedTitles[resolvedSessions.mkac] || defaultSessionTitle("mkac", language),
           mes:
             savedTitles[resolvedSessions.mes] || defaultSessionTitle("mes", language),
-          research:
-            savedTitles[resolvedSessions.research] ||
-            defaultSessionTitle("research", language),
+          research: defaultSessionTitle("research", language),
         });
         Object.entries(resolvedSessions).forEach(([workspaceMode, id]) => {
           localStorage.setItem(SESSION_STORAGE_KEYS[workspaceMode], id);
@@ -1096,7 +1082,7 @@ function App() {
   useEffect(() => {
     setSessionTitles((current) => {
       const next = { ...current };
-      for (const workspaceMode of Object.keys(MODE_OPTIONS)) {
+      for (const workspaceMode of VISIBLE_MODE_KEYS) {
         const defaultTitles = LANGUAGE_OPTIONS.map(
           (item) => UI_TEXT[item].defaultTitles[workspaceMode],
         );
@@ -1235,6 +1221,7 @@ function App() {
   }
 
   function switchMode(nextMode) {
+    if (!VISIBLE_MODE_KEYS.includes(nextMode)) return;
     if (nextMode === mode || busy || uploading) return;
     setMode(nextMode);
     setQuestion("");
@@ -1277,7 +1264,7 @@ function App() {
   }
 
   function onModeTabKeyDown(event, currentModeKey) {
-    const modeKeys = Object.keys(MODE_OPTIONS);
+    const modeKeys = VISIBLE_MODE_KEYS;
     const currentIndex = modeKeys.indexOf(currentModeKey);
     let nextIndex = currentIndex;
 
@@ -1822,7 +1809,8 @@ function App() {
 
           <div className="header-actions">
             <div className="mode-tabs" role="tablist" aria-label={t("common.qaModes")}>
-              {Object.entries(MODE_OPTIONS).map(([key, option]) => {
+              {VISIBLE_MODE_KEYS.map((key) => {
+                const option = MODE_OPTIONS[key];
                 const Icon = option.icon;
                 const optionText = modeText(key);
                 return (
