@@ -115,12 +115,13 @@ MES_UNSUPPORTED_ANSWER = (
 
 MODEL_ROUTES = {
     "auto": "auto-model",
-    "local": "local-gemma",
+    "local": "local-qwen-chat",
     "openai": "openai-model",
     "grok": "grok-model",
 }
 
-LOCAL_MODEL_ALIASES = {"local-gemma", "coding-model"}
+LOCAL_CHAT_MODEL_ALIASES = {"auto-model", "local-gemma", "local-qwen-chat"}
+LOCAL_MODEL_ALIASES = LOCAL_CHAT_MODEL_ALIASES | {"local-qwen-coder", "coding-model"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 
 
@@ -741,7 +742,7 @@ class RAGPipeline:
         if self.mes_sql_agent is None or not self.mes_sql_agent.available:
             return None
 
-        routed_model = self._resolve_model(model, mode=mode)
+        routed_model = self._resolve_mes_sql_model(model, mode=mode)
         previous_error = ""
         max_attempts = max(1, min(int(os.getenv("MES_SQL_AGENT_MAX_ATTEMPTS", "2")), 3))
         for attempt in range(max_attempts):
@@ -1498,6 +1499,13 @@ class RAGPipeline:
         except KeyError as exc:
             raise ValueError(f"Unsupported model option: {model}") from exc
 
+    def _resolve_mes_sql_model(self, model: str, mode: str = "mkac") -> str:
+        """Resolve the dedicated SQL planner model before falling back to UI choice."""
+        forced_model = os.getenv("MES_SQL_AGENT_MODEL", "local-qwen-coder").strip()
+        if forced_model:
+            return MODEL_ROUTES.get(forced_model, forced_model)
+        return self._resolve_model(model, mode=mode)
+
     def _session_image_paths(self, session_id: str) -> List[Path]:
         """Return uploaded image paths for a session, if any."""
         info = self.vector_store.get_session_info(session_id)
@@ -1516,10 +1524,11 @@ class RAGPipeline:
     @staticmethod
     def _provider_options(routed_model: str) -> Dict[str, Any]:
         """Provider-specific safeguards for LiteLLM upstream models."""
-        if routed_model in LOCAL_MODEL_ALIASES:
+        if routed_model in LOCAL_CHAT_MODEL_ALIASES:
             # Gemma4 on Ollama may spend the whole generation budget in
             # message.thinking, leaving message.content empty or truncated.
-            return {"extra_body": {"think": False}}
+            num_ctx = int(os.getenv("LOCAL_CHAT_NUM_CTX", "16384"))
+            return {"extra_body": {"think": False, "num_ctx": num_ctx}}
         return {}
 
     def format_sources(self, results: List[SearchResult]) -> List[Dict[str, Any]]:

@@ -20,12 +20,13 @@ logger = logging.getLogger(__name__)
 
 MODEL_ROUTES = {
     "auto": "auto-model",
-    "local": "local-gemma",
+    "local": "local-qwen-chat",
     "openai": "openai-model",
     "grok": "grok-model",
 }
 
-LOCAL_MODEL_ALIASES = {"local-gemma", "coding-model"}
+LOCAL_CHAT_MODEL_ALIASES = {"auto-model", "local-gemma", "local-qwen-chat"}
+LOCAL_MODEL_ALIASES = LOCAL_CHAT_MODEL_ALIASES | {"local-qwen-coder", "coding-model"}
 
 MES_SYSTEM_PROMPT = """Bạn là trợ lý dữ liệu sản xuất bo mạch của MKAC.
 
@@ -113,6 +114,14 @@ class MesQueryService:
         )
         if deterministic_sql_answer is not None:
             answer, routed_model = deterministic_sql_answer
+            return answer, [], routed_model, "mes_database"
+
+        compound_highest_lot_answer = await self._generate_compound_highest_lot_answer(
+            question,
+            model,
+        )
+        if compound_highest_lot_answer is not None:
+            answer, routed_model = compound_highest_lot_answer
             return answer, [], routed_model, "mes_database"
 
         sql_answer = await self._generate_sql_answer(question, model)
@@ -261,7 +270,7 @@ class MesQueryService:
         if self.mes_sql_agent is None or not self.mes_sql_agent.available:
             return None
 
-        routed_model = self.resolve_model(model)
+        routed_model = self.resolve_sql_agent_model(model)
         previous_error = ""
         max_attempts = max(1, min(int(os.getenv("MES_SQL_AGENT_MAX_ATTEMPTS", "2")), 3))
         for attempt in range(max_attempts):
@@ -313,6 +322,79 @@ class MesQueryService:
                 logger.warning("MES SQL agent failed: %s", exc)
                 return None
         return None
+
+    async def _generate_compound_highest_lot_answer(
+        self,
+        question: str,
+        model: str,
+    ) -> tuple[str, str] | None:
+        if self.mes_sql_agent is None or not self.mes_sql_agent.available:
+            return None
+        if (
+            not self.is_highest_lot_error_question(question)
+            or not self.is_compound_mes_question(question)
+            or self.is_time_related_mes_question(question)
+        ):
+            return None
+
+        normalized = self.normalized_text(question)
+        limit = self.extract_top_limit(normalized, default=3, maximum=20)
+        sql = f"""
+            WITH max_lot AS (
+                SELECT MAX(total_error_qty) AS max_total_error_qty
+                FROM v_lot_error_summary
+            ),
+            top_lot AS (
+                SELECT s.lot_id, s.product_id,
+                       s.total_error_qty AS lot_total_error_qty
+                FROM v_lot_error_summary AS s
+                JOIN max_lot AS m
+                  ON s.total_error_qty = m.max_total_error_qty
+            )
+            SELECT b.lot_id, b.product_id,
+                   t.lot_total_error_qty,
+                   b.error_id, b.error_name,
+                   SUM(b.total_error_qty) AS total_error_qty
+            FROM v_lot_error_breakdown AS b
+            JOIN top_lot AS t
+              ON b.lot_id = t.lot_id
+             AND b.product_id = t.product_id
+            GROUP BY b.lot_id, b.product_id, t.lot_total_error_qty,
+                     b.error_id, b.error_name
+            ORDER BY total_error_qty DESC, b.error_id
+            LIMIT {limit}
+        """
+        routed_model = self.resolve_model(model)
+        try:
+            result = await asyncio.to_thread(self.mes_sql_agent.execute, sql)
+            logger.info(
+                "MES deterministic compound highest Lot SQL executed rows=%s",
+                len(result.rows),
+            )
+        except MesSqlAgentError as exc:
+            logger.warning("MES deterministic compound SQL rejected: %s", exc)
+            return None
+
+        if routed_model in LOCAL_MODEL_ALIASES:
+            return self.mes_sql_agent.fallback_answer(result), routed_model
+        try:
+            answer_response = await self.openai_client.chat.completions.create(
+                model=routed_model,
+                messages=self.mes_sql_agent.answer_messages(question, result),
+                temperature=0.1,
+                max_tokens=800,
+                **self.provider_options(routed_model),
+            )
+            candidate = answer_response.choices[0].message.content or ""
+            candidate = self.normalize_sql_answer(candidate)
+            if self.sql_answer_is_natural(candidate) and self.sql_answer_matches_result(
+                candidate,
+                result,
+            ):
+                return candidate, routed_model
+        except Exception as exc:
+            logger.warning("LLM deterministic compound MES answer failed: %s", exc)
+        return self.mes_sql_agent.fallback_answer(result), routed_model
 
     async def _generate_time_sql_answer(
         self,
@@ -906,7 +988,15 @@ class MesQueryService:
             raise ValueError(f"Unsupported model option: {model}") from exc
 
     @staticmethod
+    def resolve_sql_agent_model(model: str) -> str:
+        forced_model = os.getenv("MES_SQL_AGENT_MODEL", "local-qwen-coder").strip()
+        if forced_model:
+            return MODEL_ROUTES.get(forced_model, forced_model)
+        return MesQueryService.resolve_model(model)
+
+    @staticmethod
     def provider_options(routed_model: str) -> dict[str, Any]:
-        if routed_model in LOCAL_MODEL_ALIASES:
-            return {"extra_body": {"stream_options": {"include_usage": False}}}
+        if routed_model in LOCAL_CHAT_MODEL_ALIASES:
+            num_ctx = int(os.getenv("LOCAL_CHAT_NUM_CTX", "16384"))
+            return {"extra_body": {"think": False, "num_ctx": num_ctx}}
         return {}

@@ -1,4 +1,9 @@
-FROM litellm/litellm:main-stable
+FROM python:3.11-slim
 
-RUN python -m ensurepip && \
-    python -m pip install --no-cache-dir Pillow==10.4.0
+RUN pip install --no-cache-dir \
+    "litellm[proxy]==1.83.0" \
+    Pillow==10.4.0
+
+WORKDIR /usr/local/lib/python3.11/site-packages/litellm/proxy
+
+ENTRYPOINT ["litellm"]

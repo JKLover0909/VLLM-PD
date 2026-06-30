@@ -32,6 +32,8 @@ services:
       MES_SQL_AGENT_MAX_ROWS: "100"
       MES_SQL_AGENT_TIMEOUT: "2"
       MES_SQL_AGENT_MAX_ATTEMPTS: "2"
+      MES_SQL_AGENT_MODEL: local-qwen-coder
+      LOCAL_CHAT_NUM_CTX: "16384"
     ports:
       - "${MACHINE2_API_PORT:-8001}:8001"
     volumes:
@@ -69,7 +71,11 @@ services:
       - ${MEIBOOK_ENV_FILE:-.env.docker}
     environment:
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
-    command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+      OLLAMA_API_BASE: http://192.84.106.72:11434
+      QWEN_CHAT_API_BASE: http://192.84.106.72:11434
+      QWEN_CODER_API_BASE: http://100.101.211.84:8000/v1
+      QWEN_CODER_API_KEY: sk-local
+    command: ["--local", "--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
     ports:
       - "127.0.0.1:${LITELLM_PROXY_PORT:-4000}:4000"
     volumes:

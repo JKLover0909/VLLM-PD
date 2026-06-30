@@ -1,10 +1,55 @@
 model_list:
-  # Default web route. OpenAI is primary for the basic MKAC chat.
+  # Default web route. Qwen3 must use LiteLLM's ollama_chat provider against
+  # the Ollama root URL, not Ollama's OpenAI-compatible /v1 endpoint.
   - model_name: auto-model
     litellm_params:
-      model: openai/gpt-5.4-mini
-      api_key: os.environ/OPENAI_API_KEY
+      model: ollama_chat/qwen3:14b
+      api_base: os.environ/QWEN_CHAT_API_BASE
       timeout: 120
+      stream: true
+      max_parallel_requests: 1
+    model_info:
+      max_input_tokens: 16384
+      max_output_tokens: 4096
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+      cache_creation_input_token_cost: 0.0
+      cache_read_input_token_cost: 0.0
+
+  # Local Qwen3 chat model served by the external Ollama host. Do not point
+  # QWEN_CHAT_API_BASE to /v1; direct Ollama /v1 may return reasoning with
+  # empty message content for Qwen3.
+  - model_name: local-qwen-chat
+    litellm_params:
+      model: ollama_chat/qwen3:14b
+      api_base: os.environ/QWEN_CHAT_API_BASE
+      timeout: 120
+      stream: true
+      max_parallel_requests: 1
+    model_info:
+      max_input_tokens: 16384
+      max_output_tokens: 4096
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+      cache_creation_input_token_cost: 0.0
+      cache_read_input_token_cost: 0.0
+
+  # Local Qwen Coder served by llama.cpp's OpenAI-compatible API.
+  - model_name: local-qwen-coder
+    litellm_params:
+      model: openai//home/jkl0909/models/qwen2.5-coder-14b/Qwen2.5-Coder-14B-Instruct-Q5_K_M.gguf
+      api_base: os.environ/QWEN_CODER_API_BASE
+      api_key: os.environ/QWEN_CODER_API_KEY
+      timeout: 120
+      stream: true
+      max_parallel_requests: 1
+    model_info:
+      max_input_tokens: 16384
+      max_output_tokens: 4096
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+      cache_creation_input_token_cost: 0.0
+      cache_read_input_token_cost: 0.0
 
   # Local Gemma4 served by Machine 1 through the internal LAN.
   - model_name: local-gemma
@@ -17,6 +62,10 @@ model_list:
     model_info:
       max_input_tokens: 32768
       max_output_tokens: 4096
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+      cache_creation_input_token_cost: 0.0
+      cache_read_input_token_cost: 0.0
 
   # Cloud providers selectable from the web UI.
   - model_name: openai-model
@@ -35,19 +84,24 @@ model_list:
   # Coding Agent keeps a stable logical name.
   - model_name: coding-model
     litellm_params:
-      model: ollama/gemma4:latest
-      api_base: os.environ/OLLAMA_API_BASE
+      model: openai//home/jkl0909/models/qwen2.5-coder-14b/Qwen2.5-Coder-14B-Instruct-Q5_K_M.gguf
+      api_base: os.environ/QWEN_CODER_API_BASE
+      api_key: os.environ/QWEN_CODER_API_KEY
       timeout: 120
       stream: true
       max_parallel_requests: 1
     model_info:
-      max_input_tokens: 32768
+      max_input_tokens: 16384
       max_output_tokens: 4096
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+      cache_creation_input_token_cost: 0.0
+      cache_read_input_token_cost: 0.0
 
 router_settings:
   fallbacks:
-    - auto-model: ["grok-model", "local-gemma"]
-    - coding-model: ["openai-model"]
+    - auto-model: ["local-qwen-chat", "local-gemma", "openai-model", "grok-model"]
+    - coding-model: ["local-qwen-coder", "local-qwen-chat"]
   num_retries: 1
   timeout: 120
   routing_strategy: simple-shuffle

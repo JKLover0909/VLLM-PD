@@ -884,8 +884,8 @@ async def list_models(language: Literal["vi", "ja"] = "vi"):
     model_text = {
         "vi": {
             "local": {
-                "name": "Local Model",
-                "description": "Chạy model nội bộ/local cho hỏi đáp MKAC dạng text.",
+                "name": "Qwen Local Model",
+                "description": "Chạy Qwen nội bộ/local cho hỏi đáp dạng text.",
             },
             "openai": {
                 "name": "Cloud Model",
@@ -898,8 +898,8 @@ async def list_models(language: Literal["vi", "ja"] = "vi"):
         },
         "ja": {
             "local": {
-                "name": "ローカルモデル",
-                "description": "MKACのテキストQ&A向けに社内/ローカルモデルを使用します。",
+                "name": "Qwenローカルモデル",
+                "description": "テキストQ&A向けに社内/ローカルQwenモデルを使用します。",
             },
             "openai": {
                 "name": "クラウドモデル",

@@ -175,7 +175,10 @@ class MesSqlAgent:
                     "trả lời từ schema, đặt can_answer=false. Cụm 'loại lỗi' "
                     "nghĩa là nhóm error_id + error_name. Luôn đặt alias dễ hiểu "
                     "và LIMIT phù hợp. Các view MES đã loại dữ liệu Lot/sản phẩm "
-                    "test; không cố truy xuất lại dữ liệu test. Chỉ trả đúng JSON: "
+                    "test; không cố truy xuất lại dữ liệu test. Nếu câu hỏi cần "
+                    "suy luận từ Lot đứng đầu hoặc Lot có tổng lỗi cao nhất, final "
+                    "SELECT phải giữ kèm lot_id và product_id trong từng dòng kết "
+                    "quả để câu trả lời nêu được ngữ cảnh Lot. Chỉ trả đúng JSON: "
                     '{"can_answer":true,"sql":"...","reason":"..."}.'
                 ),
             },
@@ -188,7 +191,9 @@ class MesSqlAgent:
                     "nhất, dùng CTE tìm lot_id đứng đầu từ "
                     "v_lot_error_summary, sau đó lọc "
                     "v_lot_error_breakdown theo lot_id, SUM(total_error_qty), "
-                    "GROUP BY error_id,error_name và lấy top N.\n"
+                    "GROUP BY lot_id,product_id,error_id,error_name và lấy top N; "
+                    "final SELECT gồm lot_id, product_id, error_id, error_name, "
+                    "total_error_qty.\n"
                     "Nếu hỏi lỗi theo ngày/tháng/khoảng thời gian, dùng "
                     "v_error_details.error_time, tổng hợp bằng SUM(quantity), "
                     "nhóm theo date(error_time) hoặc strftime('%Y-%m', error_time). "
@@ -366,6 +371,11 @@ class MesSqlAgent:
             prefix = f"Theo MES snapshot, trong Lot {lot_id}"
             if product_id:
                 prefix += f" của mã hàng {product_id}"
+            lot_total = first_row.get("lot_total_error_qty")
+            if lot_total is not None:
+                prefix += (
+                    f", tổng {MesSqlAgent._format_vietnamese_number(lot_total)} lỗi"
+                )
             items = []
             for row in result.rows[:10]:
                 error_id = str(row.get("error_id") or "chưa rõ")

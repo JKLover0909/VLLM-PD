@@ -43,11 +43,12 @@ Máy 2: FastAPI + React
         v
 Máy 2: LiteLLM, cổng 4000 nội bộ
         |
-        |-- auto-model -> OpenAI -> fallback Grok -> fallback Gemma4 local
+        |-- auto-model -> Qwen3 local -> fallback Gemma4 local -> fallback cloud
+        |-- local-qwen-chat -> Qwen3 local qua LiteLLM ollama_chat
         |-- local-gemma -> Gemma4 local trên Máy 1
         |-- openai-model -> GPT-5.4 mini
         |-- grok-model -> Grok 4.20 Reasoning qua Azure
-        |-- coding-model -> Gemma4 local -> fallback OpenAI
+        |-- coding-model -> Qwen2.5 Coder local -> fallback Qwen3 local
 ```
 
 Chi tiết hơn xem [ARCHITECTURE.md](ARCHITECTURE.md).
@@ -355,10 +356,10 @@ LiteLLM aliases trong `litellm_config.yaml`:
 | Lựa chọn UI/API | Model group LiteLLM | Backend |
 |---|---|---|
 | `Cloud Model` / `openai` | `openai-model` | OpenAI GPT-5.4 mini |
-| `Local Model` / `local` | `local-gemma` | Ollama/Gemma4 trên Máy 1 |
+| `Local Model` / `local` | `local-qwen-chat` | Qwen3 local qua LiteLLM `ollama_chat`, dùng URL gốc Ollama, không dùng `/v1` |
 | Research Model / `grok` | `grok-model` | Grok 4.20 Reasoning qua Azure, dùng riêng cho `Nghiên cứu` |
-| `auto` | `auto-model` | Route kỹ thuật dự phòng: OpenAI, fallback Grok, fallback Gemma4 local |
-| Agent | `coding-model` | Gemma4 local, fallback OpenAI |
+| `auto` | `auto-model` | Route kỹ thuật local-first: Qwen3 local, fallback Gemma4 local, sau đó mới tới cloud |
+| Agent | `coding-model` | Qwen2.5 Coder local, fallback Qwen3 local |
 
 Trong mode `mkac`, retrieval dùng collection `mkac_knowledge`. Nếu không có
 chunk đạt ngưỡng, backend tìm trên web với câu hỏi gắn thêm ngữ cảnh MKAC. Kết
