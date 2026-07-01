@@ -73,7 +73,7 @@ services:
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
       OLLAMA_API_BASE: https://carless-overarch-establish.ngrok-free.dev
       QWEN_CHAT_API_BASE: https://carless-overarch-establish.ngrok-free.dev
-      QWEN_CODER_API_BASE: http://100.101.211.84:8000/v1
+      QWEN_CODER_API_BASE: https://d3d2-2405-4803-f16d-d2f0-b282-e2ff-fe05-dfe9.ngrok-free.app/v1
       QWEN_CODER_API_KEY: sk-local
     command: ["--local", "--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
     ports:

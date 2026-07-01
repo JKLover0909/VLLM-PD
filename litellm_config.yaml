@@ -44,6 +44,8 @@ model_list:
       model: openai//home/jkl0909/models/qwen2.5-coder-14b/Qwen2.5-Coder-14B-Instruct-Q5_K_M.gguf
       api_base: os.environ/QWEN_CODER_API_BASE
       api_key: os.environ/QWEN_CODER_API_KEY
+      headers:
+        ngrok-skip-browser-warning: "true"
       timeout: 120
       stream: true
       max_parallel_requests: 1
@@ -91,6 +93,8 @@ model_list:
       model: openai//home/jkl0909/models/qwen2.5-coder-14b/Qwen2.5-Coder-14B-Instruct-Q5_K_M.gguf
       api_base: os.environ/QWEN_CODER_API_BASE
       api_key: os.environ/QWEN_CODER_API_KEY
+      headers:
+        ngrok-skip-browser-warning: "true"
       timeout: 120
       stream: true
       max_parallel_requests: 1
