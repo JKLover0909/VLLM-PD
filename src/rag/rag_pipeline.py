@@ -508,7 +508,7 @@ class RAGPipeline:
                 max_tokens=1800 if mode == "research" else self.max_tokens,
                 **self._provider_options(routed_model),
             )
-            answer = response.choices[0].message.content or ""
+            answer = self._clean_model_answer(response.choices[0].message.content or "")
             return answer, search_results, routed_model, answer_scope
         except Exception as e:
             logger.error(f"Error in RAG generation: {e}")
@@ -655,10 +655,14 @@ class RAGPipeline:
             )
 
             async def token_generator():
+                parts: list[str] = []
                 async for chunk in response:
                     content = chunk.choices[0].delta.content
                     if content:
-                        yield content
+                        parts.append(content)
+                answer = self._clean_model_answer("".join(parts))
+                if answer:
+                    yield answer
 
             return token_generator(), search_results, routed_model, answer_scope
         except Exception as e:
@@ -1530,6 +1534,67 @@ class RAGPipeline:
             num_ctx = int(os.getenv("LOCAL_CHAT_NUM_CTX", "16384"))
             return {"extra_body": {"think": False, "num_ctx": num_ctx}}
         return {}
+
+    @staticmethod
+    def _clean_model_answer(answer: str) -> str:
+        """Remove local reasoning traces that some Qwen/Ollama responses leak."""
+        text = (answer or "").strip()
+        if not text:
+            return ""
+
+        text = re.sub(r"(?is)<think>.*?</think>", "", text).strip()
+        if "</think>" in text:
+            text = text.split("</think>", 1)[1].strip()
+        text = re.sub(r"\[img-\d+\]", "\n\n", text).strip()
+
+        final_markers = [
+            "Câu trả lời:",
+            "Trả lời ngắn gọn:",
+            "Kết luận:",
+            "Tóm lại:",
+            "Đáp án:",
+            "簡潔な回答:",
+            "回答:",
+            "結論:",
+        ]
+        lowered = text.lower()
+        marker_positions = [
+            (lowered.rfind(marker.lower()), marker)
+            for marker in final_markers
+            if lowered.rfind(marker.lower()) != -1
+        ]
+        if marker_positions:
+            pos, marker = max(marker_positions, key=lambda item: item[0])
+            text = text[pos + len(marker) :].strip()
+
+        reasoning_markers = [
+            "trả lời bằng",
+            "đảm bảo câu trả lời",
+            "hãy trả lời",
+            "Okay, let's see.",
+            "Okay, let me",
+            "Let me think",
+            "Looking at",
+            "I need to",
+            "The user is asking",
+            "The answer should",
+            "Let me count",
+            "Đoạn 1",
+            "以下のように",
+            "見てみます",
+            "数えてみます",
+        ]
+        if any(marker.lower() in text[:500].lower() for marker in reasoning_markers):
+            paragraphs = [part.strip() for part in re.split(r"\n{2,}", text) if part.strip()]
+            useful = [
+                part
+                for part in paragraphs
+                if not any(marker.lower() in part[:300].lower() for marker in reasoning_markers)
+            ]
+            if useful:
+                text = "\n\n".join(useful).strip()
+
+        return text
 
     def format_sources(self, results: List[SearchResult]) -> List[Dict[str, Any]]:
         """

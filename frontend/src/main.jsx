@@ -261,8 +261,8 @@ const UI_TEXT = {
     },
     models: {
       local: {
-        name: "Qwen Local Model",
-        description: "Chạy Qwen nội bộ/local cho hỏi đáp dạng text.",
+        name: "Local Model",
+        description: "Chạy model nội bộ/local cho hỏi đáp dạng text.",
       },
       openai: {
         name: "Model dự phòng",
@@ -421,8 +421,8 @@ const UI_TEXT = {
     },
     models: {
       local: {
-        name: "Qwenローカルモデル",
-        description: "テキストQ&A向けに社内/ローカルQwenモデルを使用します。",
+        name: "ローカルモデル",
+        description: "テキストQ&A向けに社内/ローカルモデルを使用します。",
       },
       openai: {
         name: "予備モデル",

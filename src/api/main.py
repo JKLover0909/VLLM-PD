@@ -884,14 +884,14 @@ async def list_models(language: Literal["vi", "ja"] = "vi"):
     model_text = {
         "vi": {
             "local": {
-                "name": "Qwen Local Model",
-                "description": "Chạy Qwen nội bộ/local cho hỏi đáp dạng text.",
+                "name": "Local Model",
+                "description": "Chạy model nội bộ/local cho hỏi đáp dạng text.",
             },
         },
         "ja": {
             "local": {
-                "name": "Qwenローカルモデル",
-                "description": "テキストQ&A向けに社内/ローカルQwenモデルを使用します。",
+                "name": "ローカルモデル",
+                "description": "テキストQ&A向けに社内/ローカルモデルを使用します。",
             },
         },
     }
