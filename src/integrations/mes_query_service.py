@@ -76,6 +76,15 @@ MES_UNSUPPORTED_ANSWER = (
 )
 
 
+def env_int(name: str, default: int, *, minimum: int = 1, maximum: int = 4096) -> int:
+    """Read a bounded integer environment setting."""
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+    return max(minimum, min(maximum, value))
+
+
 class MesQueryService:
     """Route and answer MES questions without touching document retrieval."""
 
@@ -190,7 +199,7 @@ class MesQueryService:
                     {"role": "user", "content": question},
                 ],
                 temperature=0.1,
-                max_tokens=360,
+                max_tokens=self.general_answer_max_tokens(),
                 **self.provider_options(routed_model),
             )
             candidate = (response.choices[0].message.content or "").strip()
@@ -273,7 +282,7 @@ class MesQueryService:
                 model=routed_model,
                 messages=self.live_api_messages(question, lots),
                 temperature=0.1,
-                max_tokens=240,
+                max_tokens=self.live_api_answer_max_tokens(),
                 **self.provider_options(routed_model),
             )
             candidate = response.choices[0].message.content or ""
@@ -300,7 +309,7 @@ class MesQueryService:
                 model=routed_model,
                 messages=self.database_messages(question, result),
                 temperature=0.1,
-                max_tokens=600,
+                max_tokens=self.database_answer_max_tokens(result),
                 **self.provider_options(routed_model),
             )
             candidate = response.choices[0].message.content or ""
@@ -334,7 +343,7 @@ class MesQueryService:
                         previous_error=previous_error,
                     ),
                     temperature=0,
-                    max_tokens=1200,
+                    max_tokens=self.sql_planner_max_tokens(),
                     **self.provider_options(routed_model),
                 )
                 content = response.choices[0].message.content or ""
@@ -352,7 +361,7 @@ class MesQueryService:
                     model=routed_model,
                     messages=self.mes_sql_agent.answer_messages(question, result),
                     temperature=0.1,
-                    max_tokens=800,
+                    max_tokens=self.sql_answer_max_tokens(result),
                     **self.provider_options(routed_model),
                 )
                 candidate = answer_response.choices[0].message.content or ""
@@ -434,7 +443,7 @@ class MesQueryService:
                 model=routed_model,
                 messages=self.mes_sql_agent.answer_messages(question, result),
                 temperature=0.1,
-                max_tokens=800,
+                max_tokens=self.sql_answer_max_tokens(result),
                 **self.provider_options(routed_model),
             )
             candidate = answer_response.choices[0].message.content or ""
@@ -472,7 +481,7 @@ class MesQueryService:
                 model=routed_model,
                 messages=self.mes_sql_agent.answer_messages(question, result),
                 temperature=0.1,
-                max_tokens=800,
+                max_tokens=self.sql_answer_max_tokens(result),
                 **self.provider_options(routed_model),
             )
             candidate = answer_response.choices[0].message.content or ""
@@ -1153,6 +1162,29 @@ class MesQueryService:
             num_ctx = int(os.getenv("LOCAL_CHAT_NUM_CTX", "16384"))
             return {"extra_body": {"think": False, "num_ctx": num_ctx}}
         return {}
+
+    @staticmethod
+    def general_answer_max_tokens() -> int:
+        return env_int("MES_GENERAL_MAX_TOKENS", 256, minimum=96, maximum=512)
+
+    @staticmethod
+    def live_api_answer_max_tokens() -> int:
+        return env_int("MES_LIVE_API_MAX_TOKENS", 192, minimum=96, maximum=384)
+
+    @staticmethod
+    def database_answer_max_tokens(result: MesDatabaseResult) -> int:
+        default = 384 if len(result.rows) > 3 else 256
+        return env_int("MES_DATABASE_MAX_TOKENS", default, minimum=128, maximum=768)
+
+    @staticmethod
+    def sql_planner_max_tokens() -> int:
+        # Planner cần đủ không gian để trả JSON/SQL hợp lệ; không giảm quá thấp.
+        return env_int("MES_SQL_PLANNER_MAX_TOKENS", 1200, minimum=512, maximum=1600)
+
+    @staticmethod
+    def sql_answer_max_tokens(result: MesSqlQueryResult) -> int:
+        default = 512 if result.truncated or len(result.rows) > 10 else 384
+        return env_int("MES_SQL_ANSWER_MAX_TOKENS", default, minimum=192, maximum=800)
 
     @staticmethod
     def prefer_template_answers(routed_model: str) -> bool:
