@@ -1547,6 +1547,23 @@ class RAGPipeline:
             text = text.split("</think>", 1)[1].strip()
         text = re.sub(r"\[img-\d+\]", "\n\n", text).strip()
 
+        repeated_phrases = (
+            "không dùng các từ ngữ không cần thiết",
+            "không dùng markdown",
+            "trả lời bằng tiếng việt",
+        )
+        lowered_text = text.lower()
+        if any(lowered_text.count(phrase) >= 4 for phrase in repeated_phrases):
+            return (
+                "Chưa tạo được câu trả lời ổn định từ model local. "
+                "Vui lòng thử lại với câu hỏi ngắn gọn hơn."
+            )
+        if RAGPipeline._has_repetitive_loop(text):
+            return (
+                "Chưa tạo được câu trả lời ổn định từ model local. "
+                "Vui lòng thử lại với câu hỏi ngắn gọn hơn."
+            )
+
         direct_patterns = (
             r"MKAC\s+có\s+[^.\n。]*\b16\b[^.\n。]*(?:phòng\s+ban|phong\s+ban|bộ\s+phận|bo\s+phan|nhóm|nhom)[^.\n。]*[.\n。]?",
             r"MKACには[^.\n。]*\b16\b[^.\n。]*(?:部門|部署|グループ)[^.\n。]*[.\n。]?",
@@ -1608,6 +1625,20 @@ class RAGPipeline:
                 text = "\n\n".join(useful).strip()
 
         return text
+
+    @staticmethod
+    def _has_repetitive_loop(text: str) -> bool:
+        words = re.findall(r"\w+", text.lower(), flags=re.UNICODE)
+        if len(words) < 80:
+            return False
+        for size, threshold in ((4, 10), (6, 7), (8, 5)):
+            counts: dict[tuple[str, ...], int] = {}
+            for index in range(0, len(words) - size + 1):
+                key = tuple(words[index : index + size])
+                counts[key] = counts.get(key, 0) + 1
+                if counts[key] >= threshold:
+                    return True
+        return False
 
     def format_sources(self, results: List[SearchResult]) -> List[Dict[str, Any]]:
         """

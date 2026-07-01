@@ -1003,6 +1003,36 @@ def _load_quick_answers() -> dict:
     return _quick_answers_cache
 
 
+def normalize_prepared_question(value: str) -> str:
+    normalized = normalize_query_cache_text(value)
+    normalized = re.sub(r"[?？!！。.,;:]+$", "", normalized).strip()
+    return normalized
+
+
+def prepared_query_response(req: QueryRequest) -> Optional[QueryResponse]:
+    """Return curated answers for known MKAC demo questions without calling LLM."""
+    if req.mode != "mkac" or parse_email_send_command(req.question) is not None:
+        return None
+
+    data = _load_quick_answers()
+    question_key = normalize_prepared_question(req.question)
+    for item in data.get("mkac", []):
+        source_question = item.get("question_ja" if req.ui_language == "ja" else "question", "")
+        answer = item.get("answer_ja" if req.ui_language == "ja" else "answer", "")
+        if not source_question or not answer:
+            continue
+        if normalize_prepared_question(source_question) == question_key:
+            return QueryResponse(
+                answer=answer,
+                sources=[],
+                session_id=req.session_id,
+                model="auto-model",
+                mode=req.mode,
+                answer_scope="mkac",
+            )
+    return None
+
+
 @app.get("/quick-answers")
 async def quick_answers(mode: str = "mkac", language: Literal["vi", "ja"] = "vi"):
     """Trả về danh sách câu hỏi gợi ý theo chế độ."""
@@ -1162,6 +1192,13 @@ async def query_documents(req: QueryRequest, request: Request):
         return cached_response.model_copy(update={"session_id": req.session_id})
 
     try:
+        prepared_response = prepared_query_response(req)
+        if prepared_response is not None:
+            logger.info("Prepared query answer hit mode=%s language=%s", req.mode, req.ui_language)
+            await set_cached_query_response(cache_key, prepared_response)
+            await wait_for_min_query_latency(request_started_at)
+            return prepared_response
+
         localized_req = await localize_query_request(req)
         current_user_context = employee_context_for_query(
             localized_req,
@@ -1243,6 +1280,28 @@ async def query_stream(req: QueryRequest, request: Request):
 
         return StreamingResponse(
             cached_event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+    prepared_response = prepared_query_response(req)
+    if prepared_response is not None:
+        logger.info("Streaming prepared query answer hit mode=%s language=%s", req.mode, req.ui_language)
+
+        async def prepared_event_generator():
+            import json
+
+            await set_cached_query_response(cache_key, prepared_response)
+            await wait_for_min_query_latency(request_started_at)
+            yield f"data: {json.dumps({'type': 'sources', 'sources': prepared_response.sources})}\n\n"
+            yield f"data: {json.dumps({'type': 'meta', 'model': prepared_response.model, 'mode': prepared_response.mode, 'answer_scope': prepared_response.answer_scope})}\n\n"
+            yield f"data: {json.dumps({'type': 'token', 'content': prepared_response.answer})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        return StreamingResponse(
+            prepared_event_generator(),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",

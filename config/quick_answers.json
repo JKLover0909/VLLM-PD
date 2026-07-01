@@ -4,9 +4,9 @@
   "mkac": [
     {
       "question": "MKAC có bao nhiêu phòng ban?",
-      "answer": "Công ty Cổ phần Meiko Automation (MKAC) hiện có các phòng ban chính như: Hành chính Nhân sự, Kế toán, Kinh doanh, Kỹ thuật, Sản xuất, Quản lý Chất lượng (QA/QC), Mua hàng và Kho.",
+      "answer": "MKAC có 16 phòng ban/nhóm theo thống kê nhân sự nội bộ.",
       "question_ja": "MKACにはいくつの部署がありますか？",
-      "answer_ja": "Meiko Automation株式会社（MKAC）には、主に人事・総務、経理、営業、技術、生産、品質管理（QA/QC）、購買、倉庫などの部署があります。"
+      "answer_ja": "社内人事統計によると、MKACには16の部門/グループがあります。"
     },
     {
       "question": "Quy định làm thêm giờ ở MKAC như thế nào?",
