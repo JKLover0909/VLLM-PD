@@ -761,6 +761,20 @@ def build_email_body(
     )
 
 
+def build_direct_email_body(
+    *,
+    original_question: str,
+    body: str,
+) -> str:
+    return (
+        "Xin chào,\n\n"
+        f"{body.strip()}\n\n"
+        "---\n"
+        "Email được gửi từ Meibook theo yêu cầu trực tiếp của người dùng.\n"
+        f"Yêu cầu gốc: {original_question.strip()}\n"
+    )
+
+
 def _normalize_reference_text(value: str) -> str:
     normalized = unicodedata.normalize("NFD", value.lower().replace("đ", "d"))
     normalized = "".join(
@@ -814,6 +828,37 @@ async def handle_email_send_query(
                 "Gmail send chưa sẵn sàng. Hãy kiểm tra GMAIL_SEND_ENABLED, "
                 "GMAIL_CREDENTIALS_PATH và token OAuth."
             ),
+        )
+
+    if command.has_explicit_body:
+        body = build_direct_email_body(
+            original_question=req.question,
+            body=command.explicit_body,
+        )
+        send_result = await asyncio.to_thread(
+            gmail_sender.send_email,
+            command.to_email,
+            command.subject,
+            body,
+        )
+        logger.info(
+            "Sent Meibook explicit email action to=%s message_id=%s subject=%s",
+            send_result.to_email,
+            send_result.message_id,
+            send_result.subject,
+        )
+        status_answer = (
+            f"Đã gửi email tới {send_result.to_email} với tiêu đề "
+            f"\"{send_result.subject}\".\n\n"
+            f"Nội dung chính:\n{command.explicit_body}"
+        )
+        return QueryResponse(
+            answer=status_answer,
+            sources=[],
+            session_id=req.session_id,
+            model=req.model,
+            mode=req.mode,
+            answer_scope="email_action",
         )
 
     if is_context_reference(command.data_question):

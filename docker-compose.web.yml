@@ -34,6 +34,9 @@ services:
       MES_SQL_AGENT_MAX_ATTEMPTS: "2"
       MES_SQL_AGENT_MODEL: local-qwen-coder
       LOCAL_CHAT_NUM_CTX: "16384"
+      LOCAL_AUX_NUM_CTX: "4096"
+      TRANSLATION_MODEL: local-qwen-small
+      TRANSLATION_TEMPERATURE: "0.1"
     ports:
       - "${MACHINE2_API_PORT:-8001}:8001"
     volumes:
@@ -73,8 +76,11 @@ services:
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
       OLLAMA_API_BASE: https://carless-overarch-establish.ngrok-free.dev
       QWEN_CHAT_API_BASE: https://carless-overarch-establish.ngrok-free.dev
+      QWEN_SMALL_API_BASE: http://host.docker.internal:11435
       QWEN_CODER_API_BASE: https://d3d2-2405-4803-f16d-d2f0-b282-e2ff-fe05-dfe9.ngrok-free.app/v1
       QWEN_CODER_API_KEY: sk-local
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: ["--local", "--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
     ports:
       - "127.0.0.1:${LITELLM_PROXY_PORT:-4000}:4000"
@@ -82,6 +88,16 @@ services:
       - ./litellm_config.yaml:/app/config.yaml:ro
     depends_on:
       - qdrant
+      - ollama-proxy
+    restart: unless-stopped
+
+  ollama-proxy:
+    image: alpine/socat:latest
+    container_name: meibook-ollama-proxy
+    network_mode: host
+    command:
+      - "TCP-LISTEN:11435,bind=172.17.0.1,fork,reuseaddr"
+      - "TCP:127.0.0.1:11434"
     restart: unless-stopped
 
 volumes:

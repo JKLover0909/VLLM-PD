@@ -45,6 +45,7 @@ Máy 2: LiteLLM, cổng 4000 nội bộ
         |
         |-- auto-model -> Qwen3 local qwen3:14b -> fallback Gemma4 local -> fallback cloud
         |-- local-qwen-chat -> Qwen3 local qwen3:14b qua LiteLLM ollama_chat
+        |-- local-qwen-small -> Qwen2.5 3B Instruct cho dịch ngắn/intent/rewrite/format
         |-- local-gemma -> Gemma4 local trên Máy 1
         |-- openai-model -> GPT-5.4 mini
         |-- grok-model -> Grok 4.20 Reasoning qua Azure
@@ -357,9 +358,16 @@ LiteLLM aliases trong `litellm_config.yaml`:
 |---|---|---|
 | `Cloud Model` / `openai` | `openai-model` | OpenAI GPT-5.4 mini |
 | `Local Model` / `local` | `local-qwen-chat` | Qwen3 local `qwen3:14b` official Q4_K_M qua LiteLLM `ollama_chat`, dùng URL gốc Ollama, không dùng `/v1` |
+| Model phụ | `local-qwen-small` | Qwen2.5 `3b-instruct` Q4_K_M trên Ollama system service, dùng cho dịch ngắn, phân loại intent, rewrite và format |
 | Research Model / `grok` | `grok-model` | Grok 4.20 Reasoning qua Azure, dùng riêng cho `Nghiên cứu` |
 | `auto` | `auto-model` | Route kỹ thuật local-first: Qwen3 local `qwen3:14b`, fallback Gemma4 local, sau đó mới tới cloud |
 | Agent | `coding-model` | Qwen2.5 Coder local, fallback Qwen3 local |
+
+`local-qwen-small` chạy bằng Ollama system service trên Máy 2. Trong Docker,
+LiteLLM không gọi trực tiếp `127.0.0.1:11434` của host, mà đi qua container
+`meibook-ollama-proxy` tại `host.docker.internal:11435`. Cả Ollama service và
+proxy container đều chạy nền, nên model phụ vẫn hoạt động sau khi đóng SSH hoặc
+VSCode Remote.
 
 Trong mode `mkac`, retrieval dùng collection `mkac_knowledge`. Nếu không có
 chunk đạt ngưỡng, backend tìm trên web với câu hỏi gắn thêm ngữ cảnh MKAC. Kết

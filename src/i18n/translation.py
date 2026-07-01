@@ -33,6 +33,42 @@ class TranslationService:
 
     SUPPORTED_LANGUAGES = {"vi", "ja"}
     JAPANESE_SCRIPT_PATTERN = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
+    LOCAL_MODEL_ALIASES = {
+        "auto-model",
+        "local-qwen-chat",
+        "local-qwen-small",
+        "local-gemma",
+    }
+    DEFAULT_MODEL = "local-qwen-small"
+    GLOSSARY = (
+        "- Meibook: Meibook\n"
+        "- MKAC / Meiko Automation: Meiko Automation\n"
+        "- MES: MES\n"
+        "- MES snapshot: MESスナップショット\n"
+        "- Lot / mã Lot: Lot\n"
+        "- mã hàng / mã sản phẩm: 品番\n"
+        "- mã lỗi: エラーコード\n"
+        "- tên lỗi: エラー名\n"
+        "- tổng số lỗi: 総エラー数\n"
+        "- số bản ghi lỗi: エラー記録数\n"
+        "- lỗi / NG / defect / error: エラー\n"
+        "- phòng ban: 部署\n"
+        "- nhân viên / thành viên: 社員\n"
+        "- mã nhân viên: 社員番号\n"
+        "- làm thêm giờ: 残業\n"
+        "- nghỉ phép: 休暇\n"
+        "- quy định / nội quy: 規定\n"
+    )
+    STATIC_VI_TO_JA = {
+        "Không có dữ liệu.": "データがありません。",
+        "Không thể dịch nội dung cho giao diện.": "画面表示用の翻訳を完了できませんでした。",
+        "Chưa tạo được câu trả lời ổn định từ model local. Vui lòng thử lại với câu hỏi ngắn gọn hơn.": (
+            "ローカルモデルから安定した回答を生成できませんでした。質問を短くしてもう一度お試しください。"
+        ),
+        "Không thể hoàn tất yêu cầu: Gmail OAuth token đã hết hạn hoặc bị Google thu hồi. Vui lòng tạo lại token Gmail OAuth.": (
+            "リクエストを完了できませんでした。Gmail OAuthトークンの有効期限が切れたか、Googleにより無効化されています。Gmail OAuthトークンを再作成してください。"
+        ),
+    }
 
     def __init__(
         self,
@@ -42,7 +78,10 @@ class TranslationService:
         enabled: bool = True,
     ):
         self.enabled = enabled
-        self.model = model or os.getenv("TRANSLATION_MODEL", "openai-model")
+        self.model = model or os.getenv("TRANSLATION_MODEL", self.DEFAULT_MODEL)
+        self.num_ctx = int(os.getenv("LOCAL_CHAT_NUM_CTX", "16384"))
+        self.aux_num_ctx = int(os.getenv("LOCAL_AUX_NUM_CTX", "4096"))
+        self.temperature = float(os.getenv("TRANSLATION_TEMPERATURE", "0.1"))
         self.client = client or AsyncOpenAI(
             api_key=os.getenv("LITELLM_MASTER_KEY", "sk-local"),
             base_url=os.getenv("LITELLM_URL", "http://localhost:4000/v1"),
@@ -107,11 +146,17 @@ class TranslationService:
                 "不良/エラー thành lỗi.\n"
                 "- Với yêu cầu gửi email, dịch thành câu lệnh tiếng Việt bắt đầu tự nhiên "
                 "bằng 'Gửi email...' hoặc 'Gửi thông tin này...'.\n\n"
+                "Glossary thuật ngữ bắt buộc:\n"
+                f"{self.GLOSSARY}\n"
                 f"Câu hỏi: {clean_question}"
             ),
             max_tokens=700,
         )
-        return TranslatedQuery(clean_question, translated.strip() or clean_question, language)
+        return TranslatedQuery(
+            clean_question,
+            self._clean_completion(translated) or clean_question,
+            language,
+        )
 
     async def translate_answer(
         self,
@@ -124,8 +169,11 @@ class TranslationService:
         clean_answer = answer or ""
         if not self.enabled or language == "vi" or not clean_answer.strip():
             return clean_answer
+        static_translation = self._translate_static_vi_to_ja(clean_answer)
+        if static_translation is not None:
+            return static_translation
 
-        return await self._complete(
+        translated = await self._complete(
             system=(
                 "Bạn là lớp dịch kết quả cho giao diện Meibook tiếng Nhật. "
                 "Hãy dịch từ tiếng Việt sang tiếng Nhật tự nhiên cho người dùng doanh nghiệp. "
@@ -146,10 +194,13 @@ class TranslationService:
                 "- Tuyệt đối không thêm câu giải thích mới về JSON, filters, "
                 "chính sách hiển thị hoặc hệ thống nếu câu gốc không có.\n"
                 "- Chỉ trả về bản dịch, không giải thích.\n\n"
+                "Glossary thuật ngữ bắt buộc:\n"
+                f"{self.GLOSSARY}\n"
                 f"Câu trả lời tiếng Việt:\n{clean_answer}"
             ),
             max_tokens=1800 if mode == "research" else 1000,
         )
+        return self._clean_completion(translated) or clean_answer
 
     async def translate_ui_text(
         self,
@@ -164,8 +215,11 @@ class TranslationService:
         clean_text = text or ""
         if not self.enabled or language == "vi" or not clean_text.strip():
             return clean_text
+        static_translation = self._translate_static_vi_to_ja(clean_text)
+        if static_translation is not None:
+            return static_translation
 
-        return await self._complete(
+        translated = await self._complete(
             system=(
                 "Bạn là lớp dịch các đoạn text ngắn cho giao diện Meibook tiếng Nhật. "
                 "Hãy dịch từ tiếng Việt sang tiếng Nhật tự nhiên, giữ đúng ý và không "
@@ -181,24 +235,50 @@ class TranslationService:
                 "- Nếu là đoạn trích tài liệu, chỉ dịch nội dung đoạn trích; không "
                 "thêm tiêu đề hoặc giải thích.\n"
                 "- Chỉ trả về bản dịch.\n\n"
+                "Glossary thuật ngữ bắt buộc:\n"
+                f"{self.GLOSSARY}\n"
                 f"Đoạn text:\n{clean_text}"
             ),
             max_tokens=700,
         )
+        return self._clean_completion(translated) or clean_text
 
     async def _complete(self, *, system: str, user: str, max_tokens: int) -> str:
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "temperature": self.temperature,
+            "max_tokens": max_tokens,
+        }
+        provider_options = self._provider_options()
+        if provider_options:
+            kwargs.update(provider_options)
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-                temperature=0,
-                max_tokens=max_tokens,
-            )
+            response = await self.client.chat.completions.create(**kwargs)
         except Exception as exc:  # pragma: no cover - provider-specific failures
             raise TranslationError("Không thể dịch nội dung cho giao diện.") from exc
 
         content = response.choices[0].message.content or ""
-        return content.strip()
+        return self._clean_completion(content)
+
+    def _provider_options(self) -> dict[str, Any]:
+        if self.model in self.LOCAL_MODEL_ALIASES:
+            num_ctx = self.aux_num_ctx if self.model == "local-qwen-small" else self.num_ctx
+            return {"extra_body": {"think": False, "num_ctx": num_ctx}}
+        return {}
+
+    @classmethod
+    def _translate_static_vi_to_ja(cls, text: str) -> str | None:
+        normalized = (text or "").strip()
+        return cls.STATIC_VI_TO_JA.get(normalized)
+
+    @staticmethod
+    def _clean_completion(text: str) -> str:
+        clean_text = (text or "").strip()
+        clean_text = re.sub(r"(?is)<think>.*?</think>", "", clean_text).strip()
+        if "</think>" in clean_text:
+            clean_text = clean_text.split("</think>", 1)[1].strip()
+        return clean_text.strip(' "\'')

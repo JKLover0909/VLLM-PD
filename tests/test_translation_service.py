@@ -43,6 +43,13 @@ def test_vietnamese_query_bypasses_translation_model():
     assert client.chat.completions.calls == []
 
 
+def test_translation_defaults_to_local_model():
+    client = FakeClient(["unused"])
+    service = TranslationService(client=client)
+
+    assert service.model == "local-qwen-small"
+
+
 def test_japanese_query_is_translated_for_vietnamese_backend():
     client = FakeClient(["Lot nào có số lượng lỗi nhiều nhất?"])
     service = TranslationService(client=client, model="translation-model")
@@ -60,6 +67,43 @@ def test_japanese_query_is_translated_for_vietnamese_backend():
     assert call["model"] == "translation-model"
     assert "mã Lot" in call["messages"][1]["content"]
     assert "一番不良が多いロットは？" in call["messages"][1]["content"]
+
+
+def test_local_translation_model_disables_thinking():
+    client = FakeClient(["Lot nào có số lượng lỗi nhiều nhất?"])
+    service = TranslationService(client=client, model="local-qwen-small")
+
+    result = asyncio.run(
+        service.translate_query(
+            "一番不良が多いロットは？",
+            ui_language="ja",
+            mode="mes",
+        )
+    )
+
+    assert result.backend_question == "Lot nào có số lượng lỗi nhiều nhất?"
+    call = client.chat.completions.calls[0]
+    assert call["model"] == "local-qwen-small"
+    assert call["extra_body"]["think"] is False
+    assert call["extra_body"]["num_ctx"] == 4096
+
+
+def test_large_local_translation_model_uses_chat_context():
+    client = FakeClient(["Lot nào có số lượng lỗi nhiều nhất?"])
+    service = TranslationService(client=client, model="local-qwen-chat")
+
+    asyncio.run(
+        service.translate_query(
+            "一番不良が多いロットは？",
+            ui_language="ja",
+            mode="mes",
+        )
+    )
+
+    call = client.chat.completions.calls[0]
+    assert call["model"] == "local-qwen-chat"
+    assert call["extra_body"]["think"] is False
+    assert call["extra_body"]["num_ctx"] == 16384
 
 
 def test_japanese_ui_vietnamese_query_bypasses_translation_model():
@@ -96,3 +140,19 @@ def test_japanese_answer_translation_preserves_backend_content_request():
     assert "dịch 'Trầy xước'" in call["messages"][1]["content"]
     assert "không thêm câu giải thích mới" in call["messages"][1]["content"]
     assert "12.870" in call["messages"][1]["content"]
+
+
+def test_static_japanese_answer_translation_bypasses_model():
+    client = FakeClient(["unused"])
+    service = TranslationService(client=client, model="auto-model")
+
+    answer = asyncio.run(
+        service.translate_answer(
+            "Không có dữ liệu.",
+            ui_language="ja",
+            mode="mes",
+        )
+    )
+
+    assert answer == "データがありません。"
+    assert client.chat.completions.calls == []

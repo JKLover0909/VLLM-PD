@@ -32,6 +32,31 @@ def test_parse_contextual_email_send_command():
     assert command.data_question == "thông tin này"
 
 
+def test_parse_explicit_email_body_does_not_become_data_question():
+    command = parse_email_send_command(
+        "Gửi email test đến test@example.com với nội dung: Đây là email kiểm tra Gmail OAuth."
+    )
+
+    assert command is not None
+    assert command.to_email == "test@example.com"
+    assert command.has_explicit_body is True
+    assert command.explicit_body == "Đây là email kiểm tra Gmail OAuth."
+    assert command.data_question == "Đây là email kiểm tra Gmail OAuth."
+    assert command.subject == "Meibook - Thông báo"
+
+
+def test_parse_explicit_email_subject_and_body():
+    command = parse_email_send_command(
+        "Gửi email cho test@example.com tiêu đề: Kiểm tra hệ thống nội dung: Meibook gửi thử email tự do."
+    )
+
+    assert command is not None
+    assert command.to_email == "test@example.com"
+    assert command.has_explicit_body is True
+    assert command.subject == "Kiểm tra hệ thống"
+    assert command.explicit_body == "Meibook gửi thử email tự do."
+
+
 def test_email_send_command_requires_explicit_address():
     with pytest.raises(GmailSenderError):
         parse_email_send_command("Gửi email báo mã hàng 3736-0008 có tổng bao nhiêu lỗi")

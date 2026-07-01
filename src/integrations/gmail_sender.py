@@ -25,6 +25,11 @@ class EmailSendCommand:
     to_email: str
     data_question: str
     subject: str
+    explicit_body: str = ""
+
+    @property
+    def has_explicit_body(self) -> bool:
+        return bool(self.explicit_body.strip())
 
 
 @dataclass(frozen=True)
@@ -71,6 +76,17 @@ def parse_email_send_command(question: str) -> EmailSendCommand | None:
 
     to_email = match.group(0)
     remaining = (text[: match.start()] + " " + text[match.end() :]).strip()
+    explicit_body = _extract_explicit_body(remaining)
+    explicit_subject = _extract_explicit_subject(remaining)
+    if explicit_body:
+        subject = explicit_subject or "Meibook - Thông báo"
+        return EmailSendCommand(
+            to_email=to_email,
+            data_question=explicit_body,
+            subject=subject,
+            explicit_body=explicit_body,
+        )
+
     remaining = re.sub(
         r"(?i)\b(send\s+email|email|mail)\b",
         " ",
@@ -94,6 +110,71 @@ def parse_email_send_command(question: str) -> EmailSendCommand | None:
         data_question=data_question,
         subject=subject,
     )
+
+
+def _extract_explicit_body(text_without_email: str) -> str:
+    """Extract literal email content from commands like 'với nội dung: ...'."""
+    body_markers = (
+        r"nội\s+dung",
+        r"noi\s+dung",
+        r"body",
+        r"message",
+        r"tin\s+nhắn",
+        r"tin\s+nhan",
+    )
+    body_marker = "|".join(body_markers)
+    body_start = (
+        rf"(?:(?:với|voi|có|co)\s*(?:{body_marker})"
+        rf"\s*(?:là|la|:|-)?\s+|(?:{body_marker})\s*(?:là|la|:|-)\s*)"
+    )
+    subject_marker = (
+        r"tiêu\s+đề|tieu\s+de|chủ\s+đề|chu\s+de|subject"
+    )
+    pattern = re.compile(
+        rf"{body_start}(?P<body>.+)",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    match = pattern.search(text_without_email or "")
+    if not match:
+        return ""
+
+    body = match.group("body").strip()
+    trailing_subject = re.search(
+        rf"\s+(?:{subject_marker})\s*(?:là|la|:|-)?\s*.+$",
+        body,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if trailing_subject:
+        body = body[: trailing_subject.start()].strip()
+    return _clean_explicit_email_fragment(body)
+
+
+def _extract_explicit_subject(text_without_email: str) -> str:
+    """Extract an optional literal subject from 'tiêu đề/subject: ...'."""
+    subject_marker = r"tiêu\s+đề|tieu\s+de|chủ\s+đề|chu\s+de|subject"
+    body_marker = (
+        r"nội\s+dung|noi\s+dung|body|message|tin\s+nhắn|tin\s+nhan"
+    )
+    body_start = (
+        rf"(?:(?:với|voi|có|co)\s*(?:{body_marker})"
+        rf"\s*(?:là|la|:|-)?\s+|(?:{body_marker})\s*(?:là|la|:|-)\s*)"
+    )
+    pattern = re.compile(
+        rf"(?:{subject_marker})\s*(?:là|la|:|-)?\s*(?P<subject>.+?)"
+        rf"(?=(?:\s+(?:và|va)?\s*{body_start})|$)",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    match = pattern.search(text_without_email or "")
+    if not match:
+        return ""
+    return _clean_explicit_email_fragment(match.group("subject"))
+
+
+def _clean_explicit_email_fragment(value: str) -> str:
+    cleaned = re.sub(r"\s+", " ", (value or "").strip())
+    cleaned = cleaned.strip(" :,-;")
+    cleaned = re.sub(r"^(?:là|la)\s+", "", cleaned, flags=re.IGNORECASE).strip()
+    return cleaned.strip(" :,-;")
 
 
 def _build_subject(data_question: str) -> str:
