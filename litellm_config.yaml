@@ -3,7 +3,7 @@ model_list:
   # the Ollama root URL, not Ollama's OpenAI-compatible /v1 endpoint.
   - model_name: auto-model
     litellm_params:
-      model: ollama_chat/qwen3-14b-q5:latest
+      model: ollama_chat/qwen3:14b
       api_base: os.environ/QWEN_CHAT_API_BASE
       headers:
         ngrok-skip-browser-warning: "true"
@@ -18,12 +18,14 @@ model_list:
       cache_creation_input_token_cost: 0.0
       cache_read_input_token_cost: 0.0
 
-  # Local Qwen3 chat model served by the external Ollama host. Do not point
+  # Local Qwen3 chat model served by the external Ollama host. Use the
+  # official Ollama qwen3:14b tag because it includes the correct chat
+  # template, stop tokens, and thinking controls. Do not point
   # QWEN_CHAT_API_BASE to /v1; direct Ollama /v1 may return reasoning with
   # empty message content for Qwen3.
   - model_name: local-qwen-chat
     litellm_params:
-      model: ollama_chat/qwen3-14b-q5:latest
+      model: ollama_chat/qwen3:14b
       api_base: os.environ/QWEN_CHAT_API_BASE
       headers:
         ngrok-skip-browser-warning: "true"

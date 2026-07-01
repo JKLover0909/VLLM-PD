@@ -214,6 +214,7 @@ class GmailSender:
     def _credentials(self):
         try:
             from google.auth.transport.requests import Request
+            from google.auth.exceptions import RefreshError
             from google.oauth2.credentials import Credentials
             from google_auth_oauthlib.flow import InstalledAppFlow
         except ImportError as exc:
@@ -229,7 +230,14 @@ class GmailSender:
             )
 
         if credentials and credentials.expired and credentials.refresh_token:
-            credentials.refresh(Request())
+            try:
+                credentials.refresh(Request())
+            except RefreshError as exc:
+                raise GmailSenderError(
+                    "Gmail OAuth token đã hết hạn hoặc bị Google thu hồi. "
+                    f"Hãy tạo lại token OAuth tại {self.token_path} bằng "
+                    "scripts/init_gmail_oauth.py rồi restart app."
+                ) from exc
 
         if not credentials or not credentials.valid:
             if not self.allow_interactive_auth:
