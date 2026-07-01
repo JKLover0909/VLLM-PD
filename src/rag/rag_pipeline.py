@@ -120,7 +120,7 @@ MODEL_ROUTES = {
     "grok": "grok-model",
 }
 
-LOCAL_CHAT_MODEL_ALIASES = {"auto-model", "local-gemma", "local-qwen-chat"}
+LOCAL_CHAT_MODEL_ALIASES = {"local-gemma", "local-qwen-chat"}
 LOCAL_MODEL_ALIASES = LOCAL_CHAT_MODEL_ALIASES | {"local-qwen-coder", "coding-model"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 

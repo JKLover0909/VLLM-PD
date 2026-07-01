@@ -71,8 +71,8 @@ services:
       - ${MEIBOOK_ENV_FILE:-.env.docker}
     environment:
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
-      OLLAMA_API_BASE: http://192.84.106.72:11434
-      QWEN_CHAT_API_BASE: http://192.84.106.72:11434
+      OLLAMA_API_BASE: https://carless-overarch-establish.ngrok-free.dev
+      QWEN_CHAT_API_BASE: https://carless-overarch-establish.ngrok-free.dev
       QWEN_CODER_API_BASE: http://100.101.211.84:8000/v1
       QWEN_CODER_API_KEY: sk-local
     command: ["--local", "--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]

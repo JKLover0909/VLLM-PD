@@ -327,7 +327,7 @@ class QueryRequest(BaseModel):
     session_id: str
     question: str
     stream: bool = True
-    model: Literal["auto", "local", "openai", "grok"] = "openai"
+    model: Literal["auto", "local", "openai", "grok"] = "auto"
     mode: Literal["mkac", "mes", "research"] = "mkac"
     ui_language: Literal["vi", "ja"] = "vi"
     employee_id: Optional[str] = None
@@ -887,46 +887,21 @@ async def list_models(language: Literal["vi", "ja"] = "vi"):
                 "name": "Qwen Local Model",
                 "description": "Chạy Qwen nội bộ/local cho hỏi đáp dạng text.",
             },
-            "openai": {
-                "name": "Cloud Model",
-                "description": "Mặc định cho hỏi đáp MKAC, dùng model cloud ổn định.",
-            },
-            "grok": {
-                "name": "Research Model",
-                "description": "Dành riêng cho chế độ nghiên cứu tài liệu và hình ảnh.",
-            },
         },
         "ja": {
             "local": {
                 "name": "Qwenローカルモデル",
                 "description": "テキストQ&A向けに社内/ローカルQwenモデルを使用します。",
             },
-            "openai": {
-                "name": "クラウドモデル",
-                "description": "MKAC Q&Aの標準モデルです。安定したクラウドモデルを使用します。",
-            },
-            "grok": {
-                "name": "調査モデル",
-                "description": "資料調査と画像を含む質問専用のモデルです。",
-            },
         },
     }
     text = model_text.get(language, model_text["vi"])
     return {
-        "default": "openai",
+        "default": "auto",
         "models": [
             {
-                "id": "local",
+                "id": "auto",
                 **text["local"],
-            },
-            {
-                "id": "openai",
-                **text["openai"],
-            },
-            {
-                "id": "grok",
-                **text["grok"],
-                "hidden_in_mkac": True,
             },
         ],
     }

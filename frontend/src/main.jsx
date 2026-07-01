@@ -147,7 +147,7 @@ const UI_TEXT = {
         inputLabel: "Câu hỏi nghiên cứu",
         placeholderReady: "Nhập chủ đề nghiên cứu...",
         placeholderEmpty: "Hãy tải tài liệu lên trước khi đặt câu hỏi...",
-        lockedModel: "Chế độ nghiên cứu luôn dùng Grok",
+        lockedModel: "Chế độ nghiên cứu đang tạm ẩn",
       },
     },
     theme: {
@@ -265,12 +265,12 @@ const UI_TEXT = {
         description: "Chạy Qwen nội bộ/local cho hỏi đáp dạng text.",
       },
       openai: {
-        name: "Cloud Model",
-        description: "Mặc định cho hỏi đáp MKAC, dùng model cloud ổn định.",
+        name: "Model dự phòng",
+        description: "Chỉ dùng làm tuyến dự phòng kỹ thuật.",
       },
       grok: {
-        name: "Research Model",
-        description: "Dành riêng cho chế độ nghiên cứu tài liệu và hình ảnh.",
+        name: "Model nghiên cứu",
+        description: "Chỉ dùng khi bật lại chế độ nghiên cứu tài liệu.",
       },
     },
   },
@@ -307,7 +307,7 @@ const UI_TEXT = {
         inputLabel: "調査質問",
         placeholderReady: "調査テーマを入力してください...",
         placeholderEmpty: "質問する前に資料をアップロードしてください...",
-        lockedModel: "資料調査モードでは常にGrokを使用します",
+        lockedModel: "資料調査モードは一時的に非表示です",
       },
     },
     theme: {
@@ -425,12 +425,12 @@ const UI_TEXT = {
         description: "テキストQ&A向けに社内/ローカルQwenモデルを使用します。",
       },
       openai: {
-        name: "クラウドモデル",
-        description: "MKAC Q&Aの標準モデルです。安定したクラウドモデルを使用します。",
+        name: "予備モデル",
+        description: "技術的な予備ルートとしてのみ使用します。",
       },
       grok: {
-        name: "調査モデル",
-        description: "資料調査と画像を含む質問専用のモデルです。",
+        name: "資料調査モデル",
+        description: "資料調査モードを再度有効にした場合のみ使用します。",
       },
     },
   },
@@ -759,7 +759,7 @@ function App() {
     lots: 0,
     error_events: 0,
   });
-  const [model, setModel] = useState("openai");
+  const [model, setModel] = useState("auto");
   const [mode, setMode] = useState("mkac");
   const [question, setQuestion] = useState("");
   const [sourcesByMode, setSourcesByMode] = useState({
@@ -962,7 +962,7 @@ function App() {
         setMkacStatus(mkacData);
         setMesStatus(healthData.mes_database || {});
         setModel((current) => {
-          const nextDefault = modelData.default || "openai";
+          const nextDefault = modelData.default || "auto";
           return current === "auto" || current === "grok" ? nextDefault : current;
         });
         setHealth("online");
@@ -1840,7 +1840,7 @@ function App() {
               <div className="model-select locked accent-grok" title={modeText("research").lockedModel}>
                 <Bot size={17} />
                 <span className="model-select-trigger">
-                  <span>{selectedModel?.name || "Grok 4.20 Reasoning"}</span>
+                  <span>{selectedModel?.name || modeText("research").lockedModel}</span>
                 </span>
               </div>
             )}
