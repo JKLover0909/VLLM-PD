@@ -3,10 +3,12 @@
   "max_suggestions": 3,
   "mkac": [
     {
-      "question": "MKAC có bao nhiêu phòng ban?",
-      "answer": "MKAC có 16 phòng ban/nhóm theo thống kê nhân sự nội bộ.",
-      "question_ja": "MKACにはいくつの部署がありますか？",
-      "answer_ja": "社内人事統計によると、MKACには16の部門/グループがあります。"
+      "question": "Meiko Automation có bao nhiêu phòng ban, gồm các phòng ban nào?",
+      "aliases": ["MKAC có bao nhiêu phòng ban?"],
+      "answer": "Meiko Automation có 16 phòng ban/nhóm theo thống kê nhân sự nội bộ, gồm: AGV, AI, Ban Giám đốc, Gia công, HCNS, ICT, Kho, Kinh doanh, Kế toán, Lắp ráp, Mua hàng, QC, R&D S, Thiết kế cơ khí, Thiết kế điện và Trợ lý.",
+      "question_ja": "Meiko Automationにはいくつの部署があり、どの部署がありますか？",
+      "aliases_ja": ["MKACにはいくつの部署がありますか？"],
+      "answer_ja": "社内人事統計によると、Meiko Automationには16の部門/グループがあります。対象は、AGV、AI、Ban Giám đốc、Gia công、HCNS、ICT、Kho、Kinh doanh、Kế toán、Lắp ráp、Mua hàng、QC、R&D S、Thiết kế cơ khí、Thiết kế điện、Trợ lýです。"
     },
     {
       "question": "Quy định làm thêm giờ ở MKAC như thế nào?",
@@ -72,33 +74,33 @@
   "mes": [
     {
       "question": "Mã Lot nào có số lượng lỗi nhiều nhất?",
-      "answer": "Hệ thống phát hiện Lot có mã '000316-02-000' thường xuyên ghi nhận số lượng lỗi cao nhất trong các ca sản xuất gần đây.",
+      "answer": "Hệ thống sẽ truy vấn MES snapshot hiện tại để xác định Lot có tổng số lỗi cao nhất.",
       "question_ja": "エラー数が最も多いLotはどれですか？",
-      "answer_ja": "システム上では、最近の生産データにおいてLot '000316-02-000' が最も多くのエラーを記録する傾向があります。"
-    },
-    {
-      "question": "Lot 000432-01-000 có những lỗi gì?",
-      "answer": "Trong cơ sở dữ liệu, Lot 000432-01-000 chủ yếu gặp các lỗi liên quan đến trầy xước bề mặt và sai lệch kích thước lắp ráp.",
-      "question_ja": "Lot 000432-01-000にはどのようなエラーがありますか？",
-      "answer_ja": "データベース上では、Lot 000432-01-000 は主に表面の傷や組立寸法のずれに関連するエラーが記録されています。"
-    },
-    {
-      "question": "Mã hàng 3736-0008 có tổng bao nhiêu lỗi?",
-      "answer": "Theo thống kê, mã hàng 3736-0008 hiện đang ghi nhận tổng cộng khoảng 12 bản ghi sự kiện lỗi trong hệ thống.",
-      "question_ja": "品番3736-0008の総エラー数はいくつですか？",
-      "answer_ja": "統計上、品番3736-0008 は現在システム内で合計約12件のエラーイベント記録があります。"
-    },
-    {
-      "question": "Sản phẩm nào có tổng lỗi cao nhất?",
-      "answer": "Sản phẩm có mã hàng '3736-0008' hiện đang dẫn đầu về tổng số lượng lỗi phát sinh trong quy trình kiểm tra chất lượng.",
-      "question_ja": "総エラー数が最も多い製品はどれですか？",
-      "answer_ja": "品番 '3736-0008' の製品が、品質検査工程で発生した総エラー数において現在最も多く記録されています。"
+      "answer_ja": "現在のMESスナップショットを照会して、総エラー数が最も多いLotを特定します。"
     },
     {
       "question": "Trong Lot lỗi nhiều nhất, loại lỗi nào phổ biến nhất?",
-      "answer": "Trong các Lot có nhiều lỗi, loại lỗi phổ biến nhất là 'Bavia' (Mã lỗi: E012) và 'Xước' (Mã lỗi: E005).",
+      "answer": "Hệ thống sẽ dựa trên MES snapshot hiện tại để tìm Lot có tổng lỗi cao nhất và thống kê các loại lỗi phổ biến nhất trong Lot đó.",
       "question_ja": "エラー数が最も多いLotで、最も多いエラー種類は何ですか？",
-      "answer_ja": "エラー数が多いLotでは、代表的なエラー種類として 'Bavia'（エラーコード: E012）と 'Xước'（エラーコード: E005）が多く見られます。"
+      "answer_ja": "現在のMESスナップショットをもとに、総エラー数が最も多いLotを特定し、そのLotで最も多いエラー種類を集計します。"
+    },
+    {
+      "question": "Sản phẩm nào có tổng lỗi cao nhất?",
+      "answer": "Hệ thống sẽ truy vấn MES snapshot hiện tại để xác định sản phẩm có tổng số lỗi cao nhất.",
+      "question_ja": "総エラー数が最も多い製品はどれですか？",
+      "answer_ja": "現在のMESスナップショットを照会して、総エラー数が最も多い製品を特定します。"
+    },
+    {
+      "question": "Có bao nhiêu Lot đang có dữ liệu lỗi trong hệ thống?",
+      "answer": "Hệ thống sẽ thống kê số Lot có dữ liệu lỗi trong MES snapshot hiện tại.",
+      "question_ja": "エラー情報があるLotはいくつありますか？",
+      "answer_ja": "現在のMESスナップショットに基づいて、エラー情報があるLot数を集計します。"
+    },
+    {
+      "question": "Tổng số bản ghi lỗi trong hệ thống là bao nhiêu?",
+      "answer": "Hệ thống sẽ thống kê tổng số bản ghi lỗi trong MES snapshot hiện tại.",
+      "question_ja": "システム内のエラー記録の総数はいくつですか？",
+      "answer_ja": "現在のMESスナップショットに基づいて、エラー記録の総数を集計します。"
     },
     {
       "question": "Hiện tại có bao nhiêu Lot trong hệ thống?",
@@ -114,11 +116,11 @@
     },
     {
       "question": "Thống kê lỗi theo sản phẩm?",
-      "answer": "Dữ liệu cho thấy sản phẩm 3736-0008 chiếm khoảng 40% tổng số lỗi, tiếp theo là sản phẩm 1290-5511 chiếm khoảng 25%."
+      "answer": "Hệ thống sẽ thống kê tổng số lỗi theo từng sản phẩm dựa trên MES snapshot hiện tại."
     },
     {
-      "question": "Lot 000316-02-000 có phải Lot test không?",
-      "answer": "Không, Lot 000316-02-000 là Lot sản xuất thực tế (Mass Production), không được đánh dấu là Lot chạy thử (Test Run)."
+      "question": "Hệ thống có loại bỏ Lot test khỏi kết quả không?",
+      "answer": "Có. Các Lot hoặc mã hàng có dấu hiệu dữ liệu test sẽ bị loại khỏi kết quả trả lời MES."
     },
     {
       "question": "Tổng số bản ghi lỗi trong hệ thống là bao nhiêu?",

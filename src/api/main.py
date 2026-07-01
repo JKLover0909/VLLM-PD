@@ -535,6 +535,61 @@ def employee_context_for_query(
     return context
 
 
+def employee_directory_query_response(
+    req: QueryRequest,
+    employee: Optional[EmployeeResponse],
+    *,
+    question: Optional[str] = None,
+) -> Optional[QueryResponse]:
+    """Answer structured employee-directory questions directly from SQLite."""
+    if req.mode != "mkac" or parse_email_send_command(req.question) is not None:
+        return None
+
+    lookup_question = question or req.question
+    departments = employee_directory.department_counts_for_question(
+        lookup_question,
+        current_department=employee.department if employee else "",
+    )
+    if not departments:
+        return None
+
+    if req.ui_language == "ja":
+        if len(departments) == 1:
+            department = departments[0]
+            answer = (
+                f"{department['department']}部門には"
+                f"{department['size']}人が在籍しています。"
+            )
+        else:
+            lines = [
+                f"{department['department']}: {department['size']}人"
+                for department in departments
+            ]
+            answer = "該当する部門の人数は以下の通りです。\n" + "\n".join(lines)
+    else:
+        if len(departments) == 1:
+            department = departments[0]
+            answer = (
+                f"Phòng {department['department']} hiện có "
+                f"{department['size']} người."
+            )
+        else:
+            lines = [
+                f"- {department['department']}: {department['size']} người"
+                for department in departments
+            ]
+            answer = "Số nhân sự của các phòng ban được hỏi là:\n" + "\n".join(lines)
+
+    return QueryResponse(
+        answer=answer,
+        sources=[],
+        session_id=req.session_id,
+        model="auto-model",
+        mode=req.mode,
+        answer_scope="mkac",
+    )
+
+
 async def localize_query_request(req: QueryRequest) -> QueryRequest:
     """Translate Japanese UI questions into Vietnamese for the core backend."""
     if req.ui_language != "ja" or translation_service is None:
@@ -1017,11 +1072,19 @@ def prepared_query_response(req: QueryRequest) -> Optional[QueryResponse]:
     data = _load_quick_answers()
     question_key = normalize_prepared_question(req.question)
     for item in data.get("mkac", []):
-        source_question = item.get("question_ja" if req.ui_language == "ja" else "question", "")
         answer = item.get("answer_ja" if req.ui_language == "ja" else "answer", "")
-        if not source_question or not answer:
+        if not answer:
             continue
-        if normalize_prepared_question(source_question) == question_key:
+        question_field = "question_ja" if req.ui_language == "ja" else "question"
+        aliases_field = "aliases_ja" if req.ui_language == "ja" else "aliases"
+        candidates = [item.get(question_field, "")]
+        aliases = item.get(aliases_field, [])
+        if isinstance(aliases, list):
+            candidates.extend(str(alias) for alias in aliases)
+        if any(
+            candidate and normalize_prepared_question(candidate) == question_key
+            for candidate in candidates
+        ):
             return QueryResponse(
                 answer=answer,
                 sources=[],
@@ -1192,6 +1255,17 @@ async def query_documents(req: QueryRequest, request: Request):
         return cached_response.model_copy(update={"session_id": req.session_id})
 
     try:
+        directory_response = employee_directory_query_response(req, current_employee)
+        if directory_response is not None:
+            logger.info(
+                "Employee directory answer hit mode=%s language=%s",
+                req.mode,
+                req.ui_language,
+            )
+            await set_cached_query_response(cache_key, directory_response)
+            await wait_for_min_query_latency(request_started_at)
+            return directory_response
+
         prepared_response = prepared_query_response(req)
         if prepared_response is not None:
             logger.info("Prepared query answer hit mode=%s language=%s", req.mode, req.ui_language)
@@ -1204,6 +1278,21 @@ async def query_documents(req: QueryRequest, request: Request):
             localized_req,
             current_employee,
         )
+        directory_response = employee_directory_query_response(
+            req,
+            current_employee,
+            question=localized_req.question,
+        )
+        if directory_response is not None:
+            logger.info(
+                "Localized employee directory answer hit mode=%s language=%s",
+                req.mode,
+                req.ui_language,
+            )
+            await set_cached_query_response(cache_key, directory_response)
+            await wait_for_min_query_latency(request_started_at)
+            return directory_response
+
         email_response = await handle_email_send_query(localized_req, current_user_context)
         if email_response is not None:
             translated_email_answer = await translate_answer_for_ui(
@@ -1309,11 +1398,68 @@ async def query_stream(req: QueryRequest, request: Request):
             },
         )
     try:
+        directory_response = employee_directory_query_response(req, current_employee)
+        if directory_response is not None:
+            logger.info(
+                "Streaming employee directory answer hit mode=%s language=%s",
+                req.mode,
+                req.ui_language,
+            )
+
+            async def directory_event_generator():
+                import json
+
+                await set_cached_query_response(cache_key, directory_response)
+                await wait_for_min_query_latency(request_started_at)
+                yield f"data: {json.dumps({'type': 'sources', 'sources': directory_response.sources})}\n\n"
+                yield f"data: {json.dumps({'type': 'meta', 'model': directory_response.model, 'mode': directory_response.mode, 'answer_scope': directory_response.answer_scope})}\n\n"
+                yield f"data: {json.dumps({'type': 'token', 'content': directory_response.answer})}\n\n"
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+            return StreamingResponse(
+                directory_event_generator(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                },
+            )
+
         localized_req = await localize_query_request(req)
         current_user_context = employee_context_for_query(
             localized_req,
             current_employee,
         )
+        directory_response = employee_directory_query_response(
+            req,
+            current_employee,
+            question=localized_req.question,
+        )
+        if directory_response is not None:
+            logger.info(
+                "Streaming localized employee directory answer hit mode=%s language=%s",
+                req.mode,
+                req.ui_language,
+            )
+
+            async def localized_directory_event_generator():
+                import json
+
+                await set_cached_query_response(cache_key, directory_response)
+                await wait_for_min_query_latency(request_started_at)
+                yield f"data: {json.dumps({'type': 'sources', 'sources': directory_response.sources})}\n\n"
+                yield f"data: {json.dumps({'type': 'meta', 'model': directory_response.model, 'mode': directory_response.mode, 'answer_scope': directory_response.answer_scope})}\n\n"
+                yield f"data: {json.dumps({'type': 'token', 'content': directory_response.answer})}\n\n"
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+            return StreamingResponse(
+                localized_directory_event_generator(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                },
+            )
     except TranslationError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
 

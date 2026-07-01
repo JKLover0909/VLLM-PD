@@ -145,6 +145,18 @@ class EmployeeDirectory:
         departments = self._mentioned_departments(question, current_department)
         return [self.department_profile(department) for department in departments]
 
+    def department_counts_for_question(
+        self,
+        question: str,
+        current_department: str = "",
+    ) -> list[dict[str, Any]]:
+        """Return department sizes for direct headcount questions."""
+        normalized_question = normalize_text(question)
+        if not self._question_requests_department_count(normalized_question, question):
+            return []
+        departments = self._mentioned_departments(question, current_department)
+        return [self.department_profile(department) for department in departments]
+
     def people_context_for_question(self, question: str) -> list[dict[str, Any]]:
         """Return employee profiles when a full employee name appears in a question."""
         if not self.db_path.is_file():
@@ -319,6 +331,28 @@ class EmployeeDirectory:
             "manager",
         }
         return any(keyword in normalized_question for keyword in keywords)
+
+    @staticmethod
+    def _question_requests_department_count(
+        normalized_question: str,
+        original_question: str,
+    ) -> bool:
+        keywords = {
+            "bao nhieu nguoi",
+            "bao nhieu nhan su",
+            "may nguoi",
+            "so nguoi",
+            "so luong nguoi",
+            "so nhan su",
+            "tong so nguoi",
+            "tong nhan su",
+            "headcount",
+            "how many people",
+            "how many employees",
+        }
+        if any(keyword in normalized_question for keyword in keywords):
+            return True
+        return bool(re.search(r"(何人|人数|社員数|従業員数)", original_question or ""))
 
     @staticmethod
     def _question_requests_person_identity(normalized_question: str) -> bool:

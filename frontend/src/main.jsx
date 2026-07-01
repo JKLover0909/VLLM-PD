@@ -46,8 +46,8 @@ const QUICK_PROMPTS = {
     ],
     mes: [
       "Mã Lot nào có số lượng lỗi nhiều nhất?",
-      "Lot 000432-01-000 có những lỗi gì?",
-      "Mã hàng 3736-0008 có tổng bao nhiêu lỗi?",
+      "Trong Lot lỗi nhiều nhất, loại lỗi nào phổ biến nhất?",
+      "Sản phẩm nào có tổng lỗi cao nhất?",
     ],
     research: [
       "Lập báo cáo nghiên cứu tổng hợp từ các tài liệu",
@@ -63,8 +63,8 @@ const QUICK_PROMPTS = {
     ],
     mes: [
       "エラー数が最も多いLotはどれですか？",
-      "Lot 000432-01-000にはどのようなエラーがありますか？",
-      "品番3736-0008の総エラー数はいくつですか？",
+      "エラー数が最も多いLotで、最も多いエラー種類は何ですか？",
+      "総エラー数が最も多い製品はどれですか？",
     ],
     research: [
       "資料から総合的な調査レポートを作成してください",

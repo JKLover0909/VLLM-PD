@@ -1603,6 +1603,8 @@ class RAGPipeline:
             "Looking at",
             "In Đoạn",
             "In Doan",
+            "I should count",
+            "Let's list",
             "I need to",
             "The user is asking",
             "The answer should",
