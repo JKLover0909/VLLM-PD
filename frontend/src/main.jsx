@@ -1409,6 +1409,7 @@ function App() {
         id: assistantId,
         role: "assistant",
         content: "",
+        status: "",
         model: selectedModel?.name || model,
         mode: requestMode,
         answerScope:
@@ -1437,6 +1438,15 @@ function App() {
           conversation_context: conversationContext,
         },
         (event) => {
+          if (event.type === "status") {
+            setModeMessages(requestMode, (current) =>
+              current.map((item) =>
+                item.id === assistantId
+                  ? { ...item, status: event.message || item.status }
+                  : item,
+              ),
+            );
+          }
           if (event.type === "sources") {
             setModeSources(requestMode, event.sources || []);
             setModeMessages(requestMode, (current) =>
@@ -1466,7 +1476,11 @@ function App() {
             setModeMessages(requestMode, (current) =>
               current.map((item) =>
                 item.id === assistantId
-                  ? { ...item, content: item.content + (event.content || "") }
+                  ? {
+                      ...item,
+                      content: item.content + (event.content || ""),
+                      status: "",
+                    }
                   : item,
               ),
             );
@@ -2090,8 +2104,8 @@ function App() {
                           >
                             <Loader2 className="spin" size={17} />
                             <span className="waiting-copy">
-                              <span key={waitingMessageIndex}>
-                                {text.waiting[waitingMessageIndex]}
+                              <span key={message.status || waitingMessageIndex}>
+                                {message.status || text.waiting[waitingMessageIndex]}
                               </span>
                               {language === "ja" && (
                                 <small>{t("common.languageConverting")}</small>

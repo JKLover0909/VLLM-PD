@@ -61,6 +61,15 @@ Quy tắc:
 10. Chỉ trả lời đúng thông tin người dùng hỏi; không liệt kê thêm chỉ số không
     cần thiết."""
 
+MES_GENERAL_SYSTEM_PROMPT = """Bạn là trợ lý MES của MKAC.
+
+Nhiệm vụ của bạn là trả lời các câu hỏi giải thích khái niệm, nghiệp vụ hoặc
+quy trình MES ở mức tổng quan. Không truy vấn dữ liệu, không đưa số liệu cụ thể,
+không nói như thể đã xem MES snapshot và không suy đoán thông tin nội bộ.
+
+Nếu câu hỏi cần số liệu cụ thể theo Lot, mã hàng, mã lỗi, thời gian hoặc thống
+kê, hãy hướng dẫn người dùng hỏi bằng các thông tin đó để hệ thống truy vấn MES."""
+
 MES_UNSUPPORTED_ANSWER = (
     "Chưa nhận diện được truy vấn MES này. Bạn có thể hỏi về thông tin một Lot, "
     "chi tiết lỗi theo Lot, tên mã lỗi hoặc thống kê lỗi theo mã hàng."
@@ -124,10 +133,18 @@ class MesQueryService:
             answer, routed_model = compound_highest_lot_answer
             return answer, [], routed_model, "mes_database"
 
-        sql_answer = await self._generate_sql_answer(question, model)
-        if sql_answer is not None:
-            answer, routed_model = sql_answer
-            return answer, [], routed_model, "mes_database"
+        if self.should_use_sql_agent(question):
+            sql_answer = await self._generate_sql_answer(question, model)
+            if sql_answer is not None:
+                answer, routed_model = sql_answer
+                return answer, [], routed_model, "mes_database"
+        else:
+            logger.info("Skipping MES SQL agent for non-data question.")
+            answer, routed_model = await self._generate_general_mes_answer(
+                question,
+                model,
+            )
+            return answer, [], routed_model, "mes"
 
         if (
             self.is_highest_lot_error_question(question)
@@ -150,6 +167,37 @@ class MesQueryService:
                 return answer, [], routed_model, "mes_database"
 
         return MES_UNSUPPORTED_ANSWER, [], self.resolve_model(model), "mes_database"
+
+    async def _generate_general_mes_answer(
+        self,
+        question: str,
+        model: str,
+    ) -> tuple[str, str]:
+        routed_model = self.resolve_model(model)
+        fallback_answer = (
+            "Đây là câu hỏi giải thích nghiệp vụ MES, không phải truy vấn số liệu. "
+            "MES là hệ thống hỗ trợ theo dõi và quản lý dữ liệu sản xuất như Lot, "
+            "mã hàng, lỗi phát sinh và trạng thái xử lý. Nếu cần số liệu cụ thể, "
+            "hãy hỏi theo Lot, mã hàng, mã lỗi hoặc khoảng thời gian."
+        )
+        if routed_model in LOCAL_MODEL_ALIASES:
+            return fallback_answer, routed_model
+        try:
+            response = await self.openai_client.chat.completions.create(
+                model=routed_model,
+                messages=[
+                    {"role": "system", "content": MES_GENERAL_SYSTEM_PROMPT},
+                    {"role": "user", "content": question},
+                ],
+                temperature=0.1,
+                max_tokens=360,
+                **self.provider_options(routed_model),
+            )
+            candidate = (response.choices[0].message.content or "").strip()
+            return candidate or fallback_answer, routed_model
+        except Exception as exc:
+            logger.warning("MES general answer generation failed: %s", exc)
+            return fallback_answer, routed_model
 
     async def query_stream(
         self,
@@ -916,6 +964,107 @@ class MesQueryService:
             char for char in normalized if unicodedata.category(char) != "Mn"
         )
         return re.sub(r"[^a-z0-9]+", " ", normalized).strip()
+
+    @classmethod
+    def should_use_sql_agent(cls, question: str) -> bool:
+        """Return True only for questions that look like MES data queries."""
+        original = question or ""
+        normalized = cls.normalized_text(question)
+        if not normalized and not original:
+            return False
+        strong_data_markers = (
+            "ma hang",
+            "ma loi",
+            "error code",
+            "defect code",
+            "product code",
+            "bao nhieu",
+            "tong",
+            "so luong",
+            "thong ke",
+            "liet ke",
+            "danh sach",
+            "top",
+            "nhieu nhat",
+            "cao nhat",
+            "pho bien nhat",
+            "count",
+            "sum",
+            "total",
+            "list",
+            "rank",
+            "compare",
+            "comparison",
+        )
+        if any(marker in normalized for marker in strong_data_markers):
+            return True
+        if re.search(
+            r"(ロット|Lot|品番|製品|合計|総数|件数|一覧|上位|多い|最大|集計)",
+            original,
+        ):
+            return True
+
+        general_markers = (
+            "la gi",
+            "khai niem",
+            "giai thich",
+            "quy trinh",
+            "huong dan",
+            "cach ghi nhan",
+            "y nghia",
+            "what is",
+            "explain",
+            "concept",
+            "process",
+            "procedure",
+        )
+        if any(marker in normalized for marker in general_markers):
+            return False
+        if re.search(r"(とは|説明|意味|手順|プロセス|ガイド)", original):
+            return False
+
+        structured_markers = (
+            "lot",
+            "lots",
+            "ma hang",
+            "ma loi",
+            "loi",
+            "error",
+            "errors",
+            "defect",
+            "defects",
+            "product",
+            "product code",
+            "process",
+            "cong doan",
+            "thong ke",
+            "tong",
+            "so luong",
+            "bao nhieu",
+            "liet ke",
+            "danh sach",
+            "top",
+            "nhieu nhat",
+            "cao nhat",
+            "pho bien",
+            "count",
+            "sum",
+            "total",
+            "list",
+            "rank",
+            "compare",
+            "comparison",
+        )
+        if any(marker in normalized for marker in structured_markers):
+            return True
+        if re.search(r"\b(lo|ng)\b", normalized):
+            return True
+        return bool(
+            re.search(
+                r"(ロット|Lot|エラー|不良|欠陥|品番|製品|工程|合計|総数|件数|一覧|上位|多い|最大|集計)",
+                original,
+            )
+        )
 
     @staticmethod
     def extract_date(question: str) -> str:

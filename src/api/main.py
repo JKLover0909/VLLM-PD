@@ -546,39 +546,13 @@ def employee_directory_query_response(
         return None
 
     lookup_question = question or req.question
-    departments = employee_directory.department_counts_for_question(
+    answer = employee_directory.structured_answer_for_question(
         lookup_question,
         current_department=employee.department if employee else "",
+        language=req.ui_language,
     )
-    if not departments:
+    if not answer:
         return None
-
-    if req.ui_language == "ja":
-        if len(departments) == 1:
-            department = departments[0]
-            answer = (
-                f"{department['department']}部門には"
-                f"{department['size']}人が在籍しています。"
-            )
-        else:
-            lines = [
-                f"{department['department']}: {department['size']}人"
-                for department in departments
-            ]
-            answer = "該当する部門の人数は以下の通りです。\n" + "\n".join(lines)
-    else:
-        if len(departments) == 1:
-            department = departments[0]
-            answer = (
-                f"Phòng {department['department']} hiện có "
-                f"{department['size']} người."
-            )
-        else:
-            lines = [
-                f"- {department['department']}: {department['size']} người"
-                for department in departments
-            ]
-            answer = "Số nhân sự của các phòng ban được hỏi là:\n" + "\n".join(lines)
 
     return QueryResponse(
         answer=answer,
@@ -654,6 +628,60 @@ async def translate_sources_for_ui(
                 logger.warning("Cannot translate source preview for UI: %s", exc)
         translated_sources.append(translated_source)
     return translated_sources
+
+
+QUERY_STREAM_STATUS_TEXT = {
+    "vi": {
+        "received": "Tôi đã hiểu rồi, bạn chờ chút nhé...",
+        "cache": "Đang kiểm tra kết quả đã xử lý trước đó...",
+        "routing": "Đang xác định loại câu hỏi...",
+        "quick_answer": "Đang kiểm tra câu trả lời đã chuẩn bị...",
+        "hr_directory": "Đang kiểm tra danh bạ nhân sự...",
+        "email": "Đang chuẩn bị nội dung email...",
+        "mes": "Đang truy vấn dữ liệu MES...",
+        "rag": "Đang tìm nguồn tài liệu phù hợp...",
+        "translation": "Đang chuyển đổi ngôn ngữ...",
+        "finalizing": "Đang tổng hợp câu trả lời...",
+        "almost_done": "Sắp ra rồi...",
+    },
+    "ja": {
+        "received": "承知しました。少々お待ちください...",
+        "cache": "以前の処理結果を確認しています...",
+        "routing": "質問の種類を判定しています...",
+        "quick_answer": "準備済みの回答を確認しています...",
+        "hr_directory": "人事名簿を確認しています...",
+        "email": "メール内容を準備しています...",
+        "mes": "MESデータを照会しています...",
+        "rag": "関連資料を検索しています...",
+        "translation": "言語を変換しています...",
+        "finalizing": "回答をまとめています...",
+        "almost_done": "もうすぐ結果が出ます...",
+    },
+}
+
+
+def query_status_text(req: QueryRequest, key: str) -> str:
+    language_text = QUERY_STREAM_STATUS_TEXT.get(
+        req.ui_language,
+        QUERY_STREAM_STATUS_TEXT["vi"],
+    )
+    return language_text.get(key, QUERY_STREAM_STATUS_TEXT["vi"].get(key, key))
+
+
+def sse_event(payload: Dict[str, Any]) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def sse_status(req: QueryRequest, key: str) -> str:
+    return sse_event({"type": "status", "message": query_status_text(req, key)})
+
+
+def query_processing_status_key(req: QueryRequest) -> str:
+    if req.mode == "mes":
+        return "mes"
+    if req.mode == "mkac":
+        return "rag"
+    return "rag"
 
 
 def ensure_query_services_ready() -> None:
@@ -1361,11 +1389,14 @@ async def query_stream(req: QueryRequest, request: Request):
             import json
 
             response = cached_response.model_copy(update={"session_id": req.session_id})
+            yield sse_status(req, "received")
+            yield sse_status(req, "cache")
             await wait_for_min_query_latency(request_started_at)
-            yield f"data: {json.dumps({'type': 'sources', 'sources': response.sources})}\n\n"
-            yield f"data: {json.dumps({'type': 'meta', 'model': response.model, 'mode': response.mode, 'answer_scope': response.answer_scope})}\n\n"
-            yield f"data: {json.dumps({'type': 'token', 'content': response.answer})}\n\n"
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            yield sse_status(req, "finalizing")
+            yield sse_event({"type": "sources", "sources": response.sources})
+            yield sse_event({"type": "meta", "model": response.model, "mode": response.mode, "answer_scope": response.answer_scope})
+            yield sse_event({"type": "token", "content": response.answer})
+            yield sse_event({"type": "done"})
 
         return StreamingResponse(
             cached_event_generator(),
@@ -1382,12 +1413,15 @@ async def query_stream(req: QueryRequest, request: Request):
         async def prepared_event_generator():
             import json
 
+            yield sse_status(req, "received")
+            yield sse_status(req, "quick_answer")
             await set_cached_query_response(cache_key, prepared_response)
             await wait_for_min_query_latency(request_started_at)
-            yield f"data: {json.dumps({'type': 'sources', 'sources': prepared_response.sources})}\n\n"
-            yield f"data: {json.dumps({'type': 'meta', 'model': prepared_response.model, 'mode': prepared_response.mode, 'answer_scope': prepared_response.answer_scope})}\n\n"
-            yield f"data: {json.dumps({'type': 'token', 'content': prepared_response.answer})}\n\n"
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            yield sse_status(req, "finalizing")
+            yield sse_event({"type": "sources", "sources": prepared_response.sources})
+            yield sse_event({"type": "meta", "model": prepared_response.model, "mode": prepared_response.mode, "answer_scope": prepared_response.answer_scope})
+            yield sse_event({"type": "token", "content": prepared_response.answer})
+            yield sse_event({"type": "done"})
 
         return StreamingResponse(
             prepared_event_generator(),
@@ -1409,12 +1443,15 @@ async def query_stream(req: QueryRequest, request: Request):
             async def directory_event_generator():
                 import json
 
+                yield sse_status(req, "received")
+                yield sse_status(req, "hr_directory")
                 await set_cached_query_response(cache_key, directory_response)
                 await wait_for_min_query_latency(request_started_at)
-                yield f"data: {json.dumps({'type': 'sources', 'sources': directory_response.sources})}\n\n"
-                yield f"data: {json.dumps({'type': 'meta', 'model': directory_response.model, 'mode': directory_response.mode, 'answer_scope': directory_response.answer_scope})}\n\n"
-                yield f"data: {json.dumps({'type': 'token', 'content': directory_response.answer})}\n\n"
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                yield sse_status(req, "finalizing")
+                yield sse_event({"type": "sources", "sources": directory_response.sources})
+                yield sse_event({"type": "meta", "model": directory_response.model, "mode": directory_response.mode, "answer_scope": directory_response.answer_scope})
+                yield sse_event({"type": "token", "content": directory_response.answer})
+                yield sse_event({"type": "done"})
 
             return StreamingResponse(
                 directory_event_generator(),
@@ -1445,12 +1482,15 @@ async def query_stream(req: QueryRequest, request: Request):
             async def localized_directory_event_generator():
                 import json
 
+                yield sse_status(req, "received")
+                yield sse_status(req, "hr_directory")
                 await set_cached_query_response(cache_key, directory_response)
                 await wait_for_min_query_latency(request_started_at)
-                yield f"data: {json.dumps({'type': 'sources', 'sources': directory_response.sources})}\n\n"
-                yield f"data: {json.dumps({'type': 'meta', 'model': directory_response.model, 'mode': directory_response.mode, 'answer_scope': directory_response.answer_scope})}\n\n"
-                yield f"data: {json.dumps({'type': 'token', 'content': directory_response.answer})}\n\n"
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                yield sse_status(req, "finalizing")
+                yield sse_event({"type": "sources", "sources": directory_response.sources})
+                yield sse_event({"type": "meta", "model": directory_response.model, "mode": directory_response.mode, "answer_scope": directory_response.answer_scope})
+                yield sse_event({"type": "token", "content": directory_response.answer})
+                yield sse_event({"type": "done"})
 
             return StreamingResponse(
                 localized_directory_event_generator(),
@@ -1466,6 +1506,10 @@ async def query_stream(req: QueryRequest, request: Request):
     async def event_generator():
         import json
         try:
+            yield sse_status(req, "received")
+            yield sse_status(req, "routing")
+            if parse_email_send_command(localized_req.question) is not None:
+                yield sse_status(req, "email")
             email_response = await handle_email_send_query(
                 localized_req,
                 current_user_context,
@@ -1479,27 +1523,31 @@ async def query_stream(req: QueryRequest, request: Request):
                     email_response.sources,
                     req,
                 )
-                yield f"data: {json.dumps({'type': 'sources', 'sources': translated_email_sources})}\n\n"
-                yield f"data: {json.dumps({'type': 'meta', 'model': email_response.model, 'mode': email_response.mode, 'answer_scope': email_response.answer_scope})}\n\n"
-                yield f"data: {json.dumps({'type': 'token', 'content': translated_email_answer})}\n\n"
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                yield sse_status(req, "finalizing")
+                yield sse_event({"type": "sources", "sources": translated_email_sources})
+                yield sse_event({"type": "meta", "model": email_response.model, "mode": email_response.mode, "answer_scope": email_response.answer_scope})
+                yield sse_event({"type": "token", "content": translated_email_answer})
+                yield sse_event({"type": "done"})
                 return
 
             if req.ui_language == "ja":
+                yield sse_status(req, query_processing_status_key(localized_req))
                 answer, results, routed_model, answer_scope = await route_query(
                     localized_req,
                     current_user_context=current_user_context,
                 )
+                yield sse_status(req, "translation")
                 translated_answer = await translate_answer_for_ui(answer, req)
                 sources = await translate_sources_for_ui(
                     rag_pipeline.format_sources(results),
                     req,
                 )
                 await wait_for_min_query_latency(request_started_at)
-                yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
-                yield f"data: {json.dumps({'type': 'meta', 'model': routed_model, 'mode': req.mode, 'answer_scope': answer_scope})}\n\n"
-                yield f"data: {json.dumps({'type': 'token', 'content': translated_answer})}\n\n"
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                yield sse_status(req, "finalizing")
+                yield sse_event({"type": "sources", "sources": sources})
+                yield sse_event({"type": "meta", "model": routed_model, "mode": req.mode, "answer_scope": answer_scope})
+                yield sse_event({"type": "token", "content": translated_answer})
+                yield sse_event({"type": "done"})
                 await set_cached_query_response(
                     cache_key,
                     QueryResponse(
@@ -1513,6 +1561,7 @@ async def query_stream(req: QueryRequest, request: Request):
                 )
                 return
 
+            yield sse_status(req, query_processing_status_key(localized_req))
             token_stream, results, routed_model, answer_scope = (
                 await route_query_stream(
                     localized_req,
@@ -1523,16 +1572,17 @@ async def query_stream(req: QueryRequest, request: Request):
             # Gửi nguồn trích dẫn (sources) trước
             sources = rag_pipeline.format_sources(results)
             await wait_for_min_query_latency(request_started_at)
-            yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
-            yield f"data: {json.dumps({'type': 'meta', 'model': routed_model, 'mode': req.mode, 'answer_scope': answer_scope})}\n\n"
+            yield sse_status(req, "finalizing")
+            yield sse_event({"type": "sources", "sources": sources})
+            yield sse_event({"type": "meta", "model": routed_model, "mode": req.mode, "answer_scope": answer_scope})
 
             # Stream từng token câu trả lời
             answer_parts = []
             async for token in token_stream:
                 answer_parts.append(token)
-                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                yield sse_event({"type": "token", "content": token})
 
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            yield sse_event({"type": "done"})
             await set_cached_query_response(
                 cache_key,
                 QueryResponse(
@@ -1546,7 +1596,7 @@ async def query_stream(req: QueryRequest, request: Request):
             )
         except Exception as e:
             logger.error(f"Stream generation error: {e}", exc_info=True)
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield sse_event({"type": "error", "message": str(e)})
 
     return StreamingResponse(
         event_generator(),
