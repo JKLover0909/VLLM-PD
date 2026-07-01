@@ -25,7 +25,7 @@ MODEL_ROUTES = {
     "grok": "grok-model",
 }
 
-LOCAL_CHAT_MODEL_ALIASES = {"local-gemma", "local-qwen-chat"}
+LOCAL_CHAT_MODEL_ALIASES = {"auto-model", "local-gemma", "local-qwen-chat"}
 LOCAL_MODEL_ALIASES = LOCAL_CHAT_MODEL_ALIASES | {"local-qwen-coder", "coding-model"}
 
 MES_SYSTEM_PROMPT = """Bạn là trợ lý dữ liệu sản xuất bo mạch của MKAC.
@@ -218,6 +218,8 @@ class MesQueryService:
         routed_model: str,
     ) -> str:
         fallback_answer = self.format_live_api_fallback(lots)
+        if self.prefer_template_answers(routed_model):
+            return fallback_answer
         try:
             response = await self.openai_client.chat.completions.create(
                 model=routed_model,
@@ -243,6 +245,8 @@ class MesQueryService:
         model: str,
     ) -> tuple[str, str]:
         routed_model = self.resolve_model(model)
+        if self.prefer_template_answers(routed_model):
+            return result.fallback_answer, routed_model
         try:
             response = await self.openai_client.chat.completions.create(
                 model=routed_model,
@@ -1000,3 +1004,12 @@ class MesQueryService:
             num_ctx = int(os.getenv("LOCAL_CHAT_NUM_CTX", "16384"))
             return {"extra_body": {"think": False, "num_ctx": num_ctx}}
         return {}
+
+    @staticmethod
+    def prefer_template_answers(routed_model: str) -> bool:
+        """Prefer deterministic MES wording for local models to reduce latency."""
+        return (
+            os.getenv("MES_TEMPLATE_ANSWERS_FOR_LOCAL", "true").lower()
+            in {"1", "true", "yes", "on"}
+            and routed_model in LOCAL_MODEL_ALIASES
+        )

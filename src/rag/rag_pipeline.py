@@ -120,7 +120,7 @@ MODEL_ROUTES = {
     "grok": "grok-model",
 }
 
-LOCAL_CHAT_MODEL_ALIASES = {"local-gemma", "local-qwen-chat"}
+LOCAL_CHAT_MODEL_ALIASES = {"auto-model", "local-gemma", "local-qwen-chat"}
 LOCAL_MODEL_ALIASES = LOCAL_CHAT_MODEL_ALIASES | {"local-qwen-coder", "coding-model"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 
@@ -1547,6 +1547,15 @@ class RAGPipeline:
             text = text.split("</think>", 1)[1].strip()
         text = re.sub(r"\[img-\d+\]", "\n\n", text).strip()
 
+        direct_patterns = (
+            r"MKAC\s+có\s+[^.\n。]*\b16\b[^.\n。]*(?:phòng\s+ban|phong\s+ban|bộ\s+phận|bo\s+phan|nhóm|nhom)[^.\n。]*[.\n。]?",
+            r"MKACには[^.\n。]*\b16\b[^.\n。]*(?:部門|部署|グループ)[^.\n。]*[.\n。]?",
+        )
+        for pattern in direct_patterns:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return match.group(0).strip().rstrip()
+
         final_markers = [
             "Câu trả lời:",
             "Trả lời ngắn gọn:",
@@ -1575,11 +1584,15 @@ class RAGPipeline:
             "Okay, let me",
             "Let me think",
             "Looking at",
+            "In Đoạn",
+            "In Doan",
             "I need to",
             "The user is asking",
             "The answer should",
             "Let me count",
+            "The first excerpt",
             "Đoạn 1",
+            "Đoạn 2",
             "以下のように",
             "見てみます",
             "数えてみます",

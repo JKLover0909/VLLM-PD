@@ -31,3 +31,67 @@ Một panel admin hoặc endpoint readiness kiểm tra: FastAPI, Qdrant, LiteLLM
 Bảo mật
    Nếu dùng ngoài demo: cần auth thật cho session, thu hẹp CORS, bảo vệ MES/Gmail action bằng xác nhận trước khi gửi, và không để các API nội bộ public.
 Nếu chọn một việc làm tiếp ngay, mình đề xuất: hoàn thiện memory ngắn hạn + Gmail action theo ngữ cảnh. Vì nó làm demo rất tự nhiên: hỏi MES xong nói “gửi kết quả này cho A”, hệ thống hiểu và gửi đúng nội dung.
+
+###### 
+
+Giảm vai trò của LLM trong MES
+MES đang có nhiều câu có thể trả lời deterministic từ SQLite/API, không cần gọi Qwen3 để “diễn đạt lại”. Với demo, nên ưu tiên:
+query SQL cố định
+format câu trả lời bằng template
+chỉ gọi LLM khi câu hỏi thật sự tự do/phức tạp
+Đây là hướng giảm latency rõ nhất. MES có thể từ ~30s xuống vài trăm ms đến vài giây.
+
+Dùng Qwen Coder cho SQL/MES, không dùng Qwen3 chat
+Test vừa rồi:
+local-qwen-coder: ~0.4-0.7s
+Qwen3 chat: ~2.7s cho prompt ngắn, nhưng qua app lên ~30s do pipeline + output dài
+Vì vậy MES SQL Agent nên dùng Qwen Coder cho planning, còn câu trả lời nên template hóa.
+
+Tắt hoặc giảm dịch tự động khi không cần
+Tiếng Nhật hiện phải đi qua lớp translate, nên request JP chậm hơn. Có thể tối ưu bằng:
+cache bản dịch prompt/câu hỏi phổ biến
+chỉ dịch câu hỏi sang tiếng Việt, còn output MES dùng template Nhật trực tiếp
+với MES, tạo sẵn formatter vi/ja thay vì gọi translation model
+
+Giảm max_tokens cho Qwen3
+Nếu câu trả lời MKAC/MES chỉ cần ngắn, không nên để token budget rộng. Ví dụ:
+MKAC: 512 hoặc 768
+MES: 256 hoặc 384
+chỉ tăng khi research hoặc câu hỏi dài
+Điều này giảm nguy cơ model suy luận lan man và giảm thời gian.
+
+Tăng strict prompt + hậu xử lý
+Qwen3 hay sinh reasoning/echo prompt. Mình đã thêm hậu xử lý, nhưng tốt hơn là prompt cũng nên ép:
+“Chỉ trả lời kết luận cuối cùng”
+“Không giải thích quá trình đọc tài liệu”
+“Tối đa 3 câu”
+Cái này không làm nhanh bằng deterministic, nhưng giúp giảm output dài.
+
+Streaming thật thay vì gom rồi trả
+Hiện sau khi thêm clean reasoning, streaming RAG đang gom output rồi làm sạch, nên người dùng phải đợi xong mới thấy chữ. Có thể cải thiện UX bằng:
+stream trạng thái trước: “Đang tìm tài liệu…”
+“Đang gọi model local…”
+stream sau khi lọc token nếu thiết kế bộ lọc incremental
+Không làm model nhanh hơn, nhưng cảm giác chờ tốt hơn.
+
+Cache câu hỏi phổ biến
+Với demo, các câu kiểu:
+“MKAC có bao nhiêu phòng ban?”
+“Lot nào nhiều lỗi nhất?”
+“3 lỗi nhiều nhất trong lot nhiều lỗi nhất?”
+nên cache kết quả trong RAM/SQLite. Câu trả lời gần như tức thì.
+
+Dùng model nhỏ hơn cho tác vụ đơn giản
+Có thể thêm một model local nhỏ hơn để:
+dịch ngắn
+phân loại intent
+rewrite câu hỏi
+format câu trả lời
+Qwen3-14B dùng cho mọi thứ hơi nặng.
+
+
+MES chuyển tối đa sang deterministic/template, không gọi LLM nếu query đã rõ.
+Cache các câu MES/MKAC phổ biến.
+Giảm max_tokens theo mode.
+Tạo formatter tiếng Nhật trực tiếp cho MES để bỏ bước dịch.
+Tối ưu streaming trạng thái để người dùng thấy hệ thống đang làm gì.

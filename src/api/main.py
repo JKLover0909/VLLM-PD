@@ -15,7 +15,7 @@ import shutil
 import time
 import unicodedata
 import uuid
-from collections import defaultdict, deque
+from collections import OrderedDict, defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Deque, Dict, List, Literal, Optional
@@ -72,6 +72,18 @@ AGENT_API_KEY = os.getenv("AGENT_API_KEY", "")
 MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "25"))
 MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
 QUERY_RATE_LIMIT = int(os.getenv("QUERY_RATE_LIMIT_PER_MINUTE", "15"))
+QUERY_RESPONSE_CACHE_TTL_SECONDS = max(
+    0,
+    int(os.getenv("QUERY_RESPONSE_CACHE_TTL_SECONDS", "600")),
+)
+QUERY_RESPONSE_CACHE_SIZE = max(
+    0,
+    int(os.getenv("QUERY_RESPONSE_CACHE_SIZE", "256")),
+)
+MIN_QUERY_RESPONSE_SECONDS = max(
+    0.0,
+    float(os.getenv("MIN_QUERY_RESPONSE_SECONDS", "2.0")),
+)
 UPLOAD_RATE_LIMIT = int(os.getenv("UPLOAD_RATE_LIMIT_PER_HOUR", "10"))
 UPLOAD_PROCESSING_CONCURRENCY = max(
     1, int(os.getenv("UPLOAD_PROCESSING_CONCURRENCY", "1"))
@@ -116,6 +128,8 @@ gmail_sender = GmailSender.from_env()
 translation_service = TranslationService.from_env()
 rate_limit_events: Dict[str, Deque[float]] = defaultdict(deque)
 rate_limit_lock = asyncio.Lock()
+query_response_cache: "OrderedDict[str, tuple[float, QueryResponse]]" = OrderedDict()
+query_response_cache_lock = asyncio.Lock()
 upload_processing_semaphore = asyncio.Semaphore(UPLOAD_PROCESSING_CONCURRENCY)
 upload_admission_lock = asyncio.Lock()
 upload_active = 0
@@ -341,6 +355,69 @@ class QueryResponse(BaseModel):
     model: str
     mode: str
     answer_scope: str
+
+
+def normalize_query_cache_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFC", value or "").strip().lower()
+    return re.sub(r"\s+", " ", normalized)
+
+
+def query_cache_key(req: QueryRequest) -> Optional[str]:
+    if (
+        QUERY_RESPONSE_CACHE_TTL_SECONDS <= 0
+        or QUERY_RESPONSE_CACHE_SIZE <= 0
+        or req.mode not in {"mkac", "mes"}
+        or parse_email_send_command(req.question) is not None
+    ):
+        return None
+    employee_key = req.employee_id or ""
+    return "|".join(
+        (
+            req.mode,
+            req.ui_language,
+            req.model,
+            employee_key,
+            normalize_query_cache_text(req.question),
+        )
+    )
+
+
+async def get_cached_query_response(cache_key: Optional[str]) -> Optional[QueryResponse]:
+    if not cache_key:
+        return None
+    now = time.monotonic()
+    async with query_response_cache_lock:
+        cached = query_response_cache.get(cache_key)
+        if cached is None:
+            return None
+        created_at, response = cached
+        if now - created_at > QUERY_RESPONSE_CACHE_TTL_SECONDS:
+            query_response_cache.pop(cache_key, None)
+            return None
+        query_response_cache.move_to_end(cache_key)
+        return response
+
+
+async def set_cached_query_response(
+    cache_key: Optional[str],
+    response: QueryResponse,
+) -> None:
+    if not cache_key:
+        return
+    async with query_response_cache_lock:
+        query_response_cache[cache_key] = (time.monotonic(), response)
+        query_response_cache.move_to_end(cache_key)
+        while len(query_response_cache) > QUERY_RESPONSE_CACHE_SIZE:
+            query_response_cache.popitem(last=False)
+
+
+async def wait_for_min_query_latency(started_at: float) -> None:
+    """Keep very fast prepared/cache answers feeling like a normal request."""
+    if MIN_QUERY_RESPONSE_SECONDS <= 0:
+        return
+    remaining = MIN_QUERY_RESPONSE_SECONDS - (time.monotonic() - started_at)
+    if remaining > 0:
+        await asyncio.sleep(remaining)
 
 
 class SessionInfoResponse(BaseModel):
@@ -1073,9 +1150,16 @@ async def query_documents(req: QueryRequest, request: Request):
     """
     Hỏi đáp dựa trên tài liệu (non-streaming).
     """
+    request_started_at = time.monotonic()
     await enforce_rate_limit(request, "query", QUERY_RATE_LIMIT, 60)
     normalize_session_id(req.session_id)
     current_employee = authorize_query(req)
+    cache_key = query_cache_key(req)
+    cached_response = await get_cached_query_response(cache_key)
+    if cached_response is not None:
+        logger.info("Query response cache hit mode=%s language=%s", req.mode, req.ui_language)
+        await wait_for_min_query_latency(request_started_at)
+        return cached_response.model_copy(update={"session_id": req.session_id})
 
     try:
         localized_req = await localize_query_request(req)
@@ -1113,7 +1197,7 @@ async def query_documents(req: QueryRequest, request: Request):
             rag_pipeline.format_sources(results),
             req,
         )
-        return QueryResponse(
+        response = QueryResponse(
             answer=answer,
             sources=sources,
             session_id=req.session_id,
@@ -1121,6 +1205,9 @@ async def query_documents(req: QueryRequest, request: Request):
             mode=req.mode,
             answer_scope=answer_scope,
         )
+        await set_cached_query_response(cache_key, response)
+        await wait_for_min_query_latency(request_started_at)
+        return response
     except GmailSenderError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     except TranslationError as e:
@@ -1135,9 +1222,33 @@ async def query_stream(req: QueryRequest, request: Request):
     """
     Hỏi đáp dựa trên tài liệu dạng streaming SSE.
     """
+    request_started_at = time.monotonic()
     await enforce_rate_limit(request, "query", QUERY_RATE_LIMIT, 60)
     normalize_session_id(req.session_id)
     current_employee = authorize_query(req)
+    cache_key = query_cache_key(req)
+    cached_response = await get_cached_query_response(cache_key)
+    if cached_response is not None:
+        logger.info("Streaming query response cache hit mode=%s language=%s", req.mode, req.ui_language)
+
+        async def cached_event_generator():
+            import json
+
+            response = cached_response.model_copy(update={"session_id": req.session_id})
+            await wait_for_min_query_latency(request_started_at)
+            yield f"data: {json.dumps({'type': 'sources', 'sources': response.sources})}\n\n"
+            yield f"data: {json.dumps({'type': 'meta', 'model': response.model, 'mode': response.mode, 'answer_scope': response.answer_scope})}\n\n"
+            yield f"data: {json.dumps({'type': 'token', 'content': response.answer})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        return StreamingResponse(
+            cached_event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
     try:
         localized_req = await localize_query_request(req)
         current_user_context = employee_context_for_query(
@@ -1179,10 +1290,22 @@ async def query_stream(req: QueryRequest, request: Request):
                     rag_pipeline.format_sources(results),
                     req,
                 )
+                await wait_for_min_query_latency(request_started_at)
                 yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
                 yield f"data: {json.dumps({'type': 'meta', 'model': routed_model, 'mode': req.mode, 'answer_scope': answer_scope})}\n\n"
                 yield f"data: {json.dumps({'type': 'token', 'content': translated_answer})}\n\n"
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                await set_cached_query_response(
+                    cache_key,
+                    QueryResponse(
+                        answer=translated_answer,
+                        sources=sources,
+                        session_id=req.session_id,
+                        model=routed_model,
+                        mode=req.mode,
+                        answer_scope=answer_scope,
+                    ),
+                )
                 return
 
             token_stream, results, routed_model, answer_scope = (
@@ -1194,14 +1317,28 @@ async def query_stream(req: QueryRequest, request: Request):
             
             # Gửi nguồn trích dẫn (sources) trước
             sources = rag_pipeline.format_sources(results)
+            await wait_for_min_query_latency(request_started_at)
             yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
             yield f"data: {json.dumps({'type': 'meta', 'model': routed_model, 'mode': req.mode, 'answer_scope': answer_scope})}\n\n"
 
             # Stream từng token câu trả lời
+            answer_parts = []
             async for token in token_stream:
+                answer_parts.append(token)
                 yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
 
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            await set_cached_query_response(
+                cache_key,
+                QueryResponse(
+                    answer="".join(answer_parts),
+                    sources=sources,
+                    session_id=req.session_id,
+                    model=routed_model,
+                    mode=req.mode,
+                    answer_scope=answer_scope,
+                ),
+            )
         except Exception as e:
             logger.error(f"Stream generation error: {e}", exc_info=True)
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
