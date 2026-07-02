@@ -1,6 +1,13 @@
-import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
+import { StrictMode, memo, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
+
+// Memo hoá theo nội dung: khi stream token, chỉ message đang thay đổi mới
+// parse lại markdown; các message cũ giữ nguyên nên không re-parse (tránh
+// O(n) lần parse markdown cho mỗi token khi hội thoại dài).
+const MessageMarkdown = memo(function MessageMarkdown({ content }) {
+  return <ReactMarkdown>{content}</ReactMarkdown>;
+});
 import {
   Activity,
   AlertCircle,
@@ -196,6 +203,10 @@ const UI_TEXT = {
       languageTitle: "Ngôn ngữ giao diện: {language}. Nhấn để chuyển.",
       employeeLogout: "Đăng xuất mã nhân viên",
       clearConversation: "Xóa hội thoại hiện tại",
+      clearConfirmTitle: "Xóa toàn bộ hội thoại?",
+      clearConfirmBody: "Toàn bộ tin nhắn trong hội thoại này sẽ bị xóa. Hành động này không thể hoàn tác.",
+      clearConfirmAction: "Xóa hội thoại",
+      cancel: "Hủy",
       hideSources: "Ẩn nguồn",
       showSources: "Hiện nguồn",
       employeeAuth: "Xác thực nhân viên MKAC",
@@ -250,6 +261,9 @@ const UI_TEXT = {
       errorRecords: "bản ghi lỗi",
       online: "Online",
       offline: "Offline",
+      ready: "Sẵn sàng",
+      notReady: "Chưa sẵn sàng",
+      promptLabel: "Gợi ý để bắt đầu",
     },
     answerScope: {
       web: "Tổng hợp từ nguồn web",
@@ -356,6 +370,10 @@ const UI_TEXT = {
       languageTitle: "表示言語: {language}。クリックして切り替えます。",
       employeeLogout: "社員番号をログアウト",
       clearConversation: "現在の会話を削除",
+      clearConfirmTitle: "会話をすべて削除しますか？",
+      clearConfirmBody: "この会話のすべてのメッセージが削除されます。この操作は取り消せません。",
+      clearConfirmAction: "会話を削除",
+      cancel: "キャンセル",
       hideSources: "参照元を隠す",
       showSources: "参照元を表示",
       employeeAuth: "MKAC社員認証",
@@ -410,6 +428,9 @@ const UI_TEXT = {
       errorRecords: "エラー記録",
       online: "オンライン",
       offline: "オフライン",
+      ready: "準備完了",
+      notReady: "準備中",
+      promptLabel: "質問の候補",
     },
     answerScope: {
       web: "Webソースに基づく要約",
@@ -783,6 +804,7 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sourcePanelOpen, setSourcePanelOpen] = useState(false);
   const [sourcePreview, setSourcePreview] = useState(null);
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [employee, setEmployee] = useState(storedEmployee);
   const [employeeCodeInput, setEmployeeCodeInput] = useState(
@@ -1163,6 +1185,15 @@ function App() {
     return () => document.removeEventListener("keydown", closePreview);
   }, [sourcePreview]);
 
+  useEffect(() => {
+    if (!confirmClearOpen) return undefined;
+    function closeConfirm(event) {
+      if (event.key === "Escape") setConfirmClearOpen(false);
+    }
+    document.addEventListener("keydown", closeConfirm);
+    return () => document.removeEventListener("keydown", closeConfirm);
+  }, [confirmClearOpen]);
+
   function setModeMessages(workspaceMode, updater) {
     setMessagesByMode((current) => ({
       ...current,
@@ -1246,6 +1277,7 @@ function App() {
     setError("");
     setSourcePanelOpen(false);
     setSourcePreview(null);
+    setConfirmClearOpen(false);
   }
 
   function sourcePreviewUrl(source, sourceMode = mode) {
@@ -1495,6 +1527,18 @@ function App() {
                       content: item.content + (event.content || ""),
                       status: "",
                     }
+                  : item,
+              ),
+            );
+          }
+          if (event.type === "replace") {
+            // Bản đã hậu xử lý (bỏ <think>, cắt marker...) — thay toàn bộ nội
+            // dung đã stream. Chỉ đến khi cleanup thực sự đổi nội dung.
+            setPendingAssistantId("");
+            setModeMessages(requestMode, (current) =>
+              current.map((item) =>
+                item.id === assistantId
+                  ? { ...item, content: event.content || "", status: "" }
                   : item,
               ),
             );
@@ -1824,9 +1868,7 @@ function App() {
               <strong>{currentMode.title}</strong>
               <span>
                 {mode === "mkac"
-                  ? employee?.name
-                    ? employeeGreetingFor(employee, language, t)
-                    : `${mkacStatus.num_documents} ${t("common.internalDocuments")}`
+                  ? `${mkacStatus.num_documents} ${t("common.internalDocuments")}`
                   : mode === "mes"
                     ? mesStatus.available
                       ? `${mesStatus.lots || 0} Lot · ${mesStatus.error_events || 0} ${t("common.errorRecords")}`
@@ -1899,6 +1941,24 @@ function App() {
               <span className={language === "ja" ? "active" : ""}>JP</span>
             </button>
 
+            <button
+              className="icon-button panel-toggle"
+              type="button"
+              title={sourcePanelOpen ? t("common.hideSources") : t("common.showSources")}
+              aria-label={sourcePanelOpen ? t("common.hideSources") : t("common.showSources")}
+              onClick={() => setSourcePanelOpen((open) => !open)}
+              disabled={latestSources.length === 0}
+              aria-controls="source-panel"
+              aria-expanded={sourcePanelOpen}
+            >
+              {sourcePanelOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
+              {latestSources.length > 0 && (
+                <span className="panel-count">{latestSources.length}</span>
+              )}
+            </button>
+
+            <span className="header-divider" role="separator" aria-hidden="true" />
+
             {mode === "mkac" && employee && (
               <button
                 className="icon-button header-tool"
@@ -1913,28 +1973,14 @@ function App() {
             )}
 
             <button
-              className="icon-button header-tool"
+              className="icon-button header-tool danger"
               type="button"
               title={t("common.clearConversation")}
-              onClick={clearConversation}
+              aria-label={t("common.clearConversation")}
+              onClick={() => setConfirmClearOpen(true)}
               disabled={busy || messages.length === 0}
             >
               <Trash2 size={18} />
-            </button>
-
-            <button
-              className="icon-button panel-toggle"
-              type="button"
-              title={sourcePanelOpen ? t("common.hideSources") : t("common.showSources")}
-              onClick={() => setSourcePanelOpen((open) => !open)}
-              disabled={latestSources.length === 0}
-              aria-controls="source-panel"
-              aria-expanded={sourcePanelOpen}
-            >
-              {sourcePanelOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
-              {latestSources.length > 0 && (
-                <span className="panel-count">{latestSources.length}</span>
-              )}
             </button>
           </div>
         </header>
@@ -2030,51 +2076,39 @@ function App() {
                   </div>
 
                   {mode !== "research" || files.length > 0 ? (
-                    <div className="prompt-grid">
-                      {quickPromptsFor(mode, language).map((prompt) => (
-                        <button
-                          key={prompt}
-                          type="button"
-                          onClick={() => sendMessage(prompt)}
-                          disabled={!researchReady || !mkacAuthorized}
-                        >
-                          <Search size={16} />
-                          <span>{prompt}</span>
-                        </button>
-                      ))}
+                    <div className="prompt-section">
+                      <p className="prompt-label">{t("common.promptLabel")}</p>
+                      <div className="prompt-grid">
+                        {quickPromptsFor(mode, language).map((prompt) => (
+                          <button
+                            key={prompt}
+                            type="button"
+                            onClick={() => sendMessage(prompt)}
+                            disabled={!researchReady || !mkacAuthorized}
+                          >
+                            <Search size={16} />
+                            <span>{prompt}</span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   ) : null}
 
-                  <div className="empty-metrics">
-                    <div>
-                      <Layers3 size={16} />
-                      <strong>
-                        {mode === "mkac"
-                          ? mkacStatus.num_documents
-                          : mode === "mes"
-                            ? mesStatus.lots || 0
-                            : files.length}
-                      </strong>
-                      <span>
-                        {mode === "mkac"
-                          ? modeText("mkac").metric
-                          : mode === "mes"
-                            ? modeText("mes").metric
-                            : modeText("research").metric}
-                      </span>
-                    </div>
-                    <div>
-                      <Bot size={16} />
-                      <strong>{selectedModel?.name || t("common.loading")}</strong>
-                      <span>{t("common.model")}</span>
-                    </div>
-                    <div>
-                      <Activity size={16} />
-                      <strong>
-                        {health === "online" ? t("common.online") : t("common.offline")}
-                      </strong>
-                      <span>{t("common.status")}</span>
-                    </div>
+                  <div className="empty-status">
+                    <span
+                      className={`status-dot ${health === "online" ? "ready" : "offline"}`}
+                    />
+                    <span>
+                      {health === "online" ? t("common.ready") : t("common.notReady")}
+                    </span>
+                    <span className="status-sep" aria-hidden="true">·</span>
+                    <span>
+                      {mode === "mkac"
+                        ? `${mkacStatus.num_documents} ${modeText("mkac").metric}`
+                        : mode === "mes"
+                          ? `${mesStatus.lots || 0} ${modeText("mes").metric}`
+                          : `${files.length} ${modeText("research").metric}`}
+                    </span>
                   </div>
                 </div>
               ) : (
@@ -2110,22 +2144,39 @@ function App() {
                           </div>
                         )}
                         {message.content ? (
-                          <ReactMarkdown>{message.content}</ReactMarkdown>
+                          <div className="message-body">
+                            <MessageMarkdown content={message.content} />
+                            {busy &&
+                              message.role === "assistant" &&
+                              message.id === latestAssistantMessage?.id && (
+                                <span
+                                  className="stream-cursor"
+                                  aria-hidden="true"
+                                />
+                              )}
+                          </div>
                         ) : message.id === pendingAssistantId ? (
                           <div
                             className="waiting-status"
                             role="status"
                             aria-live="polite"
                           >
-                            <Loader2 className="spin" size={17} />
-                            <span className="waiting-copy">
-                              <span key={message.status || waitingMessageIndex}>
-                                {message.status || text.waiting[waitingMessageIndex]}
+                            <div className="waiting-head">
+                              <Loader2 className="spin" size={17} />
+                              <span className="waiting-copy">
+                                <span key={message.status || waitingMessageIndex}>
+                                  {message.status || text.waiting[waitingMessageIndex]}
+                                </span>
+                                {language === "ja" && (
+                                  <small>{t("common.languageConverting")}</small>
+                                )}
                               </span>
-                              {language === "ja" && (
-                                <small>{t("common.languageConverting")}</small>
-                              )}
-                            </span>
+                            </div>
+                            <div className="skeleton" aria-hidden="true">
+                              <span className="skeleton-line" />
+                              <span className="skeleton-line" />
+                              <span className="skeleton-line short" />
+                            </div>
                           </div>
                         ) : null}
                         {message.role === "assistant" && message.content && (
@@ -2287,9 +2338,9 @@ function App() {
                 />
                 <div className="composer-footer">
                   <div className="composer-context">
-                  <span className={`model-dot ${MODEL_ACCENTS[requestModel] || ""}`} />
+                  <span className={`model-dot ${health === "online" ? "ready" : "offline"}`} />
                   <span>
-                    {selectedModel?.description || t("common.loadingModelList")}
+                    {health === "online" ? t("common.ready") : t("common.notReady")}
                     </span>
                   </div>
                   <div className="composer-actions">
@@ -2442,6 +2493,43 @@ function App() {
             <div className="source-preview-text">
               <strong>{t("common.snippet")}</strong>
               <p>{sourcePreview.source.preview}</p>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {confirmClearOpen && (
+        <div
+          className="confirm-backdrop"
+          role="presentation"
+          onClick={() => setConfirmClearOpen(false)}
+        >
+          <section
+            className="confirm-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="confirm-clear-title"
+            aria-describedby="confirm-clear-body"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="confirm-clear-title">{t("common.clearConfirmTitle")}</h2>
+            <p id="confirm-clear-body">{t("common.clearConfirmBody")}</p>
+            <div className="confirm-actions">
+              <button
+                type="button"
+                className="confirm-cancel"
+                onClick={() => setConfirmClearOpen(false)}
+                autoFocus
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                className="confirm-danger"
+                onClick={clearConversation}
+              >
+                {t("common.clearConfirmAction")}
+              </button>
             </div>
           </section>
         </div>

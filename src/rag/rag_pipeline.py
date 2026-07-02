@@ -124,6 +124,7 @@ class RAGPipeline:
         model: str = "openai",
         mode: str = "mkac",
         current_user: Dict[str, Any] | None = None,
+        conversation_context: List[Dict[str, Any]] | None = None,
     ) -> Tuple[str, List[SearchResult], str, str]:
         """
         Non-streaming RAG query.
@@ -205,6 +206,7 @@ class RAGPipeline:
                 image_paths=image_paths,
                 answer_scope=answer_scope,
                 current_user=current_user,
+                conversation_context=conversation_context,
             )
             if answer_scope != "general" or current_user
             else self._general_messages(question)
@@ -242,7 +244,8 @@ class RAGPipeline:
         model: str = "openai",
         mode: str = "mkac",
         current_user: Dict[str, Any] | None = None,
-    ) -> Tuple[AsyncGenerator[str, None], List[SearchResult], str, str]:
+        conversation_context: List[Dict[str, Any]] | None = None,
+    ) -> Tuple[AsyncGenerator[Tuple[str, str], None], List[SearchResult], str, str]:
         """
         Streaming RAG query.
         """
@@ -271,14 +274,14 @@ class RAGPipeline:
                 )
 
                 async def mes_token_generator():
-                    yield answer
+                    yield ("token", answer)
 
                 return mes_token_generator(), [], routed_model, "mes"
             except Exception as exc:
                 logger.warning("Streaming LLM MES answer generation failed: %s", exc)
 
                 async def fallback_token_generator():
-                    yield fallback_answer
+                    yield ("token", fallback_answer)
 
                 return fallback_token_generator(), [], routed_model, "mes"
         if mes_source == "mes_database":
@@ -291,7 +294,7 @@ class RAGPipeline:
             )
 
             async def mes_database_token_generator():
-                yield answer
+                yield ("token", answer)
 
             return (
                 mes_database_token_generator(),
@@ -305,7 +308,7 @@ class RAGPipeline:
                 answer, routed_model = sql_answer
 
                 async def mes_sql_token_generator():
-                    yield answer
+                    yield ("token", answer)
 
                 return (
                     mes_sql_token_generator(),
@@ -317,7 +320,7 @@ class RAGPipeline:
             routed_model = self._resolve_model(model, mode=mode)
 
             async def unsupported_mes_token_generator():
-                yield MES_UNSUPPORTED_ANSWER
+                yield ("token", MES_UNSUPPORTED_ANSWER)
 
             return (
                 unsupported_mes_token_generator(),
@@ -355,6 +358,7 @@ class RAGPipeline:
                 image_paths=image_paths,
                 answer_scope=answer_scope,
                 current_user=current_user,
+                conversation_context=conversation_context,
             )
             if answer_scope != "general" or current_user
             else self._general_messages(question)
@@ -382,14 +386,22 @@ class RAGPipeline:
             )
 
             async def token_generator():
+                # Stream từng delta ngay khi model sinh để người dùng thấy chữ
+                # xuất hiện dần (first-paint sớm) thay vì chờ trọn câu.
                 parts: list[str] = []
+                emitted = ""
                 async for chunk in response:
                     content = chunk.choices[0].delta.content
                     if content:
                         parts.append(content)
-                answer = self._clean_model_answer("".join(parts))
-                if answer:
-                    yield answer
+                        emitted += content
+                        yield ("token", content)
+                # Hậu xử lý cần toàn bộ câu (bỏ <think>, cắt marker, chặn lặp).
+                # Chỉ phát 'replace' khi bản sạch khác bản đã stream — ca thường
+                # (model ngoan) trùng nhau nên không có replace, stream thuần.
+                cleaned = self._clean_model_answer("".join(parts))
+                if cleaned != emitted.strip():
+                    yield ("replace", cleaned)
 
             return token_generator(), search_results, routed_model, answer_scope
         except Exception as e:

@@ -89,6 +89,29 @@ Quy tắc:
     cần thiết."""
 
 
+def _history_messages(
+    conversation_context: List[Dict[str, Any]] | None,
+    *,
+    max_turns: int = 6,
+    max_chars: int = 1500,
+) -> List[Dict[str, Any]]:
+    """Chuyển lịch sử hội thoại thành message để model hiểu câu hỏi nối tiếp.
+
+    Chỉ lấy phần text của các lượt user/assistant gần nhất, cắt bớt độ dài để
+    khống chế token. Bỏ qua nếu không có lịch sử.
+    """
+    if not conversation_context:
+        return []
+    messages: List[Dict[str, Any]] = []
+    for item in conversation_context[-max_turns:]:
+        role = item.get("role")
+        content = (item.get("content") or "").strip()
+        if role not in {"user", "assistant"} or not content:
+            continue
+        messages.append({"role": role, "content": content[:max_chars]})
+    return messages
+
+
 def build_rag_prompt(
     question: str,
     search_results: List[SearchResult],
@@ -96,6 +119,7 @@ def build_rag_prompt(
     image_paths: List[Path] | None = None,
     answer_scope: str = "mkac",
     current_user: Dict[str, Any] | None = None,
+    conversation_context: List[Dict[str, Any]] | None = None,
 ) -> List[Dict[str, Any]]:
     """
     Tạo danh sách messages cho OpenAI client từ câu hỏi và context tìm được.
@@ -166,19 +190,23 @@ def build_rag_prompt(
     else:
         user_content = user_message
 
-    return [
-        {
-            "role": "system",
-            "content": (
-                WEB_SYSTEM_PROMPT
-                if answer_scope == "web"
-                else RESEARCH_SYSTEM_PROMPT
-                if mode == "research"
-                else MKAC_SYSTEM_PROMPT
-            ),
-        },
-        {"role": "user", "content": user_content},
-    ]
+    system_message = {
+        "role": "system",
+        "content": (
+            WEB_SYSTEM_PROMPT
+            if answer_scope == "web"
+            else RESEARCH_SYSTEM_PROMPT
+            if mode == "research"
+            else MKAC_SYSTEM_PROMPT
+        ),
+    }
+    # Lịch sử hội thoại nằm giữa system và câu hỏi hiện tại để model hiểu ngữ
+    # cảnh follow-up (vd "còn cái kia thì sao?").
+    return (
+        [system_message]
+        + _history_messages(conversation_context)
+        + [{"role": "user", "content": user_content}]
+    )
 
 
 def _format_current_user_context(current_user: Dict[str, Any] | None) -> str:

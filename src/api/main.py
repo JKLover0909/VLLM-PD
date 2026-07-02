@@ -131,6 +131,18 @@ rate_limit_events: Dict[str, Deque[float]] = defaultdict(deque)
 rate_limit_lock = asyncio.Lock()
 query_response_cache: "OrderedDict[str, tuple[float, QueryResponse]]" = OrderedDict()
 query_response_cache_lock = asyncio.Lock()
+
+# ── Observability: đếm request + đo độ trễ theo route, tỉ lệ cache hit ──
+# Nhẹ, in-memory, per-process (khi scale nhiều worker cần gom qua Redis/Prometheus).
+query_metrics: Dict[str, Any] = {
+    "total": 0,
+    "cache_hits": 0,
+    "errors": 0,
+    "by_scope": defaultdict(int),
+    "by_mode": defaultdict(int),
+    "latency_ms": deque(maxlen=500),  # mẫu để tính p50/p95
+}
+query_metrics_lock = asyncio.Lock()
 upload_processing_semaphore = asyncio.Semaphore(UPLOAD_PROCESSING_CONCURRENCY)
 upload_admission_lock = asyncio.Lock()
 upload_active = 0
@@ -311,6 +323,45 @@ def build_query_cache_key(req: QueryRequest) -> Optional[str]:
         except Exception:  # pragma: no cover - phòng lỗi đọc metadata
             snapshot_version = ""
     return query_cache_key(req, snapshot_version=snapshot_version)
+
+
+async def record_query_metric(
+    *,
+    mode: str,
+    ui_language: str,
+    answer_scope: str,
+    cache_hit: bool,
+    latency_ms: float,
+    error: bool = False,
+) -> None:
+    """Ghi một dòng log có cấu trúc + cập nhật bộ đếm cho /metrics."""
+    logger.info(
+        "query_complete mode=%s lang=%s scope=%s cache_hit=%s error=%s "
+        "latency_ms=%d",
+        mode,
+        ui_language,
+        answer_scope,
+        cache_hit,
+        error,
+        int(latency_ms),
+    )
+    async with query_metrics_lock:
+        query_metrics["total"] += 1
+        if cache_hit:
+            query_metrics["cache_hits"] += 1
+        if error:
+            query_metrics["errors"] += 1
+        query_metrics["by_scope"][answer_scope] += 1
+        query_metrics["by_mode"][mode] += 1
+        query_metrics["latency_ms"].append(latency_ms)
+
+
+def _percentile(values: list[float], pct: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    rank = min(len(ordered) - 1, int(round((pct / 100) * (len(ordered) - 1))))
+    return round(ordered[rank], 1)
 
 
 async def wait_for_min_query_latency(started_at: float) -> None:
@@ -506,6 +557,7 @@ async def route_query(
             model=req.model,
             mode=req.mode,
             current_user=current_user_context,
+            conversation_context=req.conversation_context,
         )
     raise HTTPException(status_code=400, detail=f"Unsupported query mode: {req.mode}")
 
@@ -531,6 +583,7 @@ async def route_query_stream(
             model=req.model,
             mode=req.mode,
             current_user=current_user_context,
+            conversation_context=req.conversation_context,
         )
     raise HTTPException(status_code=400, detail=f"Unsupported query mode: {req.mode}")
 
@@ -663,6 +716,30 @@ async def handle_email_send_query(
 # ──────────────────────────────────────────────
 # RAG Endpoints
 # ──────────────────────────────────────────────
+
+@app.get("/metrics")
+async def metrics():
+    """Số liệu hiệu năng hỏi đáp (in-memory, per-process)."""
+    async with query_metrics_lock:
+        samples = list(query_metrics["latency_ms"])
+        total = query_metrics["total"]
+        cache_hits = query_metrics["cache_hits"]
+        payload = {
+            "total_queries": total,
+            "cache_hits": cache_hits,
+            "cache_hit_rate": round(cache_hits / total, 3) if total else 0.0,
+            "errors": query_metrics["errors"],
+            "latency_ms": {
+                "count": len(samples),
+                "p50": _percentile(samples, 50),
+                "p95": _percentile(samples, 95),
+                "avg": round(sum(samples) / len(samples), 1) if samples else 0.0,
+            },
+            "by_mode": dict(query_metrics["by_mode"]),
+            "by_scope": dict(query_metrics["by_scope"]),
+        }
+    return payload
+
 
 @app.get("/health")
 async def health():
@@ -1040,16 +1117,25 @@ async def query_documents(req: QueryRequest, request: Request):
     request_started_at = time.monotonic()
     await enforce_rate_limit(request, "query", QUERY_RATE_LIMIT, 60)
     normalize_session_id(req.session_id)
-    current_employee = authorize_query(req)
+    current_employee = await asyncio.to_thread(authorize_query, req)
     cache_key = build_query_cache_key(req)
     cached_response = await get_cached_query_response(cache_key)
     if cached_response is not None:
         logger.info("Query response cache hit mode=%s language=%s", req.mode, req.ui_language)
+        await record_query_metric(
+            mode=req.mode,
+            ui_language=req.ui_language,
+            answer_scope=cached_response.answer_scope,
+            cache_hit=True,
+            latency_ms=(time.monotonic() - request_started_at) * 1000,
+        )
         await wait_for_min_query_latency(request_started_at)
         return cached_response.model_copy(update={"session_id": req.session_id})
 
     try:
-        directory_response = employee_directory_query_response(req, current_employee)
+        directory_response = await asyncio.to_thread(
+            employee_directory_query_response, req, current_employee
+        )
         if directory_response is not None:
             logger.info(
                 "Employee directory answer hit mode=%s language=%s",
@@ -1068,11 +1154,13 @@ async def query_documents(req: QueryRequest, request: Request):
             return prepared_response
 
         localized_req = await localize_query_request(req)
-        current_user_context = employee_context_for_query(
+        current_user_context = await asyncio.to_thread(
+            employee_context_for_query,
             localized_req,
             current_employee,
         )
-        directory_response = employee_directory_query_response(
+        directory_response = await asyncio.to_thread(
+            employee_directory_query_response,
             req,
             current_employee,
             question=localized_req.question,
@@ -1126,6 +1214,13 @@ async def query_documents(req: QueryRequest, request: Request):
             answer_scope=answer_scope,
         )
         await set_cached_query_response(cache_key, response)
+        await record_query_metric(
+            mode=req.mode,
+            ui_language=req.ui_language,
+            answer_scope=answer_scope,
+            cache_hit=False,
+            latency_ms=(time.monotonic() - request_started_at) * 1000,
+        )
         await wait_for_min_query_latency(request_started_at)
         return response
     except GmailSenderError as e:
@@ -1134,6 +1229,14 @@ async def query_documents(req: QueryRequest, request: Request):
         raise HTTPException(status_code=502, detail=str(e)) from e
     except Exception as e:
         logger.error(f"RAG query error: {e}", exc_info=True)
+        await record_query_metric(
+            mode=req.mode,
+            ui_language=req.ui_language,
+            answer_scope="error",
+            cache_hit=False,
+            latency_ms=(time.monotonic() - request_started_at) * 1000,
+            error=True,
+        )
         raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
 
 
@@ -1145,7 +1248,7 @@ async def query_stream(req: QueryRequest, request: Request):
     request_started_at = time.monotonic()
     await enforce_rate_limit(request, "query", QUERY_RATE_LIMIT, 60)
     normalize_session_id(req.session_id)
-    current_employee = authorize_query(req)
+    current_employee = await asyncio.to_thread(authorize_query, req)
     cache_key = build_query_cache_key(req)
     cached_response = await get_cached_query_response(cache_key)
     if cached_response is not None:
@@ -1157,6 +1260,13 @@ async def query_stream(req: QueryRequest, request: Request):
             response = cached_response.model_copy(update={"session_id": req.session_id})
             yield sse_status(req, "received")
             yield sse_status(req, "cache")
+            await record_query_metric(
+                mode=req.mode,
+                ui_language=req.ui_language,
+                answer_scope=response.answer_scope,
+                cache_hit=True,
+                latency_ms=(time.monotonic() - request_started_at) * 1000,
+            )
             await wait_for_min_query_latency(request_started_at)
             yield sse_status(req, "finalizing")
             yield sse_event({"type": "sources", "sources": response.sources})
@@ -1198,7 +1308,9 @@ async def query_stream(req: QueryRequest, request: Request):
             },
         )
     try:
-        directory_response = employee_directory_query_response(req, current_employee)
+        directory_response = await asyncio.to_thread(
+            employee_directory_query_response, req, current_employee
+        )
         if directory_response is not None:
             logger.info(
                 "Streaming employee directory answer hit mode=%s language=%s",
@@ -1229,11 +1341,13 @@ async def query_stream(req: QueryRequest, request: Request):
             )
 
         localized_req = await localize_query_request(req)
-        current_user_context = employee_context_for_query(
+        current_user_context = await asyncio.to_thread(
+            employee_context_for_query,
             localized_req,
             current_employee,
         )
-        directory_response = employee_directory_query_response(
+        directory_response = await asyncio.to_thread(
+            employee_directory_query_response,
             req,
             current_employee,
             question=localized_req.question,
@@ -1325,6 +1439,13 @@ async def query_stream(req: QueryRequest, request: Request):
                         answer_scope=answer_scope,
                     ),
                 )
+                await record_query_metric(
+                    mode=req.mode,
+                    ui_language=req.ui_language,
+                    answer_scope=answer_scope,
+                    cache_hit=False,
+                    latency_ms=(time.monotonic() - request_started_at) * 1000,
+                )
                 return
 
             yield sse_status(req, query_processing_status_key(localized_req))
@@ -1342,17 +1463,27 @@ async def query_stream(req: QueryRequest, request: Request):
             yield sse_event({"type": "sources", "sources": sources})
             yield sse_event({"type": "meta", "model": routed_model, "mode": req.mode, "answer_scope": answer_scope})
 
-            # Stream từng token câu trả lời
+            # Stream từng token câu trả lời. Generator phát tuple (kind, text):
+            # 'token' = delta để hiển thị dần; 'replace' = bản đã hậu xử lý,
+            # chỉ xuất hiện khi cleanup đổi nội dung (ca model local lỗi).
             answer_parts = []
-            async for token in token_stream:
-                answer_parts.append(token)
-                yield sse_event({"type": "token", "content": token})
+            final_answer = None
+            async for kind, text in token_stream:
+                if kind == "replace":
+                    final_answer = text
+                    yield sse_event({"type": "replace", "content": text})
+                else:
+                    answer_parts.append(text)
+                    yield sse_event({"type": "token", "content": text})
 
             yield sse_event({"type": "done"})
+            cached_answer = (
+                final_answer if final_answer is not None else "".join(answer_parts)
+            )
             await set_cached_query_response(
                 cache_key,
                 QueryResponse(
-                    answer="".join(answer_parts),
+                    answer=cached_answer,
                     sources=sources,
                     session_id=req.session_id,
                     model=routed_model,
@@ -1360,8 +1491,23 @@ async def query_stream(req: QueryRequest, request: Request):
                     answer_scope=answer_scope,
                 ),
             )
+            await record_query_metric(
+                mode=req.mode,
+                ui_language=req.ui_language,
+                answer_scope=answer_scope,
+                cache_hit=False,
+                latency_ms=(time.monotonic() - request_started_at) * 1000,
+            )
         except Exception as e:
             logger.error(f"Stream generation error: {e}", exc_info=True)
+            await record_query_metric(
+                mode=req.mode,
+                ui_language=req.ui_language,
+                answer_scope="error",
+                cache_hit=False,
+                latency_ms=(time.monotonic() - request_started_at) * 1000,
+                error=True,
+            )
             yield sse_event({"type": "error", "message": str(e)})
 
     return StreamingResponse(

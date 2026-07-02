@@ -164,11 +164,11 @@ class MesQueryService:
         self,
         question: str,
         model: str = "openai",
-    ) -> tuple[AsyncGenerator[str, None], list, str, str]:
+    ) -> tuple[AsyncGenerator[tuple[str, str], None], list, str, str]:
         answer, results, routed_model, answer_scope = await self.query(question, model)
 
         async def token_generator():
-            yield answer
+            yield ("token", answer)
 
         return token_generator(), results, routed_model, answer_scope
 
