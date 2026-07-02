@@ -1172,7 +1172,7 @@ summary:focus-visible {
   min-width: 0;
   padding-top: 3px;
   color: #262d37;
-  font-size: 15px;
+  font-size: 16px;
   line-height: 1.72;
 }
 
@@ -1467,7 +1467,7 @@ summary:focus-visible {
 .composer {
   position: relative;
   width: min(840px, calc(100% - 36px));
-  margin: 0 auto 18px;
+  margin: 0 auto calc(18px + env(safe-area-inset-bottom, 0px));
   background: #ffffff;
   border: 1px solid #ccd5dd;
   border-radius: 8px;
@@ -1999,6 +1999,30 @@ summary:focus-visible {
   .ai-disclosure[open] > div {
     right: 0;
     left: auto;
+  }
+
+  /* Bấm bằng ngón tay là chính trên mobile: nâng vùng chạm lên tối thiểu 44px. */
+  .icon-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .send-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .mode-tabs button {
+    min-height: 44px;
+  }
+
+  .composer-attach {
+    top: 7px;
+    left: 7px;
+  }
+
+  .composer:has(.composer-attach) textarea {
+    padding-left: 58px;
   }
 }
 

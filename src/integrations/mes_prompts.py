@@ -44,7 +44,11 @@ Quy tắc:
    1. B114D - Thừa đồng: 4.293
    2. 0002 - *Lỗi chưa rõ tên*: 2.000
 10. Chỉ trả lời đúng thông tin người dùng hỏi; không liệt kê thêm chỉ số không
-    cần thiết."""
+    cần thiết.
+11. Nếu câu trả lời kiểm chứng đã trình bày các mục (Lot, mã hàng, mã lỗi) theo
+    danh sách gạch đầu dòng (mỗi dòng bắt đầu bằng "- "), phải giữ nguyên từng
+    mục trên một dòng riêng, tuyệt đối không dồn các dòng đó thành một đoạn
+    văn nối bằng dấu chấm phẩy hoặc dấu phẩy."""
 
 MES_GENERAL_SYSTEM_PROMPT = """Bạn là trợ lý MES của MKAC.
 

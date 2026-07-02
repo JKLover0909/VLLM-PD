@@ -47,7 +47,7 @@ const QUICK_PROMPTS = {
     mes: [
       "Mã Lot nào có số lượng lỗi nhiều nhất?",
       "Trong Lot lỗi nhiều nhất, loại lỗi nào phổ biến nhất?",
-      "Sản phẩm nào có tổng lỗi cao nhất?",
+      "Hãy liệt kê 10 mã hàng có số lượng lỗi nhiều nhất",
     ],
     research: [
       "Lập báo cáo nghiên cứu tổng hợp từ các tài liệu",
@@ -64,7 +64,7 @@ const QUICK_PROMPTS = {
     mes: [
       "エラー数が最も多いLotはどれですか？",
       "エラー数が最も多いLotで、最も多いエラー種類は何ですか？",
-      "総エラー数が最も多い製品はどれですか？",
+      "総エラー数が多い製品を上位10件挙げてください",
     ],
     research: [
       "資料から総合的な調査レポートを作成してください",
@@ -1668,6 +1668,7 @@ function App() {
                 type="file"
                 multiple
                 accept=".pdf,.docx,.xlsx,.pptx,.html,.png,.jpg,.jpeg"
+                aria-label={t("common.chooseDocument")}
                 onChange={(event) => addPendingFiles(event.target.files)}
               />
 

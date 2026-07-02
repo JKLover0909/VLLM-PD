@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from src.integrations.mes_answer_format import format_item_list
+
 
 class MesDatabaseError(RuntimeError):
     """Raised when the MES snapshot cannot be queried safely."""
@@ -171,7 +173,11 @@ class MesDatabase:
         if error_id:
             return self._error_name(error_id)
         if self._is_highest_product_error_question(normalized):
-            return self._highest_error_products()
+            return self._highest_error_products(
+                limit=self._extract_top_limit(
+                    normalized, unit_pattern=self.PRODUCT_UNIT_PATTERN
+                )
+            )
         if product_id and has_error:
             if self._asks_breakdown(normalized):
                 return self._product_error_breakdown(product_id)
@@ -316,11 +322,13 @@ class MesDatabase:
         if not rows:
             return self._result("list_lots", [], "MES snapshot chưa có dữ liệu Lot.")
 
-        descriptions = "; ".join(
-            f"{row['lot_id']} ({row['product_id']}): "
-            f"{self._number(row['pcs_lot'])} PCS, "
-            f"{self._number(row['total_error_qty'])} lỗi"
-            for row in rows
+        descriptions = format_item_list(
+            [
+                f"{row['lot_id']} ({row['product_id']}): "
+                f"{self._number(row['pcs_lot'])} PCS, "
+                f"{self._number(row['total_error_qty'])} lỗi"
+                for row in rows
+            ]
         )
         answer = (
             f"Theo MES snapshot, hiện có {self._number(total_lot_count)} Lot "
@@ -388,10 +396,12 @@ class MesDatabase:
                 f"Không tìm thấy dữ liệu lỗi của Lot {lot_id} trong MES snapshot.",
                 (lot_id,),
             )
-        descriptions = "; ".join(
-            f"{row['error_id']} ({row['error_name'] or '*Lỗi chưa rõ tên*'}): "
-            f"{self._number(row['total_error_qty'])}"
-            for row in rows
+        descriptions = format_item_list(
+            [
+                f"{row['error_id']} ({row['error_name'] or '*Lỗi chưa rõ tên*'}): "
+                f"{self._number(row['total_error_qty'])}"
+                for row in rows
+            ]
         )
         answer = (
             f"Theo MES snapshot, các lỗi có số lượng cao nhất của Lot {lot_id} là: "
@@ -483,10 +493,12 @@ class MesDatabase:
                 f"Không tìm thấy dữ liệu lỗi của mã hàng {product_id} trong MES snapshot.",
                 (product_id,),
             )
-        descriptions = "; ".join(
-            f"{row['error_id']} ({row['error_name'] or '*Lỗi chưa rõ tên*'}): "
-            f"{self._number(row['total_error_qty'])}"
-            for row in rows
+        descriptions = format_item_list(
+            [
+                f"{row['error_id']} ({row['error_name'] or '*Lỗi chưa rõ tên*'}): "
+                f"{self._number(row['total_error_qty'])}"
+                for row in rows
+            ]
         )
         answer = f"Theo MES snapshot, các lỗi chính của mã hàng {product_id} là: {descriptions}."
         return self._result(
@@ -496,25 +508,44 @@ class MesDatabase:
             (product_id, str(rows[0]["error_id"]), str(rows[0]["total_error_qty"])),
         )
 
-    def _highest_error_products(self) -> MesDatabaseResult:
+    def _highest_error_products(self, limit: int = 1) -> MesDatabaseResult:
         exclude_test_products = self._exclude_test_filter("product_id", None)
-        rows = self._fetch_all(
-            f"""
-            SELECT product_id, lot_count, error_record_count, total_error_qty
-            FROM v_product_error_summary
-            WHERE {exclude_test_products}
-              AND total_error_qty = (
-                SELECT MAX(total_error_qty) FROM v_product_error_summary
+        if limit > 1:
+            rows = self._fetch_all(
+                f"""
+                SELECT product_id, lot_count, error_record_count, total_error_qty
+                FROM v_product_error_summary
                 WHERE {exclude_test_products}
+                  AND total_error_qty > 0
+                ORDER BY total_error_qty DESC, product_id
+                LIMIT ?
+                """,
+                (limit,),
             )
-            ORDER BY product_id
-            """
-        )
+        else:
+            rows = self._fetch_all(
+                f"""
+                SELECT product_id, lot_count, error_record_count, total_error_qty
+                FROM v_product_error_summary
+                WHERE {exclude_test_products}
+                  AND total_error_qty = (
+                    SELECT MAX(total_error_qty) FROM v_product_error_summary
+                    WHERE {exclude_test_products}
+                )
+                ORDER BY product_id
+                """
+            )
         if not rows:
             return self._result("highest_error_product", [], "MES snapshot chưa có dữ liệu sản phẩm.")
-        answer = "Theo MES snapshot, mã hàng có tổng lỗi cao nhất là: " + "; ".join(
-            f"{row['product_id']} với {self._number(row['total_error_qty'])} lỗi"
-            for row in rows
+        if len(rows) == 1:
+            prefix = "Theo MES snapshot, mã hàng có tổng lỗi cao nhất là: "
+        else:
+            prefix = f"Theo MES snapshot, {len(rows)} mã hàng có tổng lỗi cao nhất là: "
+        answer = prefix + format_item_list(
+            [
+                f"{row['product_id']} với {self._number(row['total_error_qty'])} lỗi"
+                for row in rows
+            ]
         ) + "."
         terms = tuple(
             str(value)
@@ -547,10 +578,12 @@ class MesDatabase:
                 f"Không tìm thấy Lot nào có mã lỗi {error_id} trong MES snapshot.",
                 (error_id,),
             )
-        answer = f"Theo MES snapshot, các Lot có mã lỗi {error_id} nhiều nhất là: " + "; ".join(
-            f"{row['lot_id']} ({row['product_id'] or 'chưa rõ mã hàng'}): "
-            f"{self._number(row['total_error_qty'])}"
-            for row in rows
+        answer = f"Theo MES snapshot, các Lot có mã lỗi {error_id} nhiều nhất là: " + format_item_list(
+            [
+                f"{row['lot_id']} ({row['product_id'] or 'chưa rõ mã hàng'}): "
+                f"{self._number(row['total_error_qty'])}"
+                for row in rows
+            ]
         ) + "."
         return self._result(
             "lots_for_error",
@@ -700,13 +733,19 @@ class MesDatabase:
         return has_lot and has_error and has_maximum
 
     @staticmethod
-    def _extract_top_limit(normalized: str, default: int = 1, maximum: int = 50) -> int:
+    def _extract_top_limit(
+        normalized: str,
+        default: int = 1,
+        maximum: int = 50,
+        *,
+        unit_pattern: str = r"lot|lots|lo",
+    ) -> int:
         match = re.search(
-            r"\btop\s*(\d+)(?:\s+\w+){0,5}\s+(?:lot|lots|lo)\b",
+            rf"\btop\s*(\d+)(?:\s+\w+){{0,5}}\s+(?:{unit_pattern})\b",
             normalized,
         )
         if not match:
-            match = re.search(r"\b(\d+)\s+(?:lot|lots|lo)\b", normalized)
+            match = re.search(rf"\b(\d+)\s+(?:{unit_pattern})\b", normalized)
         if not match:
             word_numbers = {
                 "one": 1,
@@ -723,7 +762,7 @@ class MesDatabase:
             word_match = re.search(
                 (
                     r"\btop\s+(one|two|three|four|five|six|seven|eight|nine|ten)"
-                    r"(?:\s+\w+){0,5}\s+(?:lot|lots|lo)\b"
+                    rf"(?:\s+\w+){{0,5}}\s+(?:{unit_pattern})\b"
                 ),
                 normalized,
             )
@@ -732,6 +771,8 @@ class MesDatabase:
         if not match:
             return default
         return max(1, min(maximum, int(match.group(1))))
+
+    PRODUCT_UNIT_PATTERN = r"ma hang|san pham|product|products|item|items|part|parts"
 
     @staticmethod
     def _is_highest_product_error_question(normalized: str) -> bool:
@@ -767,10 +808,12 @@ class MesDatabase:
     def _format_ranked_lots(rows: list[dict[str, Any]]) -> str:
         if not rows:
             return "MES snapshot chưa có dữ liệu lỗi theo Lot."
-        descriptions = "; ".join(
-            f"Lot {row['lot_id']}, mã hàng {row['product_id']}, "
-            f"{MesDatabase._number(row['total_error_qty'])} lỗi"
-            for row in rows
+        descriptions = format_item_list(
+            [
+                f"Lot {row['lot_id']}, mã hàng {row['product_id']}, "
+                f"{MesDatabase._number(row['total_error_qty'])} lỗi"
+                for row in rows
+            ]
         )
         return f"Theo MES snapshot, Lot có tổng lỗi cao nhất là: {descriptions}."
 
@@ -787,10 +830,12 @@ class MesDatabase:
             )
             top_errors: list[dict[str, Any]] = row.get("top_errors") or []
             if top_errors:
-                error_lines = "; ".join(
-                    f"{e['error_id']} - {e['error_name'] or '*Lỗi chưa rõ tên*'}: "
-                    f"{MesDatabase._number(e['error_qty'])}"
-                    for e in top_errors
+                error_lines = format_item_list(
+                    [
+                        f"{e['error_id']} - {e['error_name'] or '*Lỗi chưa rõ tên*'}: "
+                        f"{MesDatabase._number(e['error_qty'])}"
+                        for e in top_errors
+                    ]
                 )
                 base += f". Trong đó các lỗi có số lượng lớn nhất: {error_lines}"
             parts.append(base)
@@ -798,7 +843,7 @@ class MesDatabase:
             prefix = "Theo MES snapshot, Lot có tổng lỗi cao nhất là: "
         else:
             prefix = f"Theo MES snapshot, {len(rows)} Lot có tổng lỗi cao nhất là: "
-        return prefix + "; ".join(parts) + "."
+        return prefix + format_item_list(parts) + "."
 
     @staticmethod
     def _number(value: Any) -> str:

@@ -16,6 +16,19 @@ if TYPE_CHECKING:  # pragma: no cover - chỉ dùng cho type hint
     from src.integrations.mes_sql_agent import MesSqlQueryResult
 
 
+def format_item_list(items: list[str], *, inline_threshold: int = 3) -> str:
+    """Nối các mục thành câu tự nhiên nếu ít, hoặc danh sách markdown nếu nhiều.
+
+    Model hay dồn nhiều Lot/mã hàng nối bằng "; " thành một đoạn văn dài, khó
+    đọc. Từ trên `inline_threshold` mục, trình bày mỗi mục trên một dòng gạch
+    đầu dòng để cả câu trả lời kiểm chứng và giao diện chat (ReactMarkdown)
+    render thành danh sách thật.
+    """
+    if len(items) <= inline_threshold:
+        return "; ".join(items)
+    return "\n\n" + "\n".join(f"- {item}" for item in items)
+
+
 def format_live_api_fallback(lots: list["MesLotError"]) -> str:
     def describe(lot: "MesLotError") -> str:
         quantity = f"{lot.total_error_qty:,}".replace(",", ".")
@@ -26,8 +39,8 @@ def format_live_api_fallback(lots: list["MesLotError"]) -> str:
 
     if len(lots) == 1:
         return f"{describe(lots[0])} là Lot có số lượng lỗi cao nhất."
-    return "Các Lot có số lượng lỗi cao nhất là: " + "; ".join(
-        describe(lot) for lot in lots
+    return "Các Lot có số lượng lỗi cao nhất là: " + format_item_list(
+        [describe(lot) for lot in lots]
     ) + "."
 
 

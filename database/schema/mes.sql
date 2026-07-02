@@ -144,7 +144,11 @@ FROM error_events AS e
 LEFT JOIN lots AS l ON l.lot_pk = e.lot_pk
 LEFT JOIN error_catalog AS c ON c.error_catalog_pk = e.error_catalog_pk
 WHERE LOWER(COALESCE(e.lot_id, '')) NOT LIKE '%test%'
-  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE '%test%';
+  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE '%test%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE '%dieuphoi%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE 'windowtime%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE '9999-%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT IN ('666888', '666999', '223344', '212121');
 
 CREATE VIEW v_lot_error_summary AS
 SELECT
@@ -163,6 +167,10 @@ FROM lots AS l
 LEFT JOIN error_events AS e ON e.lot_pk = l.lot_pk
 WHERE LOWER(COALESCE(l.lot_id, '')) NOT LIKE '%test%'
   AND LOWER(COALESCE(l.product_id, '')) NOT LIKE '%test%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE '%dieuphoi%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE 'windowtime%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE '9999-%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT IN ('666888', '666999', '223344', '212121')
 GROUP BY l.lot_pk;
 
 CREATE VIEW v_lot_error_breakdown AS
@@ -180,6 +188,10 @@ LEFT JOIN lots AS l ON l.lot_pk = e.lot_pk
 LEFT JOIN error_catalog AS c ON c.error_catalog_pk = e.error_catalog_pk
 WHERE LOWER(COALESCE(e.lot_id, '')) NOT LIKE '%test%'
   AND LOWER(COALESCE(l.product_id, '')) NOT LIKE '%test%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE '%dieuphoi%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE 'windowtime%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE '9999-%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT IN ('666888', '666999', '223344', '212121')
 GROUP BY
     e.lot_id,
     l.product_id,
@@ -198,4 +210,8 @@ FROM lots AS l
 LEFT JOIN error_events AS e ON e.lot_pk = l.lot_pk
 WHERE LOWER(COALESCE(l.lot_id, '')) NOT LIKE '%test%'
   AND LOWER(COALESCE(l.product_id, '')) NOT LIKE '%test%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE '%dieuphoi%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE 'windowtime%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT LIKE '9999-%'
+  AND LOWER(COALESCE(l.product_id, '')) NOT IN ('666888', '666999', '223344', '212121')
 GROUP BY l.product_id;

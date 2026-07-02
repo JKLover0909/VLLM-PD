@@ -13,6 +13,8 @@ from typing import Any
 from sqlglot import exp, parse
 from sqlglot.errors import ParseError
 
+from src.integrations.mes_answer_format import format_item_list
+
 
 class MesSqlAgentError(RuntimeError):
     """Raised when a generated MES SQL query is unsafe or cannot be executed."""
@@ -337,7 +339,11 @@ class MesSqlAgent:
                     "và số liệu, dùng dấu chấm phân cách hàng nghìn. Không nhắc "
                     "SQL, JSON hoặc tên field kỹ thuật. Chỉ trả về câu trả lời "
                     "thuần, không bọc trong JSON. Nói rõ là MES snapshot. "
-                    "Tên lỗi rỗng phải nói '*Lỗi chưa rõ tên*'. Không suy đoán."
+                    "Tên lỗi rỗng phải nói '*Lỗi chưa rõ tên*'. Không suy đoán. "
+                    "Nếu kết quả có nhiều hơn 3 dòng, trình bày mỗi dòng dữ liệu "
+                    "trên một mục gạch đầu dòng markdown riêng (bắt đầu bằng "
+                    "'- '), không dồn các dòng thành một đoạn văn nối bằng dấu "
+                    "chấm phẩy hoặc dấu phẩy."
                 ),
             },
             {
@@ -387,7 +393,7 @@ class MesSqlAgent:
                     f"{error_label}: "
                     f"{MesSqlAgent._format_vietnamese_number(row.get(error_quantity_column))}"
                 )
-            return prefix + ", các loại lỗi nhiều nhất là " + "; ".join(items) + "."
+            return prefix + ", các loại lỗi nhiều nhất là " + format_item_list(items) + "."
         if {"lot_id", "product_id"}.issubset(first_row) and error_quantity_column:
             items = []
             for row in result.rows[:10]:
@@ -398,7 +404,7 @@ class MesSqlAgent:
                 )
             return (
                 "Theo MES snapshot, các Lot có tổng lỗi cao nhất là "
-                + "; ".join(items)
+                + format_item_list(items)
                 + "."
             )
         if "error_id" in first_row and error_quantity_column:
@@ -416,7 +422,7 @@ class MesSqlAgent:
                 )
             return (
                 f"Theo MES snapshot, các loại lỗi nhiều nhất{time_prefix} là "
-                + "; ".join(items)
+                + format_item_list(items)
                 + "."
             )
         time_column = MesSqlAgent._find_time_column(first_row)
@@ -430,7 +436,7 @@ class MesSqlAgent:
                 )
             return (
                 "Theo MES snapshot, kết quả lỗi theo thời gian là "
-                + "; ".join(items)
+                + format_item_list(items)
                 + "."
             )
         summaries = [
@@ -442,7 +448,7 @@ class MesSqlAgent:
             )
             for row in result.rows[:10]
         ]
-        return "Kết quả từ MES snapshot: " + "; ".join(summaries) + "."
+        return "Kết quả từ MES snapshot: " + format_item_list(summaries) + "."
 
     @staticmethod
     def _find_time_column(row: dict[str, Any]) -> str:

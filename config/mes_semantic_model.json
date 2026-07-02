@@ -4,7 +4,7 @@
   "source_policy": {
     "is_realtime": false,
     "exclude_test_data_by_default": true,
-    "test_lot_pattern": "Lot/sản phẩm test là bản ghi có lot_id hoặc product_id chứa chuỗi 'test' không phân biệt hoa thường; các view public đã loại sẵn nhóm này",
+    "test_lot_pattern": "Lot/sản phẩm test là bản ghi có lot_id hoặc product_id chứa chuỗi 'test' không phân biệt hoa thường; các view public đã loại sẵn nhóm này. Ngoài ra product_id thuộc các dạng sau là bản ghi điều phối/nội bộ MES, không phải mã hàng thật, cũng đã bị loại khỏi các view public: chứa 'dieuphoi', bắt đầu bằng 'windowtime' hoặc '9999-', hoặc là một trong các mã giữ chỗ '666888', '666999', '223344', '212121'.",
     "unknown_error_name": "Không suy đoán tên khi error_name rỗng",
     "time_columns": "error_time là thời điểm phát sinh lỗi; produce_date là ngày sản xuất Lot. Không dùng produce_date để trả lời thời điểm lỗi phát sinh."
   },
