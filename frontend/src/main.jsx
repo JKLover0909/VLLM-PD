@@ -910,7 +910,7 @@ function App() {
           setBusy(false);
         }
       }, 25);
-    }, 300);
+    }, 1000);
   };
 
   useEffect(() => {
