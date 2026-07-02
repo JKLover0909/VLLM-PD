@@ -1,13 +1,22 @@
-"""MES query service separated from document RAG routing."""
+"""MES query service separated from document RAG routing.
+
+Phần điều phối (routing + gọi LLM) nằm ở lớp ``MesQueryService`` dưới đây. Các
+hàm phụ trợ thuần túy đã được tách sang các module chuyên biệt để dễ phát triển:
+
+* ``mes_intent``        – nhận diện ý định và sinh SQL tất định theo thời gian.
+* ``mes_prompts``       – system prompt và message builder.
+* ``mes_answer_format`` – định dạng fallback và kiểm chứng đầu ra của model.
+* ``mes_config``        – định tuyến model và ngân sách token.
+
+Để giữ nguyên API công khai (``MesQueryService.<helper>(...)`` mà các test và
+đoạn code khác đang dùng), lớp này gắn lại các hàm module thành ``staticmethod``.
+"""
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
-import re
-import unicodedata
 from typing import Any, AsyncGenerator
 
 from openai import AsyncOpenAI
@@ -15,74 +24,22 @@ from openai import AsyncOpenAI
 from src.integrations.mes_client import MesClient, MesLotError
 from src.integrations.mes_database import MesDatabase, MesDatabaseError, MesDatabaseResult
 from src.integrations.mes_sql_agent import MesSqlAgent, MesSqlAgentError, MesSqlQueryResult
-
-logger = logging.getLogger(__name__)
-
-MODEL_ROUTES = {
-    "auto": "auto-model",
-    "local": "local-qwen-chat",
-    "openai": "openai-model",
-    "grok": "grok-model",
-}
-
-LOCAL_CHAT_MODEL_ALIASES = {"auto-model", "local-gemma", "local-qwen-chat"}
-LOCAL_MODEL_ALIASES = LOCAL_CHAT_MODEL_ALIASES | {"local-qwen-coder", "coding-model"}
-
-MES_SYSTEM_PROMPT = """Bạn là trợ lý dữ liệu sản xuất bo mạch của MKAC.
-
-Hãy trả lời bằng một câu tiếng Việt tự nhiên, ngắn gọn và trực tiếp.
-Bắt buộc nêu đủ mã Lot, mã hàng và tổng số lỗi của Lot có số lỗi cao nhất.
-Chỉ sử dụng dữ liệu MES được cung cấp, không suy đoán nguyên nhân lỗi và không thêm dữ liệu khác.
-Định dạng số lượng lỗi theo cách đọc tiếng Việt, dùng dấu chấm phân cách hàng nghìn.
-Giữ nguyên mã và số lượng ở dạng chữ số; tuyệt đối không viết số lượng lỗi bằng chữ.
-Nếu có nhiều Lot đồng hạng, phải nêu đầy đủ tất cả các Lot đó."""
-
-MES_DATABASE_SYSTEM_PROMPT = """Bạn là trợ lý phân tích dữ liệu sản xuất bo mạch MKAC.
-
-Chỉ trả lời từ dữ liệu MES snapshot được cung cấp. Không tự viết SQL, không suy
-đoán nguyên nhân lỗi và không bổ sung dữ liệu bên ngoài.
-
-Quy tắc:
-1. Trả lời bằng tiếng Việt tự nhiên, trực tiếp và ngắn gọn.
-2. Giữ nguyên mã Lot, mã hàng, mã lỗi, công đoạn và các con số.
-3. Dùng dấu chấm phân cách hàng nghìn khi trình bày số lượng.
-4. Tổng số lượng lỗi và số lần ghi nhận lỗi là hai đại lượng khác nhau, không
-   được đánh đồng.
-5. Tên lỗi rỗng nghĩa là *Lỗi chưa rõ tên*; không được tự đặt tên lỗi.
-6. Nói rõ đây là dữ liệu MES snapshot khi kết luận có thể bị hiểu là dữ liệu
-   thời gian thực.
-7. Không nhắc tới JSON, SQL, filters, chính sách hiển thị hoặc cơ chế nội bộ.
-8. Tuyệt đối không để lộ tên trường kỹ thuật trong dữ liệu đầu vào.
-9. Nếu dữ liệu chứa danh sách lỗi chi tiết của một Lot, hãy tự động trình bày
-   thêm danh sách đó (nếu câu trả lời chính chưa liệt kê). Ví dụ:
-   trong đó 3 lỗi có số lượng lỗi lớn nhất là:
-   1. B114D - Thừa đồng: 4.293
-   2. 0002 - *Lỗi chưa rõ tên*: 2.000
-10. Chỉ trả lời đúng thông tin người dùng hỏi; không liệt kê thêm chỉ số không
-    cần thiết."""
-
-MES_GENERAL_SYSTEM_PROMPT = """Bạn là trợ lý MES của MKAC.
-
-Nhiệm vụ của bạn là trả lời các câu hỏi giải thích khái niệm, nghiệp vụ hoặc
-quy trình MES ở mức tổng quan. Không truy vấn dữ liệu, không đưa số liệu cụ thể,
-không nói như thể đã xem MES snapshot và không suy đoán thông tin nội bộ.
-
-Nếu câu hỏi cần số liệu cụ thể theo Lot, mã hàng, mã lỗi, thời gian hoặc thống
-kê, hãy hướng dẫn người dùng hỏi bằng các thông tin đó để hệ thống truy vấn MES."""
-
-MES_UNSUPPORTED_ANSWER = (
-    "Chưa nhận diện được truy vấn MES này. Bạn có thể hỏi về thông tin một Lot, "
-    "chi tiết lỗi theo Lot, tên mã lỗi hoặc thống kê lỗi theo mã hàng."
+from src.integrations import mes_answer_format, mes_config, mes_intent, mes_prompts
+from src.integrations.mes_config import (
+    LOCAL_CHAT_MODEL_ALIASES,
+    LOCAL_MODEL_ALIASES,
+    MODEL_ROUTES,
+    env_int,
+)
+from src.integrations.mes_prompts import (
+    MES_DATABASE_SYSTEM_PROMPT,
+    MES_GENERAL_FALLBACK_ANSWER,
+    MES_GENERAL_SYSTEM_PROMPT,
+    MES_SYSTEM_PROMPT,
+    MES_UNSUPPORTED_ANSWER,
 )
 
-
-def env_int(name: str, default: int, *, minimum: int = 1, maximum: int = 4096) -> int:
-    """Read a bounded integer environment setting."""
-    try:
-        value = int(os.getenv(name, str(default)))
-    except ValueError:
-        return default
-    return max(minimum, min(maximum, value))
+logger = logging.getLogger(__name__)
 
 
 class MesQueryService:
@@ -183,12 +140,7 @@ class MesQueryService:
         model: str,
     ) -> tuple[str, str]:
         routed_model = self.resolve_model(model)
-        fallback_answer = (
-            "Đây là câu hỏi giải thích nghiệp vụ MES, không phải truy vấn số liệu. "
-            "MES là hệ thống hỗ trợ theo dõi và quản lý dữ liệu sản xuất như Lot, "
-            "mã hàng, lỗi phát sinh và trạng thái xử lý. Nếu cần số liệu cụ thể, "
-            "hãy hỏi theo Lot, mã hàng, mã lỗi hoặc khoảng thời gian."
-        )
+        fallback_answer = MES_GENERAL_FALLBACK_ANSWER
         if routed_model in LOCAL_MODEL_ALIASES:
             return fallback_answer, routed_model
         try:
@@ -516,681 +468,46 @@ class MesQueryService:
             logger.warning("MES snapshot query failed: %s", exc)
             return None
 
-    @staticmethod
-    def live_api_messages(
-        question: str,
-        lots: list[MesLotError],
-    ) -> list[dict[str, str]]:
-        rows = "\n".join(
-            (
-                f"- Lot_Id={lot.lot_id}; Product_Id={lot.product_id}; "
-                f"Total_Error_Qty={lot.total_error_qty}"
-            )
-            for lot in lots
-        )
-        return [
-            {"role": "system", "content": MES_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": f"Câu hỏi: {question}\n\nDữ liệu MES đã xác thực:\n{rows}",
-            },
-        ]
+    # ──────────────────────────────────────────────────────────────────
+    # Delegators giữ nguyên API công khai. Logic thật nằm ở các module
+    # mes_prompts / mes_answer_format / mes_intent / mes_config.
+    # ──────────────────────────────────────────────────────────────────
 
-    @staticmethod
-    def database_messages(
-        question: str,
-        result: MesDatabaseResult,
-    ) -> list[dict[str, str]]:
-        payload = json.dumps(
-            result.prompt_payload(),
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
-        return [
-            {"role": "system", "content": MES_DATABASE_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": (
-                    f"Câu hỏi: {question}\n\n"
-                    f"Thông tin MES để trả lời:\n{payload}\n\n"
-                    f"Câu trả lời kiểm chứng để tham khảo: {result.fallback_answer}\n"
-                    "Hãy diễn đạt tự nhiên, không nhắc tới cấu trúc dữ liệu nội bộ."
-                ),
-            },
-        ]
+    # mes_prompts
+    live_api_messages = staticmethod(mes_prompts.live_api_messages)
+    database_messages = staticmethod(mes_prompts.database_messages)
 
-    @staticmethod
-    def format_live_api_fallback(lots: list[MesLotError]) -> str:
-        def describe(lot: MesLotError) -> str:
-            quantity = f"{lot.total_error_qty:,}".replace(",", ".")
-            return (
-                f"Lot {lot.lot_id}, mã hàng {lot.product_id}, "
-                f"với tổng cộng {quantity} lỗi"
-            )
+    # mes_answer_format
+    format_live_api_fallback = staticmethod(mes_answer_format.format_live_api_fallback)
+    live_api_answer_has_required_fields = staticmethod(
+        mes_answer_format.live_api_answer_has_required_fields
+    )
+    database_answer_has_required_terms = staticmethod(
+        mes_answer_format.database_answer_has_required_terms
+    )
+    normalize_sql_answer = staticmethod(mes_answer_format.normalize_sql_answer)
+    sql_answer_matches_result = staticmethod(mes_answer_format.sql_answer_matches_result)
+    sql_answer_is_natural = staticmethod(mes_answer_format.sql_answer_is_natural)
 
-        if len(lots) == 1:
-            return f"{describe(lots[0])} là Lot có số lượng lỗi cao nhất."
-        return "Các Lot có số lượng lỗi cao nhất là: " + "; ".join(
-            describe(lot) for lot in lots
-        ) + "."
+    # mes_intent
+    is_highest_lot_error_question = staticmethod(mes_intent.is_highest_lot_error_question)
+    is_compound_mes_question = staticmethod(mes_intent.is_compound_mes_question)
+    is_time_related_mes_question = staticmethod(mes_intent.is_time_related_mes_question)
+    time_sql_for_question = staticmethod(mes_intent.time_sql_for_question)
+    normalized_text = staticmethod(mes_intent.normalized_text)
+    should_use_sql_agent = staticmethod(mes_intent.should_use_sql_agent)
+    extract_date = staticmethod(mes_intent.extract_date)
+    extract_month = staticmethod(mes_intent.extract_month)
+    extract_top_limit = staticmethod(mes_intent.extract_top_limit)
+    has_top_marker = staticmethod(mes_intent.has_top_marker)
 
-    @staticmethod
-    def live_api_answer_has_required_fields(
-        answer: str,
-        lots: list[MesLotError],
-    ) -> bool:
-        normalized_quantity = answer.replace(".", "").replace(",", "")
-        return bool(answer.strip()) and all(
-            lot.lot_id in answer
-            and lot.product_id in answer
-            and str(lot.total_error_qty) in normalized_quantity
-            for lot in lots
-        )
-
-    @staticmethod
-    def database_answer_has_required_terms(
-        answer: str,
-        result: MesDatabaseResult,
-    ) -> bool:
-        if not answer.strip():
-            return False
-        forbidden_fields = (
-            "total_error_qty",
-            "error_record_count",
-            "distinct_error_count",
-            "unmapped_error_record_count",
-            "lot_count",
-            "product_id",
-            "lot_id",
-            "error_id",
-            "process_id",
-            "json",
-            "sql",
-            "filters",
-            "filter",
-            "chính sách hiển thị",
-            "chinh sach hien thi",
-            "表示ポリシー",
-            "フィルタ",
-        )
-        if any(field in answer.lower() for field in forbidden_fields):
-            return False
-        normalized_answer = answer.replace(".", "").replace(",", "")
-        return all(
-            not term
-            or term in answer
-            or term.replace(".", "").replace(",", "") in normalized_answer
-            for term in result.required_terms
-        )
-
-    @staticmethod
-    def normalize_sql_answer(answer: str) -> str:
-        text = (answer or "").strip()
-        if not text:
-            return ""
-        if text.startswith("```"):
-            text = text.strip("`").strip()
-            if text.lower().startswith("json"):
-                text = text[4:].strip()
-        if text.startswith("{") and text.endswith("}"):
-            try:
-                payload = json.loads(text)
-            except json.JSONDecodeError:
-                return text
-            if isinstance(payload, dict):
-                nested_answer = payload.get("answer")
-                if isinstance(nested_answer, str):
-                    return nested_answer.strip()
-        return text
-
-    @staticmethod
-    def sql_answer_matches_result(answer: str, result: MesSqlQueryResult) -> bool:
-        normalized = answer.lower()
-        normalized_numbers = answer.replace(".", "").replace(",", "")
-        for row in result.rows[:5]:
-            checked_row_value = False
-            for key in ("lot_id", "product_id", "error_id"):
-                value = row.get(key)
-                checked_row_value = checked_row_value or bool(value)
-                if value and str(value).lower() not in normalized:
-                    return False
-            error_name = row.get("error_name")
-            checked_row_value = checked_row_value or bool(error_name)
-            if error_name and str(error_name).strip():
-                if str(error_name).lower() not in normalized:
-                    return False
-            elif "error_name" in row and "chưa rõ tên" not in normalized:
-                return False
-            if checked_row_value:
-                continue
-
-            for key, value in row.items():
-                if value is None or value == "":
-                    continue
-                key_lower = key.lower()
-                if any(
-                    marker in key_lower
-                    for marker in ("date", "time", "month", "day", "period")
-                ):
-                    if str(value).lower() not in normalized:
-                        return False
-                elif isinstance(value, (int, float)) and any(
-                    marker in key_lower
-                    for marker in (
-                        "total",
-                        "qty",
-                        "quantity",
-                        "count",
-                        "sum",
-                    )
-                ):
-                    compact_value = str(int(value) if float(value).is_integer() else value)
-                    if compact_value not in normalized_numbers:
-                        return False
-        return True
-
-    @staticmethod
-    def sql_answer_is_natural(answer: str) -> bool:
-        if not answer.strip():
-            return False
-        normalized = answer.lower()
-        forbidden = (
-            "select ",
-            " from ",
-            "total_error_qty",
-            "error_record_count",
-            "distinct_error_count",
-            "```sql",
-            "{\"answer\"",
-        )
-        return not any(marker in normalized for marker in forbidden)
-
-    @staticmethod
-    def is_highest_lot_error_question(question: str) -> bool:
-        normalized = unicodedata.normalize(
-            "NFD",
-            question.lower().replace("đ", "d"),
-        )
-        normalized = "".join(
-            char for char in normalized if unicodedata.category(char) != "Mn"
-        )
-        normalized = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
-
-        has_lot = bool(re.search(r"\b(lot|lots|lo|lo san xuat)\b", normalized))
-        has_error = bool(re.search(r"\bng\b", normalized)) or any(
-            marker in normalized
-            for marker in (
-                "loi",
-                "error",
-                "errors",
-                "defect",
-                "defects",
-                "hang loi",
-                "san pham loi",
-            )
-        )
-        has_maximum = bool(
-            re.search(r"\b(nhieu|cao|lon)\b(?:\s+\w+){0,3}\s+nhat\b", normalized)
-            or re.search(
-                r"\btop\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)?\b",
-                normalized,
-            )
-        ) or any(
-            marker in normalized
-            for marker in (
-                "nhieu nhat",
-                "cao nhat",
-                "lon nhat",
-                "toi da",
-                "top 1",
-                "top loi",
-                "dung dau",
-                "max",
-                "maximum",
-                "most",
-                "highest",
-                "largest",
-                "greatest",
-            )
-        )
-        return has_lot and has_error and has_maximum
-
-    @classmethod
-    def is_compound_mes_question(cls, question: str) -> bool:
-        normalized = unicodedata.normalize(
-            "NFD",
-            question.lower().replace("đ", "d"),
-        )
-        normalized = "".join(
-            char for char in normalized if unicodedata.category(char) != "Mn"
-        )
-        normalized = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
-        number_token = (
-            r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
-        )
-        return bool(
-            re.search(rf"\b{number_token}\s+(?:ma\s+|loai\s+)?loi\b", normalized)
-            or re.search(
-                rf"\btop\s*{number_token}\s+(?:ma\s+|loai\s+)?loi\b",
-                normalized,
-            )
-            or re.search(
-                rf"\btop\s*{number_token}\s+(?:error|defect)\s+(?:code|codes|type|types)\b",
-                normalized,
-            )
-            or re.search(
-                rf"\b{number_token}\s+(?:error|defect)\s+(?:code|codes|type|types)\b",
-                normalized,
-            )
-            or any(
-                marker in normalized
-                for marker in ("cac loi nhieu nhat", "nhung loi nhieu nhat")
-            )
-            or (
-                ("error code" in normalized or "error codes" in normalized)
-                and any(marker in normalized for marker in ("top", "highest", "most"))
-            )
-        )
-
-    @staticmethod
-    def is_time_related_mes_question(question: str) -> bool:
-        original = (question or "").lower()
-        normalized = unicodedata.normalize(
-            "NFD",
-            original.replace("đ", "d"),
-        )
-        normalized = "".join(
-            char for char in normalized if unicodedata.category(char) != "Mn"
-        )
-        normalized = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
-        has_explicit_date_value = bool(
-            re.search(r"\b20\d{2}[-/]\d{1,2}(?:[-/]\d{1,2})?\b", original)
-        )
-        if has_explicit_date_value:
-            return True
-        return any(
-            marker in normalized
-            for marker in (
-                "ngay",
-                "hom nay",
-                "hom qua",
-                "theo ngay",
-                "moi ngay",
-                "thang",
-                "theo thang",
-                "moi thang",
-                "nam",
-                "tuan",
-                "khoang thoi gian",
-                "tu ngay",
-                "den ngay",
-                "gan day",
-                "moi nhat",
-                "date",
-                "day",
-                "daily",
-                "today",
-                "yesterday",
-                "month",
-                "monthly",
-                "year",
-                "yearly",
-                "week",
-                "weekly",
-                "between",
-                "from",
-                "recent",
-                "latest",
-            )
-        ) or any(
-            marker in original
-            for marker in ("今日", "昨日", "日", "月", "年", "期間", "いつ")
-        )
-
-    @classmethod
-    def time_sql_for_question(cls, question: str) -> str:
-        original = (question or "").lower()
-        normalized = cls.normalized_text(question)
-        if not cls.is_time_related_mes_question(question):
-            return ""
-
-        explicit_month = cls.extract_month(question)
-        explicit_date = cls.extract_date(question)
-        limit = cls.extract_top_limit(normalized)
-        has_lot = bool(re.search(r"\b(lot|lots|lo|lo san xuat)\b", normalized))
-        has_error = bool(
-            re.search(r"\b(ng|loi|error|errors|defect|defects)\b", normalized)
-            or any(marker in original for marker in ("エラー", "不良", "欠陥"))
-        )
-        asks_error_type = any(
-            marker in normalized
-            for marker in (
-                "ma loi",
-                "loai loi",
-                "loi pho bien",
-                "pho bien nhat",
-                "error code",
-                "error codes",
-                "defect code",
-                "defect codes",
-                "top error",
-                "top errors",
-            )
-        )
-        asks_top = cls.has_top_marker(normalized) or any(
-            marker in original for marker in ("上位", "最も", "多い", "最大")
-        )
-        asks_month = "thang" in normalized or "month" in normalized or "月" in original
-        asks_day = "ngay" in normalized or "day" in normalized or "日" in original
-
-        if explicit_date and has_lot and has_error and asks_top:
-            return f"""
-                SELECT lot_id, product_id, SUM(quantity) AS total_error_qty
-                FROM v_error_details
-                WHERE error_time >= '{explicit_date}'
-                  AND error_time < date('{explicit_date}', '+1 day')
-                GROUP BY lot_id, product_id
-                ORDER BY total_error_qty DESC, lot_id
-                LIMIT {limit}
-            """
-
-        if explicit_month and has_lot and has_error and asks_top:
-            month_start = f"{explicit_month}-01"
-            return f"""
-                SELECT lot_id, product_id, SUM(quantity) AS total_error_qty
-                FROM v_error_details
-                WHERE error_time >= '{month_start}'
-                  AND error_time < date('{month_start}', '+1 month')
-                GROUP BY lot_id, product_id
-                ORDER BY total_error_qty DESC, lot_id
-                LIMIT {limit}
-            """
-
-        if explicit_month and asks_error_type and has_error:
-            month_start = f"{explicit_month}-01"
-            return f"""
-                SELECT error_id, error_name, SUM(quantity) AS total_error_qty
-                FROM v_error_details
-                WHERE error_time >= '{month_start}'
-                  AND error_time < date('{month_start}', '+1 month')
-                GROUP BY error_id, error_name
-                ORDER BY total_error_qty DESC, error_id
-                LIMIT {limit}
-            """
-
-        if asks_month and asks_error_type and asks_top and has_error:
-            return f"""
-                WITH top_month AS (
-                    SELECT strftime('%Y-%m', error_time) AS error_month
-                    FROM v_error_details
-                    WHERE error_time IS NOT NULL
-                    GROUP BY strftime('%Y-%m', error_time)
-                    ORDER BY SUM(quantity) DESC
-                    LIMIT 1
-                )
-                SELECT t.error_month, e.error_id, e.error_name,
-                       SUM(e.quantity) AS total_error_qty
-                FROM v_error_details AS e
-                JOIN top_month AS t
-                  ON strftime('%Y-%m', e.error_time) = t.error_month
-                GROUP BY t.error_month, e.error_id, e.error_name
-                ORDER BY total_error_qty DESC, e.error_id
-                LIMIT {limit}
-            """
-
-        if asks_month and has_error and asks_top and not has_lot:
-            return """
-                SELECT strftime('%Y-%m', error_time) AS error_month,
-                       SUM(quantity) AS total_error_qty,
-                       COUNT(*) AS error_record_count
-                FROM v_error_details
-                WHERE error_time IS NOT NULL
-                GROUP BY strftime('%Y-%m', error_time)
-                ORDER BY total_error_qty DESC
-                LIMIT 1
-            """
-
-        if asks_day and has_error and asks_top and not has_lot:
-            return """
-                SELECT date(error_time) AS error_date,
-                       SUM(quantity) AS total_error_qty,
-                       COUNT(*) AS error_record_count
-                FROM v_error_details
-                WHERE error_time IS NOT NULL
-                GROUP BY date(error_time)
-                ORDER BY total_error_qty DESC
-                LIMIT 1
-            """
-        return ""
-
-    @staticmethod
-    def normalized_text(question: str) -> str:
-        normalized = unicodedata.normalize(
-            "NFD",
-            (question or "").lower().replace("đ", "d"),
-        )
-        normalized = "".join(
-            char for char in normalized if unicodedata.category(char) != "Mn"
-        )
-        return re.sub(r"[^a-z0-9]+", " ", normalized).strip()
-
-    @classmethod
-    def should_use_sql_agent(cls, question: str) -> bool:
-        """Return True only for questions that look like MES data queries."""
-        original = question or ""
-        normalized = cls.normalized_text(question)
-        if not normalized and not original:
-            return False
-        strong_data_markers = (
-            "ma hang",
-            "ma loi",
-            "error code",
-            "defect code",
-            "product code",
-            "bao nhieu",
-            "tong",
-            "so luong",
-            "thong ke",
-            "liet ke",
-            "danh sach",
-            "top",
-            "nhieu nhat",
-            "cao nhat",
-            "pho bien nhat",
-            "count",
-            "sum",
-            "total",
-            "list",
-            "rank",
-            "compare",
-            "comparison",
-        )
-        if any(marker in normalized for marker in strong_data_markers):
-            return True
-        if re.search(
-            r"(ロット|Lot|品番|製品|合計|総数|件数|一覧|上位|多い|最大|集計)",
-            original,
-        ):
-            return True
-
-        general_markers = (
-            "la gi",
-            "khai niem",
-            "giai thich",
-            "quy trinh",
-            "huong dan",
-            "cach ghi nhan",
-            "y nghia",
-            "what is",
-            "explain",
-            "concept",
-            "process",
-            "procedure",
-        )
-        if any(marker in normalized for marker in general_markers):
-            return False
-        if re.search(r"(とは|説明|意味|手順|プロセス|ガイド)", original):
-            return False
-
-        structured_markers = (
-            "lot",
-            "lots",
-            "ma hang",
-            "ma loi",
-            "loi",
-            "error",
-            "errors",
-            "defect",
-            "defects",
-            "product",
-            "product code",
-            "process",
-            "cong doan",
-            "thong ke",
-            "tong",
-            "so luong",
-            "bao nhieu",
-            "liet ke",
-            "danh sach",
-            "top",
-            "nhieu nhat",
-            "cao nhat",
-            "pho bien",
-            "count",
-            "sum",
-            "total",
-            "list",
-            "rank",
-            "compare",
-            "comparison",
-        )
-        if any(marker in normalized for marker in structured_markers):
-            return True
-        if re.search(r"\b(lo|ng)\b", normalized):
-            return True
-        return bool(
-            re.search(
-                r"(ロット|Lot|エラー|不良|欠陥|品番|製品|工程|合計|総数|件数|一覧|上位|多い|最大|集計)",
-                original,
-            )
-        )
-
-    @staticmethod
-    def extract_date(question: str) -> str:
-        original = question or ""
-        match = re.search(r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b", original)
-        if not match:
-            return ""
-        year, month, day = match.groups()
-        return f"{year}-{int(month):02d}-{int(day):02d}"
-
-    @staticmethod
-    def extract_month(question: str) -> str:
-        original = question or ""
-        match = re.search(r"\b(20\d{2})[-/](\d{1,2})(?:[-/]\d{1,2})?\b", original)
-        if match:
-            year, month = match.groups()
-            return f"{year}-{int(month):02d}"
-        normalized = MesQueryService.normalized_text(question)
-        match = re.search(r"\bthang\s+(\d{1,2})\s+nam\s+(20\d{2})\b", normalized)
-        if match:
-            month, year = match.groups()
-            return f"{year}-{int(month):02d}"
-        match = re.search(r"\b(20\d{2})\s+nam\s+thang\s+(\d{1,2})\b", normalized)
-        if match:
-            year, month = match.groups()
-            return f"{year}-{int(month):02d}"
-        japanese_match = re.search(r"(20\d{2})年\s*(\d{1,2})月", original)
-        if japanese_match:
-            year, month = japanese_match.groups()
-            return f"{year}-{int(month):02d}"
-        return ""
-
-    @staticmethod
-    def extract_top_limit(normalized: str, default: int = 5, maximum: int = 50) -> int:
-        match = re.search(r"\btop\s*(\d+)\b", normalized)
-        if not match:
-            match = re.search(
-                r"\b(\d+)\s+(?:lot|lots|lo|ma loi|loai loi|error|errors)\b",
-                normalized,
-            )
-        if not match:
-            return default
-        return max(1, min(maximum, int(match.group(1))))
-
-    @staticmethod
-    def has_top_marker(normalized: str) -> bool:
-        return bool(
-            re.search(r"\b(nhieu|cao|lon|pho bien)\b(?:\s+\w+){0,3}\s+nhat\b", normalized)
-            or re.search(r"\btop\s*\d*\b", normalized)
-        ) or any(
-            marker in normalized
-            for marker in (
-                "nhieu nhat",
-                "cao nhat",
-                "lon nhat",
-                "pho bien nhat",
-                "dung dau",
-                "max",
-                "maximum",
-                "most",
-                "highest",
-                "largest",
-                "greatest",
-            )
-        )
-
-    @staticmethod
-    def resolve_model(model: str) -> str:
-        if model == "grok":
-            return "openai-model"
-        try:
-            return MODEL_ROUTES[model]
-        except KeyError as exc:
-            raise ValueError(f"Unsupported model option: {model}") from exc
-
-    @staticmethod
-    def resolve_sql_agent_model(model: str) -> str:
-        forced_model = os.getenv("MES_SQL_AGENT_MODEL", "local-qwen-coder").strip()
-        if forced_model:
-            return MODEL_ROUTES.get(forced_model, forced_model)
-        return MesQueryService.resolve_model(model)
-
-    @staticmethod
-    def provider_options(routed_model: str) -> dict[str, Any]:
-        if routed_model in LOCAL_CHAT_MODEL_ALIASES:
-            num_ctx = int(os.getenv("LOCAL_CHAT_NUM_CTX", "16384"))
-            return {"extra_body": {"think": False, "num_ctx": num_ctx}}
-        return {}
-
-    @staticmethod
-    def general_answer_max_tokens() -> int:
-        return env_int("MES_GENERAL_MAX_TOKENS", 256, minimum=96, maximum=512)
-
-    @staticmethod
-    def live_api_answer_max_tokens() -> int:
-        return env_int("MES_LIVE_API_MAX_TOKENS", 192, minimum=96, maximum=384)
-
-    @staticmethod
-    def database_answer_max_tokens(result: MesDatabaseResult) -> int:
-        default = 384 if len(result.rows) > 3 else 256
-        return env_int("MES_DATABASE_MAX_TOKENS", default, minimum=128, maximum=768)
-
-    @staticmethod
-    def sql_planner_max_tokens() -> int:
-        # Planner cần đủ không gian để trả JSON/SQL hợp lệ; không giảm quá thấp.
-        return env_int("MES_SQL_PLANNER_MAX_TOKENS", 1200, minimum=512, maximum=1600)
-
-    @staticmethod
-    def sql_answer_max_tokens(result: MesSqlQueryResult) -> int:
-        default = 512 if result.truncated or len(result.rows) > 10 else 384
-        return env_int("MES_SQL_ANSWER_MAX_TOKENS", default, minimum=192, maximum=800)
-
-    @staticmethod
-    def prefer_template_answers(routed_model: str) -> bool:
-        """Prefer deterministic MES wording for local models to reduce latency."""
-        return (
-            os.getenv("MES_TEMPLATE_ANSWERS_FOR_LOCAL", "true").lower()
-            in {"1", "true", "yes", "on"}
-            and routed_model in LOCAL_MODEL_ALIASES
-        )
+    # mes_config
+    resolve_model = staticmethod(mes_config.resolve_model)
+    resolve_sql_agent_model = staticmethod(mes_config.resolve_sql_agent_model)
+    provider_options = staticmethod(mes_config.provider_options)
+    general_answer_max_tokens = staticmethod(mes_config.general_answer_max_tokens)
+    live_api_answer_max_tokens = staticmethod(mes_config.live_api_answer_max_tokens)
+    database_answer_max_tokens = staticmethod(mes_config.database_answer_max_tokens)
+    sql_planner_max_tokens = staticmethod(mes_config.sql_planner_max_tokens)
+    sql_answer_max_tokens = staticmethod(mes_config.sql_answer_max_tokens)
+    prefer_template_answers = staticmethod(mes_config.prefer_template_answers)
