@@ -87,3 +87,18 @@ def prefer_template_answers(routed_model: str) -> bool:
         in {"1", "true", "yes", "on"}
         and routed_model in LOCAL_MODEL_ALIASES
     )
+
+
+def prefer_confident_template() -> bool:
+    """Bỏ bước LLM diễn đạt lại khi fallback template đã đủ rõ nghĩa.
+
+    Khác với ``prefer_template_answers`` (chỉ áp dụng cho model local), cờ này
+    áp dụng cho MỌI model khi kết quả SQL khớp một mẫu fallback có nhãn rõ ràng
+    (xem ``MesSqlAgent.has_confident_template``), giúp cắt một lần gọi LLM.
+    """
+    return os.getenv("MES_HYBRID_TEMPLATE_ANSWERS", "true").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }

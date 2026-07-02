@@ -111,21 +111,29 @@ def normalize_query_cache_text(value: str) -> str:
     return re.sub(r"\s+", " ", normalized)
 
 
-def query_cache_key(req: QueryRequest) -> Optional[str]:
-    if (
-        config.QUERY_RESPONSE_CACHE_TTL_SECONDS <= 0
-        or config.QUERY_RESPONSE_CACHE_SIZE <= 0
-        or req.mode not in {"mkac", "mes"}
-        or parse_email_send_command(req.question) is not None
-    ):
+def query_cache_key(req: QueryRequest, *, snapshot_version: str = "") -> Optional[str]:
+    if config.QUERY_RESPONSE_CACHE_SIZE <= 0 or req.mode not in {"mkac", "mes"}:
+        return None
+    if parse_email_send_command(req.question) is not None:
+        return None
+    # TTL áp dụng theo mode: MES dùng TTL dài riêng vì snapshot tĩnh.
+    ttl = (
+        config.MES_QUERY_CACHE_TTL_SECONDS
+        if req.mode == "mes"
+        else config.QUERY_RESPONSE_CACHE_TTL_SECONDS
+    )
+    if ttl <= 0:
         return None
     employee_key = req.employee_id or ""
+    # snapshot_version gắn vào khóa cho MES: khi re-import (imported_at đổi),
+    # mọi khóa cũ không còn khớp → cache tự vô hiệu, không lo trả dữ liệu cũ.
     return "|".join(
         (
             req.mode,
             req.ui_language,
             req.model,
             employee_key,
+            snapshot_version,
             normalize_query_cache_text(req.question),
         )
     )

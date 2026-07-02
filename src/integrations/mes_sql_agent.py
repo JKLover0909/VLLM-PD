@@ -451,6 +451,40 @@ class MesSqlAgent:
         return "Kết quả từ MES snapshot: " + format_item_list(summaries) + "."
 
     @staticmethod
+    def has_confident_template(result: MesSqlQueryResult) -> bool:
+        """True nếu ``fallback_answer`` sẽ trúng một nhánh có nhãn rõ ràng.
+
+        Bốn nhánh đầu của ``fallback_answer`` tạo câu trả lời đầy đủ ngữ nghĩa
+        (nêu rõ Lot/mã hàng/mã lỗi/thời gian), nên khi khớp có thể bỏ qua bước
+        gọi LLM diễn đạt lại để cắt độ trễ. Nhánh catch-all cuối chỉ nối giá trị
+        cột bằng dấu '·' mà không kèm nhãn → KHÔNG chắc chắn, vẫn cần LLM.
+
+        Điều kiện dưới đây phải bám sát các nhánh trong ``fallback_answer``:
+        nếu chỉnh sửa nhánh ở đó, phải cập nhật hàm này tương ứng.
+        """
+        if not result.rows:
+            return False
+        first_row = result.rows[0]
+        has_error_qty = any(
+            column in first_row
+            for column in (
+                "error_quantity",
+                "total_error_qty",
+                "quantity",
+                "qty",
+                "error_count",
+            )
+        )
+        if not has_error_qty:
+            return False
+        return (
+            {"lot_id", "error_id"}.issubset(first_row)
+            or {"lot_id", "product_id"}.issubset(first_row)
+            or "error_id" in first_row
+            or bool(MesSqlAgent._find_time_column(first_row))
+        )
+
+    @staticmethod
     def _find_time_column(row: dict[str, Any]) -> str:
         preferred = (
             "error_date",

@@ -54,6 +54,7 @@ from src.api.config import (
     LOG_LEVEL,
     MAX_UPLOAD_SIZE_BYTES,
     MAX_UPLOAD_SIZE_MB,
+    MES_QUERY_CACHE_TTL_SECONDS,
     MIN_QUERY_RESPONSE_SECONDS,
     MKAC_PAGE_IMAGE_DIR,
     PREVIEW_IMAGE_EXTENSIONS,
@@ -274,8 +275,8 @@ async def get_cached_query_response(cache_key: Optional[str]) -> Optional[QueryR
         cached = query_response_cache.get(cache_key)
         if cached is None:
             return None
-        created_at, response = cached
-        if now - created_at > QUERY_RESPONSE_CACHE_TTL_SECONDS:
+        expiry_at, response = cached
+        if now > expiry_at:
             query_response_cache.pop(cache_key, None)
             return None
         query_response_cache.move_to_end(cache_key)
@@ -288,11 +289,28 @@ async def set_cached_query_response(
 ) -> None:
     if not cache_key:
         return
+    # MES snapshot tĩnh → giữ cache lâu hơn; các mode khác dùng TTL mặc định.
+    ttl = (
+        MES_QUERY_CACHE_TTL_SECONDS
+        if response.mode == "mes"
+        else QUERY_RESPONSE_CACHE_TTL_SECONDS
+    )
     async with query_response_cache_lock:
-        query_response_cache[cache_key] = (time.monotonic(), response)
+        query_response_cache[cache_key] = (time.monotonic() + ttl, response)
         query_response_cache.move_to_end(cache_key)
         while len(query_response_cache) > QUERY_RESPONSE_CACHE_SIZE:
             query_response_cache.popitem(last=False)
+
+
+def build_query_cache_key(req: QueryRequest) -> Optional[str]:
+    """query_cache_key có gắn phiên bản snapshot MES để re-import tự vô hiệu."""
+    snapshot_version = ""
+    if req.mode == "mes" and mes_database is not None:
+        try:
+            snapshot_version = mes_database.snapshot_version()
+        except Exception:  # pragma: no cover - phòng lỗi đọc metadata
+            snapshot_version = ""
+    return query_cache_key(req, snapshot_version=snapshot_version)
 
 
 async def wait_for_min_query_latency(started_at: float) -> None:
@@ -427,20 +445,33 @@ async def translate_sources_for_ui(
     if req.ui_language != "ja" or translation_service is None:
         return sources
 
-    translated_sources: List[Dict[str, Any]] = []
-    for source in sources:
-        translated_source = dict(source)
-        preview = translated_source.get("preview")
+    async def translate_preview(preview: str) -> str:
+        try:
+            return await translation_service.translate_ui_text(
+                preview,
+                ui_language=req.ui_language,
+                mode=req.mode,
+                purpose="source preview",
+            )
+        except TranslationError as exc:
+            logger.warning("Cannot translate source preview for UI: %s", exc)
+            return preview
+
+    # Dịch các preview song song thay vì tuần tự để cắt độ trễ khi có nhiều
+    # nguồn (thường gặp ở chế độ research). Nguồn không có preview giữ nguyên.
+    tasks: Dict[int, "asyncio.Task[str]"] = {}
+    for index, source in enumerate(sources):
+        preview = source.get("preview")
         if isinstance(preview, str) and preview.strip():
-            try:
-                translated_source["preview"] = await translation_service.translate_ui_text(
-                    preview,
-                    ui_language=req.ui_language,
-                    mode=req.mode,
-                    purpose="source preview",
-                )
-            except TranslationError as exc:
-                logger.warning("Cannot translate source preview for UI: %s", exc)
+            tasks[index] = asyncio.create_task(translate_preview(preview))
+    if tasks:
+        await asyncio.gather(*tasks.values())
+
+    translated_sources: List[Dict[str, Any]] = []
+    for index, source in enumerate(sources):
+        translated_source = dict(source)
+        if index in tasks:
+            translated_source["preview"] = tasks[index].result()
         translated_sources.append(translated_source)
     return translated_sources
 
@@ -860,18 +891,24 @@ async def quick_answers(mode: str = "mkac", language: Literal["vi", "ja"] = "vi"
     items = data.get(mode, [])
     suggestions = []
     for item in items:
+        is_live = bool(item.get("live"))
         question = item.get("question", "")
         answer = item.get("answer", "")
         if language == "ja":
             question = item.get("question_ja", "")
             answer = item.get("answer_ja", "")
-        if not question or not answer:
+        # Câu hỏi "live" chỉ cần question; đáp án lấy từ pipeline thật khi bấm.
+        # Câu tĩnh phải có sẵn cả câu hỏi lẫn đáp án đóng hộp.
+        if not question:
+            continue
+        if not is_live and not answer:
             continue
         suggestions.append(
             {
                 "question": question,
                 "keywords": item.get("keywords", []),
                 "answer": answer,
+                "live": is_live,
             }
         )
     return {
@@ -1004,7 +1041,7 @@ async def query_documents(req: QueryRequest, request: Request):
     await enforce_rate_limit(request, "query", QUERY_RATE_LIMIT, 60)
     normalize_session_id(req.session_id)
     current_employee = authorize_query(req)
-    cache_key = query_cache_key(req)
+    cache_key = build_query_cache_key(req)
     cached_response = await get_cached_query_response(cache_key)
     if cached_response is not None:
         logger.info("Query response cache hit mode=%s language=%s", req.mode, req.ui_language)
@@ -1109,7 +1146,7 @@ async def query_stream(req: QueryRequest, request: Request):
     await enforce_rate_limit(request, "query", QUERY_RATE_LIMIT, 60)
     normalize_session_id(req.session_id)
     current_employee = authorize_query(req)
-    cache_key = query_cache_key(req)
+    cache_key = build_query_cache_key(req)
     cached_response = await get_cached_query_response(cache_key)
     if cached_response is not None:
         logger.info("Streaming query response cache hit mode=%s language=%s", req.mode, req.ui_language)

@@ -864,6 +864,14 @@ function App() {
 
   const handleQuickAnswerClick = (suggestion) => {
     if (busy) return;
+
+    // Câu hỏi "live" (số liệu MES động) phải chạy pipeline thật để lấy dữ liệu
+    // tươi, không dùng đáp án đóng hộp. Chỉ câu tĩnh mới hiện đáp án tức thì.
+    if (suggestion.live || !suggestion.answer) {
+      sendMessage(suggestion.question);
+      return;
+    }
+
     const userMsgId = createClientId();
     const assistantMsgId = createClientId();
     
@@ -1255,6 +1263,12 @@ function App() {
     if (source.url) {
       window.open(source.url, "_blank", "noopener,noreferrer");
       return;
+    }
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 900px)").matches
+    ) {
+      setSourcePanelOpen(false);
     }
     setSourcePreview({
       source,

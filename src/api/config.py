@@ -32,6 +32,12 @@ QUERY_RESPONSE_CACHE_SIZE = max(
     0,
     int(os.getenv("QUERY_RESPONSE_CACHE_SIZE", "256")),
 )
+# MES snapshot là dữ liệu tĩnh tới lần re-import nên câu trả lời cache được lâu
+# hơn nhiều (khóa cache đã gắn phiên bản snapshot nên re-import tự vô hiệu hóa).
+MES_QUERY_CACHE_TTL_SECONDS = max(
+    0,
+    int(os.getenv("MES_QUERY_CACHE_TTL_SECONDS", "86400")),
+)
 MIN_QUERY_RESPONSE_SECONDS = max(
     0.0,
     float(os.getenv("MIN_QUERY_RESPONSE_SECONDS", "2.0")),

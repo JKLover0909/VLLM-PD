@@ -75,6 +75,15 @@ class MesDatabase:
     def available(self) -> bool:
         return self.db_path.is_file()
 
+    def snapshot_version(self) -> str:
+        """Phiên bản snapshot (imported_at) để làm khóa cache; rỗng nếu chưa có.
+
+        Nhẹ hơn ``status()`` (chỉ một SELECT metadata) nên gọi được mỗi query.
+        """
+        if not self.available:
+            return ""
+        return self._imported_at()
+
     def status(self) -> dict[str, Any]:
         if not self.available:
             return {"available": False, "db_path": str(self.db_path)}
@@ -156,6 +165,13 @@ class MesDatabase:
         )
         has_error = self._has_error_marker(normalized)
 
+        # Câu đếm tổng chỉ áp dụng khi hỏi toàn hệ thống, không kèm mã cụ thể.
+        # Nếu có lot_id/product_id/error_id, để các nhánh chi tiết bên dưới xử lý.
+        if not lot_id and not product_id and not error_id:
+            if self._is_count_error_records_question(normalized):
+                return self._count_error_records()
+            if self._is_count_lots_with_errors_question(normalized):
+                return self._count_lots_with_errors()
         if (
             self._is_lot_listing_question(normalized)
             and not lot_id
@@ -290,6 +306,48 @@ class MesDatabase:
             for value in (row["lot_id"], row["product_id"], row["total_error_qty"])
         )
         return self._result("highest_error_lot", enriched_rows, answer, terms)
+
+    def _count_lots_with_errors(self) -> MesDatabaseResult:
+        exclude_test = self._exclude_test_filter()
+        rows = self._fetch_all(
+            f"""
+            SELECT COUNT(*) AS lot_count
+            FROM v_lot_error_summary
+            WHERE {exclude_test} AND error_record_count > 0
+            """
+        )
+        count = int(rows[0]["lot_count"]) if rows else 0
+        answer = (
+            f"Theo MES snapshot, có {self._number(count)} Lot đang ghi nhận "
+            f"dữ liệu lỗi."
+        )
+        return self._result(
+            "count_lots_with_errors",
+            [{"lot_count": count}],
+            answer,
+            (str(count),),
+        )
+
+    def _count_error_records(self) -> MesDatabaseResult:
+        exclude_test = self._exclude_test_filter()
+        rows = self._fetch_all(
+            f"""
+            SELECT COUNT(*) AS record_count
+            FROM v_error_details
+            WHERE {exclude_test}
+            """
+        )
+        count = int(rows[0]["record_count"]) if rows else 0
+        answer = (
+            f"Theo MES snapshot, tổng số bản ghi lỗi (error records) là "
+            f"{self._number(count)}."
+        )
+        return self._result(
+            "count_error_records",
+            [{"record_count": count}],
+            answer,
+            (str(count),),
+        )
 
     def _list_lots(self, limit: int = DEFAULT_LIST_LIMIT) -> MesDatabaseResult:
         exclude_test_lots = self._exclude_test_filter()
@@ -685,6 +743,31 @@ class MesDatabase:
                 "show",
                 "which",
             )
+        )
+
+    @staticmethod
+    def _asks_count(normalized: str) -> bool:
+        return "bao nhieu" in normalized or "tong so" in normalized or bool(
+            re.search(r"\b(how many|total|number of)\b", normalized)
+        )
+
+    @staticmethod
+    def _is_count_error_records_question(normalized: str) -> bool:
+        return MesDatabase._asks_count(normalized) and (
+            "ban ghi" in normalized
+            or any(
+                marker in normalized
+                for marker in ("error record", "error records", "su kien loi")
+            )
+        )
+
+    @staticmethod
+    def _is_count_lots_with_errors_question(normalized: str) -> bool:
+        has_lot = bool(re.search(r"\b(lot|lots|lo)\b", normalized))
+        return (
+            MesDatabase._asks_count(normalized)
+            and has_lot
+            and MesDatabase._has_error_marker(normalized)
         )
 
     @staticmethod

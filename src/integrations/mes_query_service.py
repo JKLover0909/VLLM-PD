@@ -309,6 +309,14 @@ class MesQueryService:
                     attempt + 1,
                     len(result.rows),
                 )
+                if self.prefer_confident_template() and (
+                    self.mes_sql_agent.has_confident_template(result)
+                ):
+                    logger.info(
+                        "MES SQL answer served from confident template "
+                        "(skip LLM reword)."
+                    )
+                    return self.mes_sql_agent.fallback_answer(result), routed_model
                 answer_response = await self.openai_client.chat.completions.create(
                     model=routed_model,
                     messages=self.mes_sql_agent.answer_messages(question, result),
@@ -388,7 +396,10 @@ class MesQueryService:
             logger.warning("MES deterministic compound SQL rejected: %s", exc)
             return None
 
-        if routed_model in LOCAL_MODEL_ALIASES:
+        if routed_model in LOCAL_MODEL_ALIASES or (
+            self.prefer_confident_template()
+            and self.mes_sql_agent.has_confident_template(result)
+        ):
             return self.mes_sql_agent.fallback_answer(result), routed_model
         try:
             answer_response = await self.openai_client.chat.completions.create(
@@ -426,7 +437,10 @@ class MesQueryService:
         except MesSqlAgentError as exc:
             logger.warning("MES deterministic time SQL rejected: %s", exc)
             return None
-        if routed_model in LOCAL_MODEL_ALIASES:
+        if routed_model in LOCAL_MODEL_ALIASES or (
+            self.prefer_confident_template()
+            and self.mes_sql_agent.has_confident_template(result)
+        ):
             return self.mes_sql_agent.fallback_answer(result), routed_model
         try:
             answer_response = await self.openai_client.chat.completions.create(
@@ -511,3 +525,4 @@ class MesQueryService:
     sql_planner_max_tokens = staticmethod(mes_config.sql_planner_max_tokens)
     sql_answer_max_tokens = staticmethod(mes_config.sql_answer_max_tokens)
     prefer_template_answers = staticmethod(mes_config.prefer_template_answers)
+    prefer_confident_template = staticmethod(mes_config.prefer_confident_template)

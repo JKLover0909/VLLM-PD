@@ -74,73 +74,40 @@
   "mes": [
     {
       "question": "Mã Lot nào có số lượng lỗi nhiều nhất?",
-      "answer": "Hệ thống sẽ truy vấn MES snapshot hiện tại để xác định Lot có tổng số lỗi cao nhất.",
-      "question_ja": "エラー数が最も多いLotはどれですか？",
-      "answer_ja": "現在のMESスナップショットを照会して、総エラー数が最も多いLotを特定します。"
+      "live": true,
+      "question_ja": "エラー数が最も多いLotはどれですか？"
     },
     {
       "question": "Trong Lot lỗi nhiều nhất, loại lỗi nào phổ biến nhất?",
-      "answer": "Hệ thống sẽ dựa trên MES snapshot hiện tại để tìm Lot có tổng lỗi cao nhất và thống kê các loại lỗi phổ biến nhất trong Lot đó.",
-      "question_ja": "エラー数が最も多いLotで、最も多いエラー種類は何ですか？",
-      "answer_ja": "現在のMESスナップショットをもとに、総エラー数が最も多いLotを特定し、そのLotで最も多いエラー種類を集計します。"
+      "live": true,
+      "question_ja": "エラー数が最も多いLotで、最も多いエラー種類は何ですか？"
     },
     {
-      "question": "Sản phẩm nào có tổng lỗi cao nhất?",
-      "answer": "Hệ thống sẽ truy vấn MES snapshot hiện tại để xác định sản phẩm có tổng số lỗi cao nhất.",
-      "question_ja": "総エラー数が最も多い製品はどれですか？",
-      "answer_ja": "現在のMESスナップショットを照会して、総エラー数が最も多い製品を特定します。"
+      "question": "Hãy liệt kê 10 mã hàng có số lượng lỗi nhiều nhất",
+      "live": true,
+      "question_ja": "総エラー数が多い製品を上位10件挙げてください"
     },
     {
       "question": "Có bao nhiêu Lot đang có dữ liệu lỗi trong hệ thống?",
-      "answer": "Hệ thống sẽ thống kê số Lot có dữ liệu lỗi trong MES snapshot hiện tại.",
-      "question_ja": "エラー情報があるLotはいくつありますか？",
-      "answer_ja": "現在のMESスナップショットに基づいて、エラー情報があるLot数を集計します。"
+      "live": true,
+      "question_ja": "エラー情報があるLotはいくつありますか？"
     },
     {
       "question": "Tổng số bản ghi lỗi trong hệ thống là bao nhiêu?",
-      "answer": "Hệ thống sẽ thống kê tổng số bản ghi lỗi trong MES snapshot hiện tại.",
-      "question_ja": "システム内のエラー記録の総数はいくつですか？",
-      "answer_ja": "現在のMESスナップショットに基づいて、エラー記録の総数を集計します。"
-    },
-    {
-      "question": "Hiện tại có bao nhiêu Lot trong hệ thống?",
-      "answer": "Hiện tại có 50 Lot sản xuất đang được quản lý và ghi nhận dữ liệu trong snapshot MES cục bộ."
-    },
-    {
-      "question": "Mã lỗi E001 là lỗi gì?",
-      "answer": "Mã lỗi E001 trong hệ thống MES tương ứng với lỗi 'Sai kích thước' hoặc 'Vượt dung sai cho phép'."
-    },
-    {
-      "question": "Công đoạn nào phát hiện nhiều lỗi nhất?",
-      "answer": "Phần lớn các lỗi được ghi nhận tại công đoạn Kiểm tra Ngoại quan (Visual Inspection - OQC) và công đoạn Lắp ráp (Assembly)."
-    },
-    {
-      "question": "Thống kê lỗi theo sản phẩm?",
-      "answer": "Hệ thống sẽ thống kê tổng số lỗi theo từng sản phẩm dựa trên MES snapshot hiện tại."
+      "live": true,
+      "question_ja": "システム内のエラー記録の総数はいくつですか？"
     },
     {
       "question": "Hệ thống có loại bỏ Lot test khỏi kết quả không?",
-      "answer": "Có. Các Lot hoặc mã hàng có dấu hiệu dữ liệu test sẽ bị loại khỏi kết quả trả lời MES."
+      "answer": "Có. Các Lot hoặc mã hàng có dấu hiệu dữ liệu test (chứa chữ 'test') và một số mã điều phối/nội bộ không phải sản phẩm thật đều được loại khỏi kết quả trả lời MES.",
+      "question_ja": "システムはテスト用のLotを結果から除外しますか？",
+      "answer_ja": "はい。テストデータの兆候がある（'test' を含む）Lotや製品コード、および実際の製品ではない一部の調整・内部用コードは、MESの回答結果から除外されます。"
     },
     {
-      "question": "Tổng số bản ghi lỗi trong hệ thống là bao nhiêu?",
-      "answer": "Snapshot MES hiện tại đang lưu trữ chính xác 100 bản ghi sự kiện lỗi (error events)."
-    },
-    {
-      "question": "Dữ liệu MES snapshot được cập nhật khi nào?",
-      "answer": "Dữ liệu MES trong ứng dụng được trích xuất từ bản snapshot tĩnh (SQLite) mới nhất, thường được đồng bộ tự động hàng ngày."
-    },
-    {
-      "question": "Trạng thái các Lot hiện tại như thế nào?",
-      "answer": "Đa số các Lot đang ở trạng thái 'In Progress' (đang sản xuất), một số ít Lot lỗi nhiều đã bị chuyển sang 'Hold' để chờ QA xử lý."
-    },
-    {
-      "question": "Máy nào gây ra nhiều lỗi nhất?",
-      "answer": "Theo báo cáo, Máy ép nhựa số 3 (Injection_M03) có tỷ lệ phế phẩm và sự kiện lỗi cao nhất trong tuần qua."
-    },
-    {
-      "question": "Tỷ lệ lỗi (Defect Rate) trung bình là bao nhiêu?",
-      "answer": "Tỷ lệ lỗi trung bình trên toàn bộ các Lot được lấy mẫu vào khoảng 3.5%, nằm trong giới hạn cho phép (< 5%)."
+      "question": "Dữ liệu MES snapshot được lấy từ đâu?",
+      "answer": "Dữ liệu MES trong ứng dụng được trích xuất từ bản snapshot tĩnh (SQLite) của hệ thống MES tại thời điểm import, không phải dữ liệu thời gian thực.",
+      "question_ja": "MESスナップショットのデータはどこから取得されますか？",
+      "answer_ja": "アプリ内のMESデータは、インポート時点のMESシステムの静的スナップショット（SQLite）から抽出されたものであり、リアルタイムデータではありません。"
     }
   ]
 }
