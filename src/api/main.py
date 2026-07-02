@@ -9,11 +9,9 @@ import asyncio
 import json
 import logging
 import os
-import re
 import secrets
 import shutil
 import time
-import unicodedata
 import uuid
 from collections import OrderedDict, defaultdict, deque
 from contextlib import asynccontextmanager
@@ -24,7 +22,6 @@ from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 # Load biến môi trường từ .env
@@ -49,63 +46,66 @@ from src.integrations.gmail_sender import (
 )
 from src.i18n.translation import TranslationError, TranslationService
 
-ENABLE_AGENT = os.getenv("ENABLE_AGENT", "true").lower() in {"1", "true", "yes", "on"}
+from src.api import config
+from src.api.config import (
+    AGENT_API_KEY,
+    EMPLOYEE_DIRECTORY_DB_PATH,
+    FRONTEND_DIST,
+    LOG_LEVEL,
+    MAX_UPLOAD_SIZE_BYTES,
+    MAX_UPLOAD_SIZE_MB,
+    MIN_QUERY_RESPONSE_SECONDS,
+    MKAC_PAGE_IMAGE_DIR,
+    PREVIEW_IMAGE_EXTENSIONS,
+    QDRANT_HOST,
+    QDRANT_PORT,
+    QUERY_RATE_LIMIT,
+    QUERY_RESPONSE_CACHE_SIZE,
+    QUERY_RESPONSE_CACHE_TTL_SECONDS,
+    RESEARCH_DEMO_SESSION_ID,
+    UPLOAD_DIR,
+    UPLOAD_PROCESSING_CONCURRENCY,
+    UPLOAD_QUEUE_SIZE,
+    UPLOAD_RATE_LIMIT,
+)
+from src.api.schemas import (
+    AgentRequest,
+    AgentResponse,
+    EmployeeAuthRequest,
+    EmployeeAuthResponse,
+    EmployeeResponse,
+    QueryRequest,
+    QueryResponse,
+    ResearchDemoResponse,
+    SessionInfoResponse,
+    SessionResponse,
+)
+from src.api.sse import (
+    query_processing_status_key,
+    sse_event,
+    sse_status,
+)
+from src.api.helpers import (
+    build_direct_email_body,
+    build_email_body,
+    cleanup_failed_upload,
+    client_ip,
+    is_context_reference,
+    latest_assistant_context,
+    message_text,
+    normalize_prepared_question,
+    normalize_session_id,
+    path_is_inside,
+    query_cache_key,
+    research_demo_source_files,
+    safe_upload_filename,
+    session_upload_dir,
+)
+
+ENABLE_AGENT = config.ENABLE_AGENT
 agent_executor = None
 if ENABLE_AGENT:
     from src.agent.graph import agent_executor
-
-# ──────────────────────────────────────────────
-# Configurations
-# ──────────────────────────────────────────────
-QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
-QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
-UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads"))
-RESEARCH_DEMO_DIR = Path(os.getenv("RESEARCH_DEMO_DIR", "./documents/Research"))
-RESEARCH_DEMO_SESSION_ID = os.getenv(
-    "RESEARCH_DEMO_SESSION_ID",
-    "00000000-0000-4000-8000-000000000001",
-)
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-LITELLM_URL = os.getenv("LITELLM_URL", "http://localhost:4000/v1")
-LITELLM_MASTER_KEY = os.getenv("LITELLM_MASTER_KEY", "sk-local")
-AGENT_API_KEY = os.getenv("AGENT_API_KEY", "")
-MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "25"))
-MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024
-QUERY_RATE_LIMIT = int(os.getenv("QUERY_RATE_LIMIT_PER_MINUTE", "15"))
-QUERY_RESPONSE_CACHE_TTL_SECONDS = max(
-    0,
-    int(os.getenv("QUERY_RESPONSE_CACHE_TTL_SECONDS", "600")),
-)
-QUERY_RESPONSE_CACHE_SIZE = max(
-    0,
-    int(os.getenv("QUERY_RESPONSE_CACHE_SIZE", "256")),
-)
-MIN_QUERY_RESPONSE_SECONDS = max(
-    0.0,
-    float(os.getenv("MIN_QUERY_RESPONSE_SECONDS", "2.0")),
-)
-UPLOAD_RATE_LIMIT = int(os.getenv("UPLOAD_RATE_LIMIT_PER_HOUR", "10"))
-UPLOAD_PROCESSING_CONCURRENCY = max(
-    1, int(os.getenv("UPLOAD_PROCESSING_CONCURRENCY", "1"))
-)
-UPLOAD_QUEUE_SIZE = max(0, int(os.getenv("UPLOAD_QUEUE_SIZE", "4")))
-ALLOWED_UPLOAD_EXTENSIONS = {
-    ".pdf",
-    ".docx",
-    ".xlsx",
-    ".pptx",
-    ".html",
-    ".htm",
-    ".png",
-    ".jpg",
-    ".jpeg",
-}
-PREVIEW_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
-FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
-EMPLOYEE_DIRECTORY_DB_PATH = Path(
-    os.getenv("EMPLOYEE_DIRECTORY_DB_PATH", "data/employee_directory.sqlite")
-)
-MKAC_PAGE_IMAGE_DIR = Path(os.getenv("MKAC_PAGE_IMAGE_DIR", "mkac_processed/pages"))
 
 logging.basicConfig(level=LOG_LEVEL)
 logger = logging.getLogger(__name__)
@@ -134,72 +134,6 @@ upload_processing_semaphore = asyncio.Semaphore(UPLOAD_PROCESSING_CONCURRENCY)
 upload_admission_lock = asyncio.Lock()
 upload_active = 0
 upload_waiting = 0
-
-
-def normalize_session_id(session_id: str) -> str:
-    """Validate and normalize a public session identifier."""
-    try:
-        return str(uuid.UUID(session_id))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid session ID.") from exc
-
-
-def session_upload_dir(session_id: str) -> Path:
-    """Return a filesystem-safe upload directory for a UUID session."""
-    return UPLOAD_DIR / normalize_session_id(session_id)
-
-
-def safe_upload_filename(filename: Optional[str]) -> str:
-    """Reject path traversal and unsupported public uploads."""
-    if not filename:
-        raise HTTPException(status_code=400, detail="Missing filename.")
-
-    safe_name = Path(filename).name
-    if safe_name != filename or safe_name in {".", ".."}:
-        raise HTTPException(status_code=400, detail="Invalid filename.")
-
-    if Path(safe_name).suffix.lower() not in ALLOWED_UPLOAD_EXTENSIONS:
-        allowed = ", ".join(sorted(ALLOWED_UPLOAD_EXTENSIONS))
-        raise HTTPException(
-            status_code=415,
-            detail=f"Unsupported file type. Allowed extensions: {allowed}",
-        )
-    return safe_name
-
-
-def research_demo_source_files() -> List[str]:
-    """List supported documents prepared for the built-in research demo."""
-    if not RESEARCH_DEMO_DIR.is_dir():
-        return []
-    return sorted(
-        path.name
-        for path in RESEARCH_DEMO_DIR.iterdir()
-        if path.is_file() and path.suffix.lower() in ALLOWED_UPLOAD_EXTENSIONS
-    )
-
-
-def path_is_inside(path: Path, root: Path) -> bool:
-    """Return whether path is equal to or nested inside root after resolving."""
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
-
-
-def cleanup_failed_upload(file_path: Path, page_dir: Path) -> None:
-    """Remove partial upload artifacts after parsing or indexing fails."""
-    if file_path.exists():
-        file_path.unlink()
-    if page_dir.exists():
-        shutil.rmtree(page_dir)
-
-
-def client_ip(request: Request) -> str:
-    forwarded_for = request.headers.get("x-forwarded-for", "")
-    if forwarded_for:
-        return forwarded_for.split(",", 1)[0].strip()
-    return request.client.host if request.client else "unknown"
 
 
 async def enforce_rate_limit(
@@ -330,58 +264,8 @@ app.add_middleware(
 
 
 # ──────────────────────────────────────────────
-# Pydantic Schemas
+# Query response cache (giữ trạng thái toàn cục nên ở lại main.py)
 # ──────────────────────────────────────────────
-class SessionResponse(BaseModel):
-    session_id: str
-    message: str
-
-
-class QueryRequest(BaseModel):
-    session_id: str
-    question: str
-    stream: bool = True
-    model: Literal["auto", "local", "openai", "grok"] = "auto"
-    mode: Literal["mkac", "mes", "research"] = "mkac"
-    ui_language: Literal["vi", "ja"] = "vi"
-    employee_id: Optional[str] = None
-    conversation_context: List[Dict[str, Any]] = Field(default_factory=list)
-
-
-class QueryResponse(BaseModel):
-    answer: str
-    sources: List[Dict[str, Any]]
-    session_id: str
-    model: str
-    mode: str
-    answer_scope: str
-
-
-def normalize_query_cache_text(value: str) -> str:
-    normalized = unicodedata.normalize("NFC", value or "").strip().lower()
-    return re.sub(r"\s+", " ", normalized)
-
-
-def query_cache_key(req: QueryRequest) -> Optional[str]:
-    if (
-        QUERY_RESPONSE_CACHE_TTL_SECONDS <= 0
-        or QUERY_RESPONSE_CACHE_SIZE <= 0
-        or req.mode not in {"mkac", "mes"}
-        or parse_email_send_command(req.question) is not None
-    ):
-        return None
-    employee_key = req.employee_id or ""
-    return "|".join(
-        (
-            req.mode,
-            req.ui_language,
-            req.model,
-            employee_key,
-            normalize_query_cache_text(req.question),
-        )
-    )
-
-
 async def get_cached_query_response(cache_key: Optional[str]) -> Optional[QueryResponse]:
     if not cache_key:
         return None
@@ -418,75 +302,6 @@ async def wait_for_min_query_latency(started_at: float) -> None:
     remaining = MIN_QUERY_RESPONSE_SECONDS - (time.monotonic() - started_at)
     if remaining > 0:
         await asyncio.sleep(remaining)
-
-
-class SessionInfoResponse(BaseModel):
-    session_id: str
-    num_chunks: int
-    files: List[str]
-    num_files: int
-
-
-class ResearchDemoResponse(BaseModel):
-    enabled: bool
-    ready: bool
-    session_id: str
-    num_chunks: int
-    num_files: int
-    files: List[str]
-    source_files: List[str]
-
-
-class EmployeeAuthRequest(BaseModel):
-    employee_id: str
-
-
-class EmployeeResponse(BaseModel):
-    id: str
-    name: str
-    gender: str = ""
-    position: str = ""
-    department: str = ""
-    greeting: str = ""
-    department_size: int = 0
-    department_heads: List[str] = Field(default_factory=list)
-    department_deputies: List[str] = Field(default_factory=list)
-
-
-class EmployeeAuthResponse(BaseModel):
-    employee: EmployeeResponse
-
-
-class AgentRequest(BaseModel):
-    session_id: str
-    task: str
-
-
-class AgentResponse(BaseModel):
-    session_id: str
-    status: str
-    output: str
-    steps: List[Dict[str, Any]]
-
-
-def message_text(message: Any) -> str:
-    """Normalize LangChain message content into client-friendly text."""
-    content = getattr(message, "content", message)
-    if isinstance(content, str):
-        try:
-            parsed = json.loads(content)
-            if isinstance(parsed, dict) and isinstance(parsed.get("content"), str):
-                return parsed["content"]
-        except json.JSONDecodeError:
-            pass
-        return content
-    if isinstance(content, list):
-        return "\n".join(
-            item.get("text", "")
-            for item in content
-            if isinstance(item, dict) and item.get("type") == "text"
-        )
-    return str(content)
 
 
 def verify_mkac_employee(employee_id: Optional[str]) -> EmployeeResponse:
@@ -630,60 +445,6 @@ async def translate_sources_for_ui(
     return translated_sources
 
 
-QUERY_STREAM_STATUS_TEXT = {
-    "vi": {
-        "received": "Tôi đã hiểu rồi, bạn chờ chút nhé...",
-        "cache": "Đang kiểm tra kết quả đã xử lý trước đó...",
-        "routing": "Đang xác định loại câu hỏi...",
-        "quick_answer": "Đang kiểm tra câu trả lời đã chuẩn bị...",
-        "hr_directory": "Đang kiểm tra danh bạ nhân sự...",
-        "email": "Đang chuẩn bị nội dung email...",
-        "mes": "Đang truy vấn dữ liệu MES...",
-        "rag": "Đang tìm nguồn tài liệu phù hợp...",
-        "translation": "Đang chuyển đổi ngôn ngữ...",
-        "finalizing": "Đang tổng hợp câu trả lời...",
-        "almost_done": "Sắp ra rồi...",
-    },
-    "ja": {
-        "received": "承知しました。少々お待ちください...",
-        "cache": "以前の処理結果を確認しています...",
-        "routing": "質問の種類を判定しています...",
-        "quick_answer": "準備済みの回答を確認しています...",
-        "hr_directory": "人事名簿を確認しています...",
-        "email": "メール内容を準備しています...",
-        "mes": "MESデータを照会しています...",
-        "rag": "関連資料を検索しています...",
-        "translation": "言語を変換しています...",
-        "finalizing": "回答をまとめています...",
-        "almost_done": "もうすぐ結果が出ます...",
-    },
-}
-
-
-def query_status_text(req: QueryRequest, key: str) -> str:
-    language_text = QUERY_STREAM_STATUS_TEXT.get(
-        req.ui_language,
-        QUERY_STREAM_STATUS_TEXT["vi"],
-    )
-    return language_text.get(key, QUERY_STREAM_STATUS_TEXT["vi"].get(key, key))
-
-
-def sse_event(payload: Dict[str, Any]) -> str:
-    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-
-
-def sse_status(req: QueryRequest, key: str) -> str:
-    return sse_event({"type": "status", "message": query_status_text(req, key)})
-
-
-def query_processing_status_key(req: QueryRequest) -> str:
-    if req.mode == "mes":
-        return "mes"
-    if req.mode == "mkac":
-        return "rag"
-    return "rag"
-
-
 def ensure_query_services_ready() -> None:
     if rag_pipeline is None:
         raise HTTPException(status_code=503, detail="RAG pipeline is not ready.")
@@ -741,77 +502,6 @@ async def route_query_stream(
             current_user=current_user_context,
         )
     raise HTTPException(status_code=400, detail=f"Unsupported query mode: {req.mode}")
-
-
-def build_email_body(
-    *,
-    original_question: str,
-    data_question: str,
-    answer: str,
-    answer_scope: str,
-) -> str:
-    return (
-        "Xin chào,\n\n"
-        "Meibook gửi bạn thông tin theo yêu cầu:\n\n"
-        f"{answer.strip()}\n\n"
-        "---\n"
-        f"Yêu cầu gốc: {original_question.strip()}\n"
-        f"Câu hỏi dữ liệu: {data_question.strip()}\n"
-        f"Nguồn trả lời: {answer_scope}\n"
-    )
-
-
-def build_direct_email_body(
-    *,
-    original_question: str,
-    body: str,
-) -> str:
-    return (
-        "Xin chào,\n\n"
-        f"{body.strip()}\n\n"
-        "---\n"
-        "Email được gửi từ Meibook theo yêu cầu trực tiếp của người dùng.\n"
-        f"Yêu cầu gốc: {original_question.strip()}\n"
-    )
-
-
-def _normalize_reference_text(value: str) -> str:
-    normalized = unicodedata.normalize("NFD", value.lower().replace("đ", "d"))
-    normalized = "".join(
-        char for char in normalized if unicodedata.category(char) != "Mn"
-    )
-    return re.sub(r"\s+", " ", normalized).strip()
-
-
-def is_context_reference(value: str) -> bool:
-    normalized = _normalize_reference_text(value)
-    reference_markers = (
-        "thong tin nay",
-        "noi dung nay",
-        "ket qua nay",
-        "cau tra loi nay",
-        "phan tren",
-        "o tren",
-        "vua roi",
-        "ben tren",
-    )
-    return any(marker in normalized for marker in reference_markers)
-
-
-def latest_assistant_context(
-    conversation_context: List[Dict[str, Any]],
-) -> Optional[Dict[str, Any]]:
-    for item in reversed(conversation_context or []):
-        if item.get("role") != "assistant":
-            continue
-        content = str(item.get("content") or "").strip()
-        if content:
-            return {
-                "content": content,
-                "answer_scope": str(item.get("answer_scope") or "conversation_context"),
-                "model": str(item.get("model") or ""),
-            }
-    return None
 
 
 async def handle_email_send_query(
@@ -1129,12 +819,6 @@ def _load_quick_answers() -> dict:
         logger.warning(f"Cannot load quick answers config: {e}")
         _quick_answers_cache = {}
     return _quick_answers_cache
-
-
-def normalize_prepared_question(value: str) -> str:
-    normalized = normalize_query_cache_text(value)
-    normalized = re.sub(r"[?？!！。.,;:]+$", "", normalized).strip()
-    return normalized
 
 
 def prepared_query_response(req: QueryRequest) -> Optional[QueryResponse]:
