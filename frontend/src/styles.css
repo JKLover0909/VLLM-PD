@@ -17,9 +17,13 @@ html,
 body,
 #root {
   min-width: 320px;
+  height: 100%;
   min-height: 100vh;
   min-height: 100dvh;
   margin: 0;
+  overflow: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -460,8 +464,12 @@ summary:focus-visible {
 }
 
 .workspace {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -808,6 +816,7 @@ summary:focus-visible {
 .workspace-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
+  flex: 1 1 auto;
   height: calc(100vh - 72px);
   height: calc(100dvh - 72px);
   min-height: 0;
@@ -823,6 +832,7 @@ summary:focus-visible {
   grid-template-rows: minmax(0, 1fr) auto auto;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   background: #f7f8fa;
 }
 
@@ -1430,6 +1440,17 @@ summary:focus-visible {
   display: none;
 }
 
+.message-suggestions {
+  margin-top: 16px;
+}
+
+.message-suggestions p {
+  margin: 0 0 8px;
+  color: #687381;
+  font-size: 14px;
+  font-weight: 800;
+}
+
 .inline-source-button {
   min-width: 0;
   padding: 0;
@@ -1961,12 +1982,29 @@ summary:focus-visible {
     height: calc(100dvh - 126px);
   }
 
-  .source-panel,
+  .source-panel {
+    position: fixed;
+    right: 10px;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    left: 10px;
+    display: block;
+    max-height: min(70dvh, 520px);
+    border: 1px solid #d6dee6;
+    border-radius: 8px;
+    box-shadow: 0 22px 54px rgba(31, 39, 48, 0.24);
+    z-index: 90;
+  }
+
   .workspace.sources-collapsed .source-panel {
     display: none;
   }
 
   .panel-toggle {
+    display: inline-grid;
+    flex: 0 0 auto;
+  }
+
+  .panel-toggle:disabled {
     display: none;
   }
 
@@ -2027,30 +2065,45 @@ summary:focus-visible {
 }
 
 @media (max-width: 700px) {
+  :root {
+    font-family:
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      "Segoe UI",
+      sans-serif;
+  }
+
   .workspace-header {
-    height: 138px;
-    padding: 12px 12px 12px 56px;
-    align-items: stretch;
-    flex-direction: column;
-    gap: 10px;
+    height: 52px;
+    padding: 6px 8px;
+    align-items: center;
+    flex-direction: row;
+    gap: 6px;
   }
 
   .header-title {
-    min-height: 40px;
+    display: none;
   }
 
   .header-actions {
+    flex: 1 1 auto;
     align-items: stretch;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     justify-content: stretch;
+    gap: 6px;
   }
 
   .mode-tabs {
-    flex: 1 1 100%;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .mode-tabs button {
     flex: 1;
+    min-height: 38px;
+    padding: 0 8px;
+    font-size: 12px;
   }
 
   .mode-label-full {
@@ -2059,6 +2112,25 @@ summary:focus-visible {
 
   .mode-label-short {
     display: inline;
+  }
+
+  .theme-toggle {
+    display: none;
+  }
+
+  .language-toggle {
+    height: 38px;
+  }
+
+  .language-toggle span {
+    min-width: 34px;
+    height: 30px;
+    font-size: 12px;
+  }
+
+  .header-tool.icon-button {
+    width: 38px;
+    height: 38px;
   }
 
   .model-select {
@@ -2071,18 +2143,20 @@ summary:focus-visible {
   }
 
   .workspace-body {
-    height: calc(100vh - 138px);
-    height: calc(100dvh - 138px);
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
   }
 
   .message-list {
-    width: calc(100% - 24px);
-    padding-top: 20px;
+    width: calc(100% - 18px);
+    padding: 14px 0 24px;
   }
 
   .message {
     grid-template-columns: 32px minmax(0, 1fr);
     gap: 9px;
+    margin-bottom: 18px;
   }
 
   .message-avatar {
@@ -2090,55 +2164,185 @@ summary:focus-visible {
     height: 32px;
   }
 
-  .composer {
-    width: calc(100% - 20px);
+  .message-content {
+    font-size: 15px;
+    line-height: 1.58;
+  }
+
+  .message-content p {
     margin-bottom: 10px;
   }
 
+  .message-content ul,
+  .message-content ol {
+    margin: 6px 0 10px;
+    padding-left: 20px;
+  }
+
+  .message-content li {
+    margin: 4px 0;
+  }
+
+  .message-meta {
+    margin-bottom: 6px;
+    font-size: 10px;
+  }
+
+  .message-actions {
+    margin-top: 9px;
+  }
+
+  .message-suggestions {
+    margin-top: 14px;
+  }
+
+  .message-suggestions p {
+    margin-bottom: 7px;
+    font-size: 14px;
+  }
+
+  .suggestion-list {
+    padding-left: 18px;
+  }
+
+  .suggestion-list li {
+    margin-bottom: 7px;
+  }
+
+  .suggestion-list button {
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .composer {
+    width: calc(100% - 20px);
+    margin-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  }
+
   .composer textarea {
-    min-height: 58px;
+    min-height: 44px;
+    max-height: 104px;
+    padding: 10px 12px 5px;
+    font-size: 15px;
+    line-height: 1.45;
   }
 
   .composer-footer {
-    align-items: stretch;
-    flex-direction: column;
+    align-items: center;
+    flex-direction: row;
     gap: 8px;
+    min-height: 36px;
+    padding: 4px 6px 5px 12px;
+  }
+
+  .composer-context {
+    flex: 0 1 auto;
+  }
+
+  .composer-context > span:last-child {
+    display: none;
   }
 
   .composer-actions {
+    flex: 0 0 auto;
     justify-content: space-between;
+  }
+
+  .char-count {
+    font-size: 10px;
   }
 
   .empty-conversation {
     justify-content: flex-start;
-    padding: 48px 16px 24px;
+    padding: 24px 14px 20px;
+  }
+
+  .empty-icon {
+    width: 50px;
+    height: 50px;
+  }
+
+  .empty-conversation h1 {
+    margin-top: 14px;
+    font-size: 22px;
+  }
+
+  .empty-conversation p {
+    font-size: 13px;
+  }
+
+  .prompt-grid {
+    grid-template-columns: 1fr;
+    width: min(100%, 420px);
+    gap: 8px;
+    margin-top: 18px;
+  }
+
+  .prompt-grid button {
+    min-height: 52px;
+    padding: 11px 12px;
+  }
+
+  .prompt-grid span {
+    font-size: 14px;
   }
 }
 
 @media (max-width: 420px) {
   .workspace-header {
-    height: 154px;
+    height: 50px;
   }
 
   .workspace-body {
-    height: calc(100vh - 154px);
-    height: calc(100dvh - 154px);
-  }
-
-  .header-title strong {
-    font-size: 15px;
+    height: auto;
   }
 
   .mode-tabs button {
-    padding: 0 8px;
+    min-height: 34px;
+    padding: 0 6px;
+    font-size: 11px;
+  }
+
+  .language-toggle {
+    height: 36px;
+  }
+
+  .language-toggle span {
+    min-width: 30px;
+    height: 28px;
+    padding: 0 6px;
+    font-size: 11px;
+  }
+
+  .header-tool.icon-button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .message-list {
+    width: calc(100% - 16px);
+  }
+
+  .message-content {
+    font-size: 14px;
+    line-height: 1.55;
   }
 
   .empty-conversation h1 {
-    font-size: 24px;
+    font-size: 21px;
   }
 
   .empty-conversation {
-    padding-top: 32px;
+    padding-top: 20px;
+  }
+
+  .composer {
+    width: calc(100% - 16px);
+  }
+
+  .composer textarea {
+    min-height: 42px;
+    font-size: 14px;
   }
 
   .empty-metrics {

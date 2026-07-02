@@ -2186,8 +2186,8 @@ function App() {
                           message.id !== pendingAssistantId &&
                           message.content &&
                           getSuggestions(message.content, mode, message.id).length > 0 && (
-                            <div className="message-suggestions" style={{ marginTop: "1rem" }}>
-                              <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "0.5rem", fontWeight: "bold" }}>{t("common.suggestions")}</p>
+                            <div className="message-suggestions">
+                              <p>{t("common.suggestions")}</p>
                               <ul className="suggestion-list">
                                 {getSuggestions(message.content, mode, message.id).map(
                                   (suggestion, i) => (
