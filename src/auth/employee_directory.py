@@ -1,23 +1,25 @@
-"""Tra cứu danh bạ nhân viên MKAC theo mã nhân viên."""
+"""Tra cứu danh bạ nhân viên MKAC theo mã nhân viên.
+
+Lớp ``EmployeeDirectory`` chịu trách nhiệm truy cập SQLite và điều phối câu trả
+lời. Các hàm phụ trợ thuần túy đã tách sang module chuyên biệt để dễ phát triển:
+
+* ``employee_intent``  – chuẩn hóa văn bản và nhận diện ý định câu hỏi nhân sự.
+* ``employee_answers`` – định dạng câu trả lời VI/JA từ dữ liệu đã truy vấn.
+
+Để giữ nguyên API nội bộ (``self._question_requests_*`` / ``self._format_*``),
+lớp gắn lại các hàm module thành ``staticmethod``.
+"""
 
 import re
 import sqlite3
-import unicodedata
 from pathlib import Path
 from typing import Any, Optional, TypedDict
 
+from src.auth import employee_answers, employee_intent
+from src.auth.employee_intent import normalize_text
 
 EMPLOYEE_ID_PATTERN = re.compile(r"^\d{6}$")
 GUEST_EMPLOYEE_ID = "000000"
-
-
-def normalize_text(value: str) -> str:
-    normalized = unicodedata.normalize("NFKD", value or "")
-    without_marks = "".join(
-        char for char in normalized if not unicodedata.combining(char)
-    )
-    without_marks = without_marks.replace("đ", "d").replace("Đ", "D")
-    return re.sub(r"\s+", " ", without_marks.lower()).strip()
 
 
 class EmployeeRecord(TypedDict):
@@ -295,139 +297,19 @@ class EmployeeDirectory:
         return [{"department": department, "size": int(size or 0)} for department, size in rows]
 
     def _format_company_headcount(self, language: str) -> str:
-        total = self.count()
-        if language == "ja":
-            return f"社員名簿上、Meiko Automationには現在{total}人が登録されています。"
-        return f"Theo danh bạ nhân sự, Meiko Automation hiện có {total} thành viên."
+        return employee_answers.format_company_headcount(self.count(), language)
 
     def _format_department_catalog(self, language: str) -> str:
-        summaries = sorted(
+        return employee_answers.format_department_catalog(
             self.department_summaries(),
-            key=lambda item: normalize_text(item["department"]),
+            language,
         )
-        total = len(summaries)
-        if language == "ja":
-            names = "、".join(item["department"] for item in summaries)
-            return f"Meiko Automationには合計{total}部門があります。部門は{names}です。"
-        names = ", ".join(item["department"] for item in summaries)
-        return f"Meiko Automation hiện có tổng cộng {total} phòng ban, gồm: {names}."
 
     def _format_largest_departments(self, language: str) -> Optional[str]:
-        summaries = self.department_summaries()
-        if not summaries:
-            return None
-        max_size = max(item["size"] for item in summaries)
-        largest = [item for item in summaries if item["size"] == max_size]
-        if language == "ja":
-            departments = "、".join(
-                f"{item['department']}（{item['size']}人）" for item in largest
-            )
-            return f"人数が最も多い部門は{departments}です。"
-        departments = ", ".join(
-            f"{item['department']} ({item['size']} người)" for item in largest
+        return employee_answers.format_largest_departments(
+            self.department_summaries(),
+            language,
         )
-        return f"Phòng ban có nhiều nhân sự nhất là {departments}."
-
-    @staticmethod
-    def _format_department_counts(
-        profiles: list[dict[str, Any]],
-        language: str,
-    ) -> str:
-        if language == "ja":
-            if len(profiles) == 1:
-                profile = profiles[0]
-                return f"{profile['department']}部門には{profile['size']}人が在籍しています。"
-            lines = [
-                f"- {profile['department']}: {profile['size']}人"
-                for profile in profiles
-            ]
-            return "該当する部門の人数は以下の通りです。\n" + "\n".join(lines)
-
-        if len(profiles) == 1:
-            profile = profiles[0]
-            return f"Phòng {profile['department']} hiện có {profile['size']} người."
-        lines = [
-            f"- {profile['department']}: {profile['size']} người"
-            for profile in profiles
-        ]
-        return "Số nhân sự của các phòng ban được hỏi là:\n" + "\n".join(lines)
-
-    @staticmethod
-    def _format_department_leadership(
-        profiles: list[dict[str, Any]],
-        language: str,
-    ) -> str:
-        lines: list[str] = []
-        for profile in profiles:
-            leaders = profile["heads"] + profile["deputies"]
-            if language == "ja":
-                if leaders:
-                    lines.append(f"{profile['department']}: " + "、".join(leaders))
-                else:
-                    lines.append(f"{profile['department']}: 管理者情報は登録されていません。")
-            else:
-                if leaders:
-                    lines.append(f"- {profile['department']}: " + "; ".join(leaders))
-                else:
-                    lines.append(
-                        f"- {profile['department']}: chưa có thông tin trưởng/phó phòng."
-                    )
-        if language == "ja":
-            return "該当部門の管理者情報は以下の通りです。\n" + "\n".join(lines)
-        return "Thông tin trưởng/phó phòng là:\n" + "\n".join(lines)
-
-    @staticmethod
-    def _format_department_rosters(
-        profiles: list[dict[str, Any]],
-        language: str,
-    ) -> str:
-        sections: list[str] = []
-        for profile in profiles:
-            members = profile["members"]
-            if language == "ja":
-                lines = [
-                    f"{member['name']}（{member['position'] or '未登録'}）"
-                    for member in members
-                ]
-                sections.append(
-                    f"{profile['department']}部門（{profile['size']}人）:\n"
-                    + "\n".join(lines)
-                )
-            else:
-                lines = [
-                    f"- {member['name']} ({member['position'] or 'chưa có chức danh'})"
-                    for member in members
-                ]
-                sections.append(
-                    f"Phòng {profile['department']} ({profile['size']} người):\n"
-                    + "\n".join(lines)
-                )
-        return "\n\n".join(sections)
-
-    @staticmethod
-    def _format_people_profiles(
-        people: list[dict[str, Any]],
-        language: str,
-    ) -> str:
-        if language == "ja":
-            lines = [
-                (
-                    f"- {person['name']}（社員番号: {person['id']}、"
-                    f"部門: {person.get('department') or '未登録'}、"
-                    f"役職: {person.get('position') or '未登録'}）"
-                )
-                for person in people
-            ]
-            return "該当する社員情報は以下の通りです。\n" + "\n".join(lines)
-        lines = [
-            (
-                f"- {person['name']} - mã nhân viên {person['id']}, "
-                f"phòng {person.get('department') or 'chưa có'}, "
-                f"chức danh {person.get('position') or 'chưa có'}"
-            )
-            for person in people
-        ]
-        return "Thông tin nhân sự tìm thấy:\n" + "\n".join(lines)
 
     def _mentioned_departments(
         self,
@@ -470,253 +352,52 @@ class EmployeeDirectory:
             return [current_department]
         return []
 
-    @staticmethod
-    def _department_name_in_question(
-        question: str,
-        normalized_question: str,
-        department: str,
-        normalized_department: str,
-    ) -> bool:
-        if len(normalized_department) <= 2:
-            if re.search(
-                rf"(?<![A-Za-z0-9]){re.escape(department)}(?![A-Za-z0-9])",
-                question,
-            ):
-                return True
-            return bool(
-                re.search(
-                    rf"\b(?:phong|bo phan|team|department|dept)\s+{re.escape(normalized_department)}\b",
-                    normalized_question,
-                )
-                or re.search(
-                    rf"\b{re.escape(normalized_department)}\s+(?:phong|bo phan|team|department|dept)\b",
-                    normalized_question,
-                )
-            )
-        if " " in normalized_department:
-            return normalized_department in normalized_question
-        return bool(
-            re.search(
-                rf"(?<![a-z0-9]){re.escape(normalized_department)}(?![a-z0-9])",
-                normalized_question,
-            )
-        )
-
-    @staticmethod
-    def _question_targets_current_department(normalized_question: str) -> bool:
-        markers = {
-            "bo phan cua toi",
-            "phong ban cua toi",
-            "phong cua toi",
-            "bo phan cua minh",
-            "phong ban cua minh",
-            "phong cua minh",
-        }
-        return any(marker in normalized_question for marker in markers)
-
-    @staticmethod
-    def _question_requests_department_people(normalized_question: str) -> bool:
-        keywords = {
-            "bao nhieu nguoi",
-            "so nguoi",
-            "gom nhung ai",
-            "co nhung ai",
-            "la nhung ai",
-            "liet ke",
-            "danh sach",
-            "thanh vien",
-            "nhan vien",
-            "truong phong",
-            "pho phong",
-            "ai la",
-            "members",
-            "people",
-            "employees",
-            "manager",
-        }
-        return any(keyword in normalized_question for keyword in keywords)
-
-    @staticmethod
-    def _question_requests_department_count(
-        normalized_question: str,
-        original_question: str,
-    ) -> bool:
-        keywords = {
-            "bao nhieu nguoi",
-            "bao nhieu nhan su",
-            "may nguoi",
-            "so nguoi",
-            "so luong nguoi",
-            "so nhan su",
-            "tong so nguoi",
-            "tong nhan su",
-            "headcount",
-            "how many people",
-            "how many employees",
-        }
-        if any(keyword in normalized_question for keyword in keywords):
-            return True
-        return bool(re.search(r"(何人|人数|社員数|従業員数)", original_question or ""))
-
-    @staticmethod
-    def _question_requests_company_headcount(
-        normalized_question: str,
-        original_question: str,
-    ) -> bool:
-        person_markers = {
-            "bao nhieu thanh vien",
-            "bao nhieu nhan vien",
-            "bao nhieu nhan su",
-            "bao nhieu nguoi",
-            "tong so thanh vien",
-            "tong so nhan vien",
-            "tong so nhan su",
-            "tong so nguoi",
-            "so luong thanh vien",
-            "so luong nhan vien",
-            "so luong nhan su",
-            "company headcount",
-            "how many employees",
-            "how many people",
-        }
-        company_markers = {
-            "cong ty",
-            "mkac",
-            "meiko automation",
-            "toan cong ty",
-            "company",
-        }
-        if any(marker in normalized_question for marker in person_markers) and (
-            any(marker in normalized_question for marker in company_markers)
-            or not any(
-                marker in normalized_question
-                for marker in ("phong", "phong ban", "bo phan", "department", "dept")
-            )
-        ):
-            return True
-        return bool(
-            re.search(r"(会社|全社|Meiko|MKAC).*(何人|人数|社員数|従業員数)", original_question or "")
-        )
-
-    @staticmethod
-    def _question_requests_department_catalog(
-        normalized_question: str,
-        original_question: str,
-    ) -> bool:
-        count_markers = {
-            "bao nhieu phong ban",
-            "bao nhieu bo phan",
-            "co bao nhieu phong",
-            "co bao nhieu bo phan",
-            "tong so phong ban",
-            "tong so bo phan",
-            "number of departments",
-            "how many departments",
-        }
-        list_markers = {
-            "liet ke phong ban",
-            "liet ke cac phong ban",
-            "danh sach phong ban",
-            "co nhung phong ban nao",
-            "gom cac phong ban nao",
-            "departments list",
-            "list departments",
-        }
-        if any(marker in normalized_question for marker in count_markers | list_markers):
-            return True
-        return bool(re.search(r"(部門|部署).*(一覧|何個|いくつ|全部|リスト)", original_question or ""))
-
-    @staticmethod
-    def _question_requests_largest_department(
-        normalized_question: str,
-        original_question: str,
-    ) -> bool:
-        markers = {
-            "phong nao dong nguoi nhat",
-            "bo phan nao dong nguoi nhat",
-            "phong nao nhieu nguoi nhat",
-            "bo phan nao nhieu nguoi nhat",
-            "phong nao nhieu nhan su nhat",
-            "bo phan nao nhieu nhan su nhat",
-            "phong ban lon nhat",
-            "bo phan lon nhat",
-            "largest department",
-            "biggest department",
-            "most employees",
-            "highest headcount",
-        }
-        if any(marker in normalized_question for marker in markers):
-            return True
-        return bool(
-            re.search(
-                r"\b(?:phong|phong ban|bo phan).*(?:nhieu|dong|lon).*(?:nguoi|nhan su)?.*nhat\b",
-                normalized_question,
-            )
-            or re.search(r"(人数|社員|従業員).*(最も|一番|最大|多い)", original_question or "")
-        )
-
-    @staticmethod
-    def _question_requests_department_leadership(
-        normalized_question: str,
-        original_question: str,
-    ) -> bool:
-        markers = {
-            "truong phong",
-            "pho phong",
-            "quan ly",
-            "cap tren",
-            "manager",
-            "leader",
-            "head of",
-        }
-        if any(marker in normalized_question for marker in markers):
-            return True
-        return bool(re.search(r"(部長|課長|管理者|リーダー|マネージャー)", original_question or ""))
-
-    @staticmethod
-    def _question_requests_department_roster(
-        normalized_question: str,
-        original_question: str,
-    ) -> bool:
-        markers = {
-            "gom nhung ai",
-            "co nhung ai",
-            "la nhung ai",
-            "liet ke nhan su",
-            "danh sach nhan su",
-            "danh sach nhan vien",
-            "thanh vien",
-            "members",
-            "employees",
-            "people in",
-            "list people",
-        }
-        if any(marker in normalized_question for marker in markers):
-            return True
-        return bool(re.search(r"(メンバー|社員|従業員).*(一覧|誰|リスト)", original_question or ""))
-
-    @staticmethod
-    def _question_requests_person_identity(normalized_question: str) -> bool:
-        keywords = {
-            "la ai",
-            "ai la",
-            "thong tin",
-            "lam bo phan nao",
-            "lam phong nao",
-            "thuoc bo phan nao",
-            "thuoc phong ban nao",
-            "chuc danh",
-            "vi tri",
-            "ma nhan vien",
-            "who is",
-            "which department",
-            "position",
-        }
-        return any(keyword in normalized_question for keyword in keywords)
-
     def count(self) -> int:
         if not self.db_path.is_file():
             return 0
         with sqlite3.connect(self.db_path) as connection:
             row = connection.execute("SELECT COUNT(*) FROM employees").fetchone()
         return int(row[0] or 0)
+
+    # ──────────────────────────────────────────────────────────────────
+    # Delegators giữ nguyên API nội bộ. Logic thật nằm ở các module
+    # employee_intent (nhận diện ý định) và employee_answers (định dạng).
+    # ──────────────────────────────────────────────────────────────────
+
+    # employee_intent
+    _department_name_in_question = staticmethod(employee_intent.department_name_in_question)
+    _question_targets_current_department = staticmethod(
+        employee_intent.question_targets_current_department
+    )
+    _question_requests_department_people = staticmethod(
+        employee_intent.question_requests_department_people
+    )
+    _question_requests_department_count = staticmethod(
+        employee_intent.question_requests_department_count
+    )
+    _question_requests_company_headcount = staticmethod(
+        employee_intent.question_requests_company_headcount
+    )
+    _question_requests_department_catalog = staticmethod(
+        employee_intent.question_requests_department_catalog
+    )
+    _question_requests_largest_department = staticmethod(
+        employee_intent.question_requests_largest_department
+    )
+    _question_requests_department_leadership = staticmethod(
+        employee_intent.question_requests_department_leadership
+    )
+    _question_requests_department_roster = staticmethod(
+        employee_intent.question_requests_department_roster
+    )
+    _question_requests_person_identity = staticmethod(
+        employee_intent.question_requests_person_identity
+    )
+
+    # employee_answers
+    _format_department_counts = staticmethod(employee_answers.format_department_counts)
+    _format_department_leadership = staticmethod(
+        employee_answers.format_department_leadership
+    )
+    _format_department_rosters = staticmethod(employee_answers.format_department_rosters)
+    _format_people_profiles = staticmethod(employee_answers.format_people_profiles)
