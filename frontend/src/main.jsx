@@ -81,6 +81,8 @@ const QUICK_PROMPTS = {
   },
 };
 
+const ACTIVE_MODE_KEYS = ["mkac", "mes"];
+
 const MODE_OPTIONS = {
   mkac: {
     icon: Database,
@@ -92,7 +94,7 @@ const MODE_OPTIONS = {
     icon: FlaskConical,
   },
 };
-const VISIBLE_MODE_KEYS = ["mkac", "mes"];
+const VISIBLE_MODE_KEYS = ACTIVE_MODE_KEYS;
 
 const MODEL_ACCENTS = {
   auto: "accent-auto",
@@ -101,11 +103,12 @@ const MODEL_ACCENTS = {
   grok: "accent-grok",
 };
 
-const SESSION_STORAGE_KEYS = {
+const LEGACY_MODE_SESSION_STORAGE_KEYS = {
   mkac: "meibook-session-mkac",
   mes: "meibook-session-mes",
   research: "meibook-session-research",
 };
+const SESSION_STORAGE_PREFIX = "meibook-session";
 const LEGACY_SESSION_STORAGE_KEY = "meibook-session";
 const SESSION_TITLE_STORAGE_KEY = "meibook-session-titles";
 const THEME_STORAGE_KEY = "meibook-theme";
@@ -637,6 +640,23 @@ function defaultSessionTitle(workspaceMode, language = "vi") {
   );
 }
 
+function workspaceKey(workspaceMode, language = "vi") {
+  return `${workspaceMode}:${language}`;
+}
+
+function sessionStorageKey(workspaceMode, language = "vi") {
+  return `${SESSION_STORAGE_PREFIX}-${workspaceMode}-${language}`;
+}
+
+function createLanguageScopedState(factory) {
+  return ACTIVE_MODE_KEYS.reduce((state, workspaceMode) => {
+    for (const item of LANGUAGE_OPTIONS) {
+      state[workspaceKey(workspaceMode, item)] = factory(workspaceMode, item);
+    }
+    return state;
+  }, {});
+}
+
 function sessionTitleFromQuestion(question) {
   const normalized = question
     .replace(/\s+/g, " ")
@@ -747,20 +767,20 @@ function App() {
   const [language, setLanguage] = useState(storedLanguage);
   const initialLanguageRef = useRef(storedLanguage());
   const [quickAnswersConfig, setQuickAnswersConfig] = useState({ mkac: [], mes: [], threshold: 300, max: 3 });
-  const [sessionIds, setSessionIds] = useState({ mkac: "", mes: "", research: "" });
-  const [sessionTitles, setSessionTitles] = useState({
-    mkac: defaultSessionTitle("mkac", initialLanguageRef.current),
-    mes: defaultSessionTitle("mes", initialLanguageRef.current),
-    research: defaultSessionTitle("research", initialLanguageRef.current),
-  });
+  const [sessionIds, setSessionIds] = useState(() =>
+    createLanguageScopedState(() => ""),
+  );
+  const [sessionTitles, setSessionTitles] = useState(() =>
+    createLanguageScopedState((workspaceMode, item) =>
+      defaultSessionTitle(workspaceMode, item),
+    ),
+  );
   const [files, setFiles] = useState([]);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [uploadSummary, setUploadSummary] = useState(null);
-  const [messagesByMode, setMessagesByMode] = useState({
-    mkac: [],
-    mes: [],
-    research: [],
-  });
+  const [messagesByMode, setMessagesByMode] = useState(() =>
+    createLanguageScopedState(() => []),
+  );
   const [models, setModels] = useState([]);
   const [mkacStatus, setMkacStatus] = useState({
     ready: false,
@@ -783,11 +803,9 @@ function App() {
   const [model, setModel] = useState("auto");
   const [mode, setMode] = useState("mkac");
   const [question, setQuestion] = useState("");
-  const [sourcesByMode, setSourcesByMode] = useState({
-    mkac: [],
-    mes: [],
-    research: [],
-  });
+  const [sourcesByMode, setSourcesByMode] = useState(() =>
+    createLanguageScopedState(() => []),
+  );
   const [health, setHealth] = useState("checking");
   const [busy, setBusy] = useState(false);
   const [pendingAssistantId, setPendingAssistantId] = useState("");
@@ -833,10 +851,10 @@ function App() {
     [models, language],
   );
   const selectedModel = useMemo(
-    () => localizedModels.find((item) => item.id === (mode === "research" ? "grok" : model)),
-    [localizedModels, mode, model],
+    () => localizedModels.find((item) => item.id === model),
+    [localizedModels, model],
   );
-  const requestModel = mode === "research" ? "grok" : model;
+  const requestModel = model;
   const mkacModels = useMemo(
     () => localizedModels.filter((item) => !item.hidden_in_mkac && item.id !== "grok"),
     [localizedModels],
@@ -848,10 +866,11 @@ function App() {
   };
   const ModeIcon = currentMode.icon;
   const ThemeIcon = THEME_ICONS[theme];
-  const sessionId = sessionIds[mode];
-  const messages = messagesByMode[mode];
-  const sources = sourcesByMode[mode];
-  const researchReady = mode !== "research" || files.length > 0;
+  const currentWorkspaceKey = workspaceKey(mode, language);
+  const sessionId = sessionIds[currentWorkspaceKey] || "";
+  const messages = messagesByMode[currentWorkspaceKey] || [];
+  const sources = sourcesByMode[currentWorkspaceKey] || [];
+  const researchReady = true;
   const mkacAuthorized = (mode !== "mkac" && mode !== "mes") || Boolean(employee?.id && employee?.name);
   const canAsk =
     Boolean(question.trim()) &&
@@ -998,42 +1017,57 @@ function App() {
         setHealth("online");
 
         const legacySession = localStorage.getItem(LEGACY_SESSION_STORAGE_KEY);
-        const storedSessions = {
-          mkac: localStorage.getItem(SESSION_STORAGE_KEYS.mkac),
-          mes: localStorage.getItem(SESSION_STORAGE_KEYS.mes),
-        };
         const resolvedSessions = {};
 
         await Promise.all(
-          VISIBLE_MODE_KEYS.map(async (workspaceMode) => {
-            const storedSession = storedSessions[workspaceMode];
-            if (storedSession) {
-              try {
-                const infoResponse = await api(`/sessions/${storedSession}`);
-                await infoResponse.json();
-                resolvedSessions[workspaceMode] = storedSession;
-                return;
-              } catch (sessionError) {
-                localStorage.removeItem(SESSION_STORAGE_KEYS[workspaceMode]);
-              }
-            }
+          ACTIVE_MODE_KEYS.flatMap((workspaceMode) =>
+            LANGUAGE_OPTIONS.map(async (workspaceLanguage) => {
+              const scopedKey = workspaceKey(workspaceMode, workspaceLanguage);
+              const storageKey = sessionStorageKey(workspaceMode, workspaceLanguage);
+              const legacyModeSession =
+                workspaceLanguage === language
+                  ? localStorage.getItem(LEGACY_MODE_SESSION_STORAGE_KEYS[workspaceMode])
+                  : null;
+              const legacySharedSession =
+                workspaceMode === "mkac" && workspaceLanguage === language
+                  ? legacySession
+                  : null;
+              const storedSession =
+                localStorage.getItem(storageKey) ||
+                legacyModeSession ||
+                legacySharedSession;
 
-            const session = await createSession();
-            resolvedSessions[workspaceMode] = session.session_id;
-          }),
+              if (storedSession) {
+                try {
+                  const infoResponse = await api(`/sessions/${storedSession}`);
+                  await infoResponse.json();
+                  resolvedSessions[scopedKey] = storedSession;
+                  return;
+                } catch (sessionError) {
+                  localStorage.removeItem(storageKey);
+                }
+              }
+
+              const session = await createSession();
+              resolvedSessions[scopedKey] = session.session_id;
+            }),
+          ),
         );
 
         setSessionIds(resolvedSessions);
         const savedTitles = storedSessionTitles();
-        setSessionTitles({
-          mkac:
-            savedTitles[resolvedSessions.mkac] || defaultSessionTitle("mkac", language),
-          mes:
-            savedTitles[resolvedSessions.mes] || defaultSessionTitle("mes", language),
-          research: defaultSessionTitle("research", language),
-        });
-        Object.entries(resolvedSessions).forEach(([workspaceMode, id]) => {
-          localStorage.setItem(SESSION_STORAGE_KEYS[workspaceMode], id);
+        setSessionTitles(
+          createLanguageScopedState((workspaceMode, workspaceLanguage) => {
+            const scopedKey = workspaceKey(workspaceMode, workspaceLanguage);
+            return (
+              savedTitles[resolvedSessions[scopedKey]] ||
+              defaultSessionTitle(workspaceMode, workspaceLanguage)
+            );
+          }),
+        );
+        Object.entries(resolvedSessions).forEach(([scopedKey, id]) => {
+          const [workspaceMode, workspaceLanguage] = scopedKey.split(":");
+          localStorage.setItem(sessionStorageKey(workspaceMode, workspaceLanguage), id);
         });
         localStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
       } catch (bootstrapError) {
@@ -1046,6 +1080,7 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
+    setQuickAnswersConfig({ mkac: [], mes: [], threshold: 300, max: 3 });
 
     async function loadQuickAnswers() {
       try {
@@ -1113,19 +1148,15 @@ function App() {
     setSessionTitles((current) => {
       const next = { ...current };
       for (const workspaceMode of VISIBLE_MODE_KEYS) {
-        const defaultTitles = LANGUAGE_OPTIONS.map(
-          (item) => UI_TEXT[item].defaultTitles[workspaceMode],
-        );
-        if (defaultTitles.includes(current[workspaceMode])) {
-          next[workspaceMode] = defaultSessionTitle(workspaceMode, language);
+        for (const item of LANGUAGE_OPTIONS) {
+          const scopedKey = workspaceKey(workspaceMode, item);
+          const defaultTitles = LANGUAGE_OPTIONS.map(
+            (candidate) => UI_TEXT[candidate].defaultTitles[workspaceMode],
+          );
+          if (defaultTitles.includes(current[scopedKey])) {
+            next[scopedKey] = defaultSessionTitle(workspaceMode, item);
+          }
         }
-      }
-      if (
-        LANGUAGE_OPTIONS.map((item) => UI_TEXT[item].defaultTitles.researchDemo).includes(
-          current.research,
-        )
-      ) {
-        next.research = t("defaultTitles.researchDemo");
       }
       return next;
     });
@@ -1194,69 +1225,48 @@ function App() {
     return () => document.removeEventListener("keydown", closeConfirm);
   }, [confirmClearOpen]);
 
-  function setModeMessages(workspaceMode, updater) {
+  function setModeMessages(workspaceMode, updater, uiLanguage = language) {
+    const scopedKey = workspaceKey(workspaceMode, uiLanguage);
     setMessagesByMode((current) => ({
       ...current,
-      [workspaceMode]:
+      [scopedKey]:
         typeof updater === "function"
-          ? updater(current[workspaceMode])
+          ? updater(current[scopedKey] || [])
           : updater,
     }));
   }
 
-  function setModeSources(workspaceMode, updater) {
+  function setModeSources(workspaceMode, updater, uiLanguage = language) {
+    const scopedKey = workspaceKey(workspaceMode, uiLanguage);
     setSourcesByMode((current) => ({
       ...current,
-      [workspaceMode]:
+      [scopedKey]:
         typeof updater === "function"
-          ? updater(current[workspaceMode])
+          ? updater(current[scopedKey] || [])
           : updater,
     }));
   }
 
-  async function resetSession(workspaceMode = mode) {
+  async function resetSession(workspaceMode = mode, uiLanguage = language) {
     setError("");
     const data = await createSession();
+    const scopedKey = workspaceKey(workspaceMode, uiLanguage);
     setSessionIds((current) => ({
       ...current,
-      [workspaceMode]: data.session_id,
+      [scopedKey]: data.session_id,
     }));
-    localStorage.setItem(SESSION_STORAGE_KEYS[workspaceMode], data.session_id);
+    localStorage.setItem(sessionStorageKey(workspaceMode, uiLanguage), data.session_id);
     setSessionTitles((current) => ({
       ...current,
-      [workspaceMode]: defaultSessionTitle(workspaceMode, language),
+      [scopedKey]: defaultSessionTitle(workspaceMode, uiLanguage),
     }));
-    if (workspaceMode === "research") {
-      setFiles([]);
-      setPendingFiles([]);
-      setUploadSummary(null);
-    }
-    setModeMessages(workspaceMode, []);
-    setModeSources(workspaceMode, []);
+    setModeMessages(workspaceMode, [], uiLanguage);
+    setModeSources(workspaceMode, [], uiLanguage);
     setSidebarOpen(false);
   }
 
   function useResearchDemoSession() {
-    if (!researchDemo.ready || !researchDemo.session_id) {
-      setError(t("common.demoNotIndexed"));
-      return;
-    }
-    setError("");
-    setSessionIds((current) => ({
-      ...current,
-      research: researchDemo.session_id,
-    }));
-    localStorage.setItem(SESSION_STORAGE_KEYS.research, researchDemo.session_id);
-    setSessionTitles((current) => ({
-      ...current,
-      research: t("defaultTitles.researchDemo"),
-    }));
-    setFiles(researchDemo.files || []);
-    setPendingFiles([]);
-    setUploadSummary(null);
-    setModeMessages("research", []);
-    setModeSources("research", []);
-    setSidebarOpen(false);
+    setError(t("common.demoNotIndexed"));
   }
 
   function switchMode(nextMode) {
@@ -1271,8 +1281,8 @@ function App() {
   }
 
   function clearConversation() {
-    setModeMessages(mode, []);
-    setModeSources(mode, []);
+    setModeMessages(mode, [], language);
+    setModeSources(mode, [], language);
     setQuestion("");
     setError("");
     setSourcePanelOpen(false);
@@ -1281,8 +1291,10 @@ function App() {
   }
 
   function sourcePreviewUrl(source, sourceMode = mode) {
+    const previewSessionId =
+      sessionIds[workspaceKey(sourceMode, language)] || sessionId;
     const params = new URLSearchParams({
-      session_id: sessionIds[sourceMode] || sessionId,
+      session_id: previewSessionId,
       mode: sourceMode,
       file: source.file || "",
       page: String(source.page || 1),
@@ -1351,6 +1363,12 @@ function App() {
   }
 
   function cycleLanguage() {
+    if (busy || uploading) return;
+    setQuestion("");
+    setError("");
+    setSourcePanelOpen(false);
+    setSourcePreview(null);
+    setPendingAssistantId("");
     setLanguage((current) => (current === "vi" ? "ja" : "vi"));
   }
 
@@ -1434,11 +1452,13 @@ function App() {
     if (!cleanQuestion || busy || !sessionId) return;
 
     const requestMode = mode;
+    const requestLanguage = language;
+    const requestWorkspaceKey = workspaceKey(requestMode, requestLanguage);
     const requestSessionId = sessionId;
     const conversationContext = buildConversationContext(messages);
     if (messages.length === 0) {
       const title = sessionTitleFromQuestion(cleanQuestion);
-      setSessionTitles((current) => ({ ...current, [requestMode]: title }));
+      setSessionTitles((current) => ({ ...current, [requestWorkspaceKey]: title }));
       persistSessionTitle(requestSessionId, title);
     }
     const assistantId = createClientId();
@@ -1446,7 +1466,7 @@ function App() {
     generationControllerRef.current = controller;
     setQuestion("");
     setError("");
-    setModeSources(requestMode, []);
+    setModeSources(requestMode, [], requestLanguage);
     setSourcePanelOpen(false);
     setModeMessages(requestMode, (current) => [
       ...current,
@@ -1466,7 +1486,7 @@ function App() {
               : "research",
         sources: [],
       },
-    ]);
+    ], requestLanguage);
     setWaitingMessageIndex(0);
     setPendingAssistantId(assistantId);
     setBusy(true);
@@ -1479,75 +1499,90 @@ function App() {
           stream: true,
           model: requestModel,
           mode: requestMode,
-          ui_language: language,
+          ui_language: requestLanguage,
           employee_id: (requestMode === "mkac" || requestMode === "mes") ? employee?.id : undefined,
           conversation_context: conversationContext,
         },
         (event) => {
           if (event.type === "status") {
-            setModeMessages(requestMode, (current) =>
-              current.map((item) =>
-                item.id === assistantId
-                  ? { ...item, status: event.message || item.status }
-                  : item,
-              ),
+            setModeMessages(
+              requestMode,
+              (current) =>
+                current.map((item) =>
+                  item.id === assistantId
+                    ? { ...item, status: event.message || item.status }
+                    : item,
+                ),
+              requestLanguage,
             );
           }
           if (event.type === "sources") {
-            setModeSources(requestMode, event.sources || []);
-            setModeMessages(requestMode, (current) =>
-              current.map((item) =>
-                item.id === assistantId
-                  ? { ...item, sources: event.sources || [] }
-                  : item,
-              ),
+            setModeSources(requestMode, event.sources || [], requestLanguage);
+            setModeMessages(
+              requestMode,
+              (current) =>
+                current.map((item) =>
+                  item.id === assistantId
+                    ? { ...item, sources: event.sources || [] }
+                    : item,
+                ),
+              requestLanguage,
             );
           }
           if (event.type === "meta") {
-            setModeMessages(requestMode, (current) =>
-              current.map((item) =>
-                item.id === assistantId
-                  ? {
-                      ...item,
-                      model: event.model || item.model,
-                      mode: event.mode || item.mode,
-                      answerScope: event.answer_scope || item.answerScope,
-                    }
-                  : item,
-              ),
+            setModeMessages(
+              requestMode,
+              (current) =>
+                current.map((item) =>
+                  item.id === assistantId
+                    ? {
+                        ...item,
+                        model: event.model || item.model,
+                        mode: event.mode || item.mode,
+                        answerScope: event.answer_scope || item.answerScope,
+                      }
+                    : item,
+                ),
+              requestLanguage,
             );
           }
           if (event.type === "token") {
             setPendingAssistantId("");
-            setModeMessages(requestMode, (current) =>
-              current.map((item) =>
-                item.id === assistantId
-                  ? {
-                      ...item,
-                      content: item.content + (event.content || ""),
-                      status: "",
-                    }
-                  : item,
-              ),
+            setModeMessages(
+              requestMode,
+              (current) =>
+                current.map((item) =>
+                  item.id === assistantId
+                    ? {
+                        ...item,
+                        content: item.content + (event.content || ""),
+                        status: "",
+                      }
+                    : item,
+                ),
+              requestLanguage,
             );
           }
           if (event.type === "replace") {
             // Bản đã hậu xử lý (bỏ <think>, cắt marker...) — thay toàn bộ nội
             // dung đã stream. Chỉ đến khi cleanup thực sự đổi nội dung.
             setPendingAssistantId("");
-            setModeMessages(requestMode, (current) =>
-              current.map((item) =>
-                item.id === assistantId
-                  ? { ...item, content: event.content || "", status: "" }
-                  : item,
-              ),
+            setModeMessages(
+              requestMode,
+              (current) =>
+                current.map((item) =>
+                  item.id === assistantId
+                    ? { ...item, content: event.content || "", status: "" }
+                    : item,
+                ),
+              requestLanguage,
             );
           }
           if (event.type === "error") {
             throw new Error(
               localizeErrorMessage(
                 event.message || t("common.requestFailed", { message: "" }),
-                language,
+                requestLanguage,
               ),
             );
           }
@@ -1565,22 +1600,25 @@ function App() {
           // Ignore storage failures.
         }
       }
-      const localizedMessage = localizeErrorMessage(queryError.message, language);
+      const localizedMessage = localizeErrorMessage(queryError.message, requestLanguage);
       if (!wasStopped) setError(localizedMessage);
-      setModeMessages(requestMode, (current) =>
-        current.map((item) =>
-          item.id === assistantId
-            ? {
-                ...item,
-                content:
-                  item.content ||
-                  (wasStopped
-                    ? t("common.stoppedResponse")
-                    : t("common.requestFailed", { message: localizedMessage })),
-                stopped: wasStopped,
-              }
-            : item,
-        ),
+      setModeMessages(
+        requestMode,
+        (current) =>
+          current.map((item) =>
+            item.id === assistantId
+              ? {
+                  ...item,
+                  content:
+                    item.content ||
+                    (wasStopped
+                      ? t("common.stoppedResponse")
+                      : t("common.requestFailed", { message: localizedMessage })),
+                  stopped: wasStopped,
+                }
+              : item,
+          ),
+        requestLanguage,
       );
     } finally {
       generationControllerRef.current = null;
@@ -1634,8 +1672,10 @@ function App() {
     setEmployeeCodeInput("");
     setEmployeeCodeError("");
     setQuestion("");
-    setModeMessages("mkac", []);
-    setModeSources("mkac", []);
+    for (const item of LANGUAGE_OPTIONS) {
+      setModeMessages("mkac", [], item);
+      setModeSources("mkac", [], item);
+    }
     try {
       localStorage.removeItem(EMPLOYEE_STORAGE_KEY);
       localStorage.removeItem("meibook-mkac-employee-code");
@@ -1936,6 +1976,7 @@ function App() {
                 language: language === "vi" ? "VN" : "JP",
               })}
               onClick={cycleLanguage}
+              disabled={busy || uploading}
             >
               <span className={language === "vi" ? "active" : ""}>VN</span>
               <span className={language === "ja" ? "active" : ""}>JP</span>
