@@ -4,8 +4,8 @@ import fitz
 import pytest
 
 from src.rag.parser import DocumentLimitError, DocumentParser, TextChunk
+from src.rag.prompts import GENERAL_SYSTEM_PROMPT, WEB_SYSTEM_PROMPT
 from src.rag.rag_pipeline import RAGPipeline
-from src.rag.rag_pipeline import GENERAL_SYSTEM_PROMPT, WEB_SYSTEM_PROMPT
 from src.rag.vector_store import SearchResult
 from scripts.index_mkac_documents import build_embedding_text
 

@@ -1048,7 +1048,7 @@ def prepared_query_response(req: QueryRequest) -> Optional[QueryResponse]:
         ):
             return QueryResponse(
                 answer=answer,
-                sources=[],
+                sources=item.get("sources", []),
                 session_id=req.session_id,
                 model="auto-model",
                 mode=req.mode,
@@ -1064,6 +1064,8 @@ async def quick_answers(mode: str = "mkac", language: Literal["vi", "ja"] = "vi"
     items = data.get(mode, [])
     suggestions = []
     for item in items:
+        if item.get("hidden"):
+            continue
         is_live = bool(item.get("live"))
         question = item.get("question", "")
         answer = item.get("answer", "")

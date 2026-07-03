@@ -18,9 +18,32 @@
     },
     {
       "question": "Quy trình đặt xe ô tô, Grab, Taxi như thế nào?",
+      "aliases": [
+        "Quy trình đặt xe ô tô cần đăng ký trước bao lâu?",
+        "Đặt xe ô tô cần đăng ký trước bao lâu?",
+        "Quy trình đặt xe cần nộp trước bao lâu?",
+        "Đặt xe Grab Taxi cần đăng ký trước bao lâu?"
+      ],
       "answer": "Nhân viên cần đi công tác bằng ô tô, Grab hoặc Taxi phải điền form đăng ký, được Trưởng bộ phận phê duyệt và nộp cho phòng Hành chính Nhân sự trước ít nhất 1 ngày làm việc (trừ trường hợp khẩn cấp).",
       "question_ja": "社用車、Grab、Taxiの手配手順は？",
-      "answer_ja": "出張で社用車、Grab、Taxiを利用する場合、社員は申請フォームを記入し、部門長の承認を受けたうえで、緊急時を除き少なくとも1営業日前までに人事・総務部へ提出します。"
+      "aliases_ja": [
+        "社用車の予約は何日前までに申請する必要がありますか？",
+        "GrabやTaxiの手配は何日前までに申請しますか？"
+      ],
+      "answer_ja": "出張で社用車、Grab、Taxiを利用する場合、社員は申請フォームを記入し、部門長の承認を受けたうえで、緊急時を除き少なくとも1営業日前までに人事・総務部へ提出します。",
+      "sources": [
+        {
+          "file": "12. Quy trình đặt xe ô tô, grab, taxi update 20231218.pdf",
+          "page": 3,
+          "score": 1,
+          "type": "text",
+          "preview": "Quy trình điều phối, sử dụng xe ô tô gồm bước xác định nhu cầu đặt xe, làm phiếu yêu cầu đặt xe, phòng Hành chính lựa chọn hình thức xe phù hợp và gửi lại thông tin xe.",
+          "title": "Quy trình đặt xe ô tô, Grab, Taxi",
+          "category": "administration",
+          "effective_date": "2023-12-01",
+          "has_page_preview": true
+        }
+      ]
     },
     {
       "question": "Quy định nghỉ phép hàng năm tại MKAC?",
@@ -31,8 +54,95 @@
       "answer": "Công ty có quỹ Công đoàn để thăm hỏi nhân viên và tứ thân phụ mẫu trong các trường hợp: ốm đau nằm viện, thai sản, hiếu hỉ. Mức thăm hỏi cụ thể dao động từ 500.000 VNĐ đến 2.000.000 VNĐ tùy trường hợp."
     },
     {
+      "question": "Thai sản sinh con được thăm hỏi bao nhiêu?",
+      "aliases": [
+        "Trường hợp thai sản sinh con thì được thăm hỏi bao nhiêu tiền?",
+        "Người lao động sinh con được thăm hỏi bao nhiêu?",
+        "Vợ người lao động sinh con được thăm hỏi bao nhiêu?",
+        "Chế độ thăm hỏi thai sản sinh con là bao nhiêu?",
+        "Thai sản được thăm hỏi bao nhiêu tiền?"
+      ],
+      "answer": "Theo chế độ thăm hỏi nội bộ MKAC, trường hợp người lao động hoặc vợ người lao động sinh con, nếu đã ký HĐLĐ chính thức, mức thăm hỏi là 500.000 VNĐ.",
+      "question_ja": "出産時のお見舞い金はいくらですか？",
+      "aliases_ja": [
+        "社員または社員の配偶者が出産した場合のお見舞い金はいくらですか？",
+        "出産祝い金はいくらですか？"
+      ],
+      "answer_ja": "MKACの社内見舞い制度では、社員または社員の配偶者が出産し、正式な労働契約を締結済みの場合、見舞い金は500,000 VNDです。",
+      "hidden": true,
+      "sources": [
+        {
+          "file": "19. Chế độ thăm hỏi update 102023.pdf",
+          "page": 1,
+          "score": 1,
+          "type": "table",
+          "preview": "Thai sản: Người lao động/vợ người lao động sinh con; đối tượng đã ký HĐLĐ chính thức; chế độ/định mức 500.000 VNĐ.",
+          "title": "Chế độ thăm hỏi trong nội bộ Công ty",
+          "category": "welfare",
+          "effective_date": "2023-10-01",
+          "has_page_preview": true
+        }
+      ]
+    },
+    {
+      "question": "Vốn điều lệ của MKAC là bao nhiêu?",
+      "aliases": [
+        "MKAC có vốn điều lệ bao nhiêu?",
+        "Vốn điều lệ của Meiko Automation là bao nhiêu?",
+        "Công ty Meiko Automation có vốn điều lệ bao nhiêu?"
+      ],
+      "answer": "Theo Giấy chứng nhận đăng ký doanh nghiệp, vốn điều lệ của Công ty Cổ phần Meiko Automation là 10.000.000.000 đồng, tức mười tỷ đồng.",
+      "question_ja": "MKACの資本金はいくらですか？",
+      "aliases_ja": [
+        "Meiko Automationの資本金はいくらですか？"
+      ],
+      "answer_ja": "企業登録証明書によると、Meiko Automation Joint Stock Companyの資本金は10,000,000,000 VND、つまり100億VNDです。",
+      "hidden": true,
+      "sources": [
+        {
+          "file": "1. Dang ky doanh nghiep _MKAC.pdf",
+          "page": 1,
+          "score": 1,
+          "type": "text",
+          "preview": "Giấy chứng nhận đăng ký doanh nghiệp ghi: Vốn điều lệ: 10.000.000.000 đồng. Bằng chữ: Mười tỷ đồng.",
+          "title": "Giấy chứng nhận đăng ký doanh nghiệp",
+          "category": "corporate_identity",
+          "effective_date": "2019-09-26",
+          "has_page_preview": true
+        }
+      ]
+    },
+    {
       "question": "Nội quy lao động của MKAC gồm những gì?",
       "answer": "Nội quy lao động quy định về: Thời giờ làm việc và nghỉ ngơi, Trật tự tại nơi làm việc, An toàn và Vệ sinh lao động, Bảo vệ tài sản và bí mật công nghệ, Kỷ luật lao động và trách nhiệm vật chất."
+    },
+    {
+      "question": "Điều 8 trong nội quy lao động nói về nội dung gì?",
+      "aliases": [
+        "Điều 8 nội quy lao động nói về gì?",
+        "Điều 8 của nội quy lao động là gì?",
+        "Điều 8 trong Nội quy lao động MKAC nói về nội dung gì?"
+      ],
+      "answer": "Điều 8 trong Nội quy lao động MKAC nói về nghỉ phép năm. Nội dung chính gồm thời gian áp dụng theo năm dương lịch, đối tượng áp dụng là CBCNV ký HĐLĐ với công ty, số ngày phép năm là 12 ngày với CBCNV làm đủ 12 tháng và cứ mỗi 3 năm làm việc liên tục được cộng thêm 1 ngày nghỉ phép.",
+      "question_ja": "就業規則の第8条は何についてですか？",
+      "aliases_ja": [
+        "MKAC就業規則の第8条の内容は何ですか？"
+      ],
+      "answer_ja": "MKACの就業規則第8条は年次有給休暇について定めています。主な内容は、暦年で適用すること、会社と労働契約を締結している社員を対象とすること、12か月勤務した社員には年12日の年次休暇が付与され、連続勤務3年ごとに1日追加されることです。",
+      "hidden": true,
+      "sources": [
+        {
+          "file": "4. Noi quy lao dong_MKAC 12.7.2021.pdf",
+          "page": 8,
+          "score": 1,
+          "type": "text",
+          "preview": "Điều 8: Nghỉ phép năm. Số ngày phép năm là 12 ngày đối với CBCNV có thời gian làm việc đủ 12 tháng; cứ mỗi 03 năm làm việc liên tục tại Công ty được cộng thêm 01 ngày nghỉ phép.",
+          "title": "Nội quy lao động MKAC",
+          "category": "labor_rules",
+          "effective_date": "2021-07-12",
+          "has_page_preview": true
+        }
+      ]
     },
     {
       "question": "Quy định công tác nước ngoài tại MKAC?",
