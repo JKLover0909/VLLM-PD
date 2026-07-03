@@ -15,6 +15,7 @@ services:
       LITELLM_URL: http://litellm:4000/v1
       UPLOAD_DIR: /app/uploads
       MKAC_SOURCE_DIR: /app/documents/MKAC
+      MKAC_TEXT_SOURCE_DIR: /app/documents/MKAC-md
       MKAC_MANIFEST_PATH: /app/config/mkac_manifest.json
       MKAC_PAGE_IMAGE_DIR: /app/mkac_processed/pages
       MKAC_INDEX_REPORT: /app/logs/mkac_index_report.json
@@ -50,6 +51,7 @@ services:
     volumes:
       - easyocr_cache:/root/.EasyOCR
       - ./documents/MKAC:/app/documents/MKAC
+      - ./documents/MKAC-md:/app/documents/MKAC-md
       - ./documents/Research:/app/documents/Research:ro
       - ./config:/app/config
       - ./uploads:/app/uploads
@@ -83,7 +85,8 @@ services:
     environment:
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
       OLLAMA_API_BASE: https://carless-overarch-establish.ngrok-free.dev
-      QWEN_CHAT_API_BASE: https://carless-overarch-establish.ngrok-free.dev
+      QWEN_CHAT_API_BASE: http://192.84.106.72:11434
+      QWEN_CHAT_NGROK_API_BASE: https://carless-overarch-establish.ngrok-free.dev
       QWEN_SMALL_API_BASE: http://host.docker.internal:11435
       QWEN_CODER_API_BASE: https://d3d2-2405-4803-f16d-d2f0-b282-e2ff-fe05-dfe9.ngrok-free.app/v1
       QWEN_CODER_API_KEY: sk-local

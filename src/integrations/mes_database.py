@@ -40,7 +40,8 @@ def normalize_mes_text(value: str) -> str:
     normalized = "".join(
         char for char in normalized if unicodedata.category(char) != "Mn"
     )
-    return re.sub(r"[^a-z0-9_-]+", " ", normalized).strip()
+    normalized = re.sub(r"[^a-z0-9_-]+", " ", normalized).strip()
+    return re.sub(r"\bnhiu\b", "nhieu", normalized)
 
 
 class MesDatabase:
@@ -148,15 +149,23 @@ class MesDatabase:
             return None
 
         normalized = normalize_mes_text(question)
+        unsupported_reason = self._unsupported_scope_reason(normalized)
+        if unsupported_reason:
+            return self._unsupported_scope(unsupported_reason)
+
         lot_id = self._extract_lot_id(question)
+        error_name_query = self._extract_quoted_error_name(question)
         if allow_highest_lot and self._is_highest_lot_error_question(normalized):
             return self._highest_error_lots(limit=self._extract_top_limit(normalized))
+        if self._is_lowest_lot_error_question(normalized):
+            return self._lowest_error_lots(limit=self._extract_top_limit(normalized))
 
         product_id = self._extract_code_after(
             question,
             (
                 r"(?:mã\s+hàng|mã\s+sản\s+phẩm|sản\s+phẩm|"
-                r"\bproduct\s+code\b|\bproduct\s+id\b|\bpart\s+number\b|\bitem\s+code\b)"
+                r"\bsp\b|\bproduct\s+code\b|\bproduct\s+id\b|"
+                r"\bpart\s+number\b|\bitem\s+code\b)"
             ),
         )
         error_id = self._extract_code_after(
@@ -165,11 +174,22 @@ class MesDatabase:
         )
         has_error = self._has_error_marker(normalized)
 
+        if error_name_query:
+            if self._asks_lots_for_error(normalized) or (
+                "xuat hien" in normalized and re.search(r"\b(lot|lots|lo)\b", normalized)
+            ):
+                return self._lots_for_error_name(error_name_query)
+            if self._asks_quantity(normalized):
+                return self._error_quantity_by_name(error_name_query)
+            return self._error_name_search(error_name_query)
+
         # Câu đếm tổng chỉ áp dụng khi hỏi toàn hệ thống, không kèm mã cụ thể.
         # Nếu có lot_id/product_id/error_id, để các nhánh chi tiết bên dưới xử lý.
         if not lot_id and not product_id and not error_id:
             if self._is_count_error_records_question(normalized):
-                return self._count_error_records()
+                return self._count_error_records(
+                    number_only=self._asks_number_only(normalized)
+                )
             if self._is_count_lots_with_errors_question(normalized):
                 return self._count_lots_with_errors()
         if (
@@ -180,6 +200,10 @@ class MesDatabase:
             and not has_error
         ):
             return self._list_lots()
+        if lot_id and self._is_lot_error_record_count_question(normalized):
+            return self._lot_record_count(lot_id)
+        if lot_id and self._is_lot_distinct_error_count_question(normalized):
+            return self._lot_distinct_error_count(lot_id)
         if lot_id and has_error:
             return self._lot_error_breakdown(lot_id)
         if lot_id:
@@ -194,6 +218,10 @@ class MesDatabase:
                     normalized, unit_pattern=self.PRODUCT_UNIT_PATTERN
                 )
             )
+        if product_id and self._asks_average_per_lot(normalized):
+            return self._product_average_errors_per_lot(product_id)
+        if product_id and self._asks_product_lot_count(normalized):
+            return self._product_lot_count(product_id)
         if product_id and has_error:
             if self._asks_breakdown(normalized):
                 return self._product_error_breakdown(product_id)
@@ -307,6 +335,40 @@ class MesDatabase:
         )
         return self._result("highest_error_lot", enriched_rows, answer, terms)
 
+    def _lowest_error_lots(self, limit: int = 1) -> MesDatabaseResult:
+        exclude_test = self._exclude_test_filter()
+        rows = self._fetch_all(
+            f"""
+            SELECT lot_id, product_id, total_error_qty, error_record_count,
+                   distinct_error_count
+            FROM v_lot_error_summary
+            WHERE {exclude_test}
+              AND total_error_qty > 0
+            ORDER BY total_error_qty ASC, lot_id
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        if not rows:
+            return self._result(
+                "lowest_error_lot",
+                [],
+                "MES snapshot chưa có dữ liệu Lot có lỗi.",
+            )
+        answer = "Theo MES snapshot, Lot có tổng lỗi thấp nhất là: " + format_item_list(
+            [
+                f"Lot {row['lot_id']}, mã hàng {row['product_id']}, "
+                f"{self._number(row['total_error_qty'])} lỗi"
+                for row in rows
+            ]
+        ) + "."
+        terms = tuple(
+            str(value)
+            for row in rows
+            for value in (row["lot_id"], row["product_id"], row["total_error_qty"])
+        )
+        return self._result("lowest_error_lot", rows, answer, terms)
+
     def _count_lots_with_errors(self) -> MesDatabaseResult:
         exclude_test = self._exclude_test_filter()
         rows = self._fetch_all(
@@ -328,19 +390,24 @@ class MesDatabase:
             (str(count),),
         )
 
-    def _count_error_records(self) -> MesDatabaseResult:
-        exclude_test = self._exclude_test_filter()
+    def _count_error_records(self, *, number_only: bool = False) -> MesDatabaseResult:
+        exclude_test = self._exclude_test_filter("l.product_id", "e.lot_id")
         rows = self._fetch_all(
             f"""
             SELECT COUNT(*) AS record_count
-            FROM v_error_details
+            FROM error_events AS e
+            LEFT JOIN lots AS l ON l.lot_pk = e.lot_pk
             WHERE {exclude_test}
             """
         )
         count = int(rows[0]["record_count"]) if rows else 0
         answer = (
-            f"Theo MES snapshot, tổng số bản ghi lỗi (error records) là "
-            f"{self._number(count)}."
+            str(count)
+            if number_only
+            else (
+                f"Theo MES snapshot, tổng số bản ghi lỗi (error records) là "
+                f"{self._number(count)}."
+            )
         )
         return self._result(
             "count_error_records",
@@ -425,14 +492,75 @@ class MesDatabase:
         answer = (
             f"Theo MES snapshot, Lot {row['lot_id']} thuộc mã hàng "
             f"{row['product_id']}, trạng thái {row['status'] or 'chưa rõ'}, "
-            f"có {self._number(row['pcs_lot'])} PCS và tổng "
-            f"{self._number(row['total_error_qty'])} lỗi."
+            f"có {self._number(row['pcs_lot'])} PCS, "
+            f"{self._number(row['error_record_count'])} bản ghi lỗi, "
+            f"{self._number(row['distinct_error_count'])} loại lỗi khác nhau "
+            f"và tổng {self._number(row['total_error_qty'])} lỗi."
         )
         return self._result(
             "lot_details",
             rows,
             answer,
             (str(row["lot_id"]), str(row["product_id"]), str(row["total_error_qty"])),
+        )
+
+    def _lot_record_count(self, lot_id: str) -> MesDatabaseResult:
+        rows = self._fetch_all(
+            """
+            SELECT lot_id, product_id, error_record_count, total_error_qty
+            FROM v_lot_error_summary
+            WHERE lot_id = ?
+            LIMIT 1
+            """,
+            (lot_id,),
+        )
+        if not rows:
+            return self._result(
+                "lot_error_record_count",
+                [],
+                f"Không tìm thấy Lot {lot_id} trong MES snapshot.",
+                (lot_id,),
+            )
+        row = rows[0]
+        answer = (
+            f"Theo MES snapshot, Lot {lot_id} có "
+            f"{self._number(row['error_record_count'])} bản ghi lỗi, "
+            f"tổng {self._number(row['total_error_qty'])} lỗi."
+        )
+        return self._result(
+            "lot_error_record_count",
+            rows,
+            answer,
+            (lot_id, str(row["error_record_count"])),
+        )
+
+    def _lot_distinct_error_count(self, lot_id: str) -> MesDatabaseResult:
+        rows = self._fetch_all(
+            """
+            SELECT lot_id, product_id, distinct_error_count, total_error_qty
+            FROM v_lot_error_summary
+            WHERE lot_id = ?
+            LIMIT 1
+            """,
+            (lot_id,),
+        )
+        if not rows:
+            return self._result(
+                "lot_distinct_error_count",
+                [],
+                f"Không tìm thấy Lot {lot_id} trong MES snapshot.",
+                (lot_id,),
+            )
+        row = rows[0]
+        answer = (
+            f"Theo MES snapshot, Lot {lot_id} có "
+            f"{self._number(row['distinct_error_count'])} loại lỗi khác nhau."
+        )
+        return self._result(
+            "lot_distinct_error_count",
+            rows,
+            answer,
+            (lot_id, str(row["distinct_error_count"])),
         )
 
     def _lot_error_breakdown(self, lot_id: str) -> MesDatabaseResult:
@@ -497,6 +625,90 @@ class MesDatabase:
         terms = (error_id, str(rows[0]["error_name"] or ""))
         return self._result("error_name", rows, answer, terms)
 
+    def _error_name_search(self, error_name_query: str) -> MesDatabaseResult:
+        rows = self._matching_error_name_rows(error_name_query, grouped=True)
+        if not rows:
+            return self._result(
+                "error_name_search",
+                [],
+                f"Không tìm thấy lỗi \"{error_name_query}\" trong MES snapshot.",
+                (error_name_query,),
+            )
+        answer = (
+            f"Trong MES snapshot, lỗi \"{error_name_query}\" được ghi nhận ở: "
+            + format_item_list(
+                [
+                    f"mã lỗi {row['error_id']} - {row['error_name']}, "
+                    f"process {row['process_id']}, "
+                    f"quantity {self._number(row['total_error_qty'])}"
+                    for row in rows[:10]
+                ]
+            )
+            + "."
+        )
+        first = rows[0]
+        return self._result(
+            "error_name_search",
+            rows,
+            answer,
+            (
+                str(first["error_id"]),
+                str(first["error_name"]),
+                str(first["process_id"]),
+            ),
+        )
+
+    def _error_quantity_by_name(self, error_name_query: str) -> MesDatabaseResult:
+        rows = self._matching_error_name_rows(error_name_query, grouped=False)
+        if not rows:
+            return self._result(
+                "error_quantity_by_name",
+                [],
+                f"Không tìm thấy lỗi \"{error_name_query}\" trong MES snapshot.",
+                (error_name_query,),
+            )
+        top = rows[0]
+        total = sum(int(row["quantity"] or 0) for row in rows)
+        answer = (
+            f"Theo MES snapshot, lỗi \"{error_name_query}\" có tổng quantity "
+            f"{self._number(total)}. Bản ghi quantity cao nhất là "
+            f"{self._number(top['quantity'])} tại Lot {top['lot_id']}, "
+            f"mã hàng {top['product_id']}, process {top['process_id']}."
+        )
+        return self._result(
+            "error_quantity_by_name",
+            [{"total_error_qty": total, "top_record": top, "items": rows[:10]}],
+            answer,
+            (str(top["quantity"]), str(top["lot_id"]), str(top["process_id"])),
+        )
+
+    def _lots_for_error_name(self, error_name_query: str) -> MesDatabaseResult:
+        rows = self._matching_error_name_rows(error_name_query, grouped_by_lot=True)
+        if not rows:
+            return self._result(
+                "lots_for_error_name",
+                [],
+                f"Không tìm thấy Lot nào có lỗi \"{error_name_query}\" trong MES snapshot.",
+                (error_name_query,),
+            )
+        answer = (
+            f"Theo MES snapshot, các Lot có lỗi \"{error_name_query}\" nhiều nhất là: "
+            + format_item_list(
+                [
+                    f"{row['lot_id']} ({row['product_id']}): "
+                    f"{self._number(row['total_error_qty'])}"
+                    for row in rows
+                ]
+            )
+            + "."
+        )
+        return self._result(
+            "lots_for_error_name",
+            rows,
+            answer,
+            (error_name_query, str(rows[0]["lot_id"]), str(rows[0]["total_error_qty"])),
+        )
+
     def _product_summary(self, product_id: str) -> MesDatabaseResult:
         rows = self._fetch_all(
             """
@@ -517,13 +729,87 @@ class MesDatabase:
         row = rows[0]
         answer = (
             f"Theo MES snapshot, mã hàng {product_id} có tổng "
-            f"{self._number(row['total_error_qty'])} lỗi."
+            f"{self._number(row['total_error_qty'])} lỗi, nằm trong "
+            f"{self._number(row['lot_count'])} Lot và "
+            f"{self._number(row['error_record_count'])} bản ghi lỗi."
         )
         return self._result(
             "product_error_summary",
             rows,
             answer,
             (product_id, str(row["total_error_qty"])),
+        )
+
+    def _product_lot_count(self, product_id: str) -> MesDatabaseResult:
+        rows = self._fetch_all(
+            """
+            SELECT product_id, lot_count, error_record_count, total_error_qty
+            FROM v_product_error_summary
+            WHERE product_id = ?
+            LIMIT 1
+            """,
+            (product_id,),
+        )
+        if not rows:
+            return self._result(
+                "product_lot_count",
+                [],
+                f"Không tìm thấy mã hàng {product_id} trong MES snapshot.",
+                (product_id,),
+            )
+        row = rows[0]
+        answer = (
+            f"Theo MES snapshot, mã hàng {product_id} có "
+            f"{self._number(row['lot_count'])} Lot ghi nhận lỗi."
+        )
+        return self._result(
+            "product_lot_count",
+            rows,
+            answer,
+            (product_id, str(row["lot_count"])),
+        )
+
+    def _product_average_errors_per_lot(self, product_id: str) -> MesDatabaseResult:
+        rows = self._fetch_all(
+            """
+            SELECT product_id, lot_count, total_error_qty
+            FROM v_product_error_summary
+            WHERE product_id = ?
+            LIMIT 1
+            """,
+            (product_id,),
+        )
+        if not rows:
+            return self._result(
+                "product_average_errors_per_lot",
+                [],
+                f"Không tìm thấy mã hàng {product_id} trong MES snapshot.",
+                (product_id,),
+            )
+        row = rows[0]
+        lot_count = int(row["lot_count"] or 0)
+        total_error_qty = int(row["total_error_qty"] or 0)
+        average = total_error_qty / lot_count if lot_count else 0
+        display_average = (
+            f"{average:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+        )
+        answer = (
+            f"Theo MES snapshot, mã hàng {product_id} có trung bình "
+            f"{display_average} lỗi mỗi Lot "
+            f"({self._number(total_error_qty)} lỗi / {self._number(lot_count)} Lot)."
+        )
+        return self._result(
+            "product_average_errors_per_lot",
+            [
+                {
+                    "product_id": product_id,
+                    "lot_count": lot_count,
+                    "total_error_qty": total_error_qty,
+                    "average_error_qty_per_lot": average,
+                }
+            ],
+            answer,
+            (product_id, str(total_error_qty), str(lot_count)),
         )
 
     def _product_error_breakdown(self, product_id: str) -> MesDatabaseResult:
@@ -650,10 +936,73 @@ class MesDatabase:
             (error_id, str(rows[0]["lot_id"]), str(rows[0]["total_error_qty"])),
         )
 
+    def _matching_error_name_rows(
+        self,
+        error_name_query: str,
+        *,
+        grouped: bool = False,
+        grouped_by_lot: bool = False,
+    ) -> list[dict[str, Any]]:
+        normalized_query = normalize_mes_text(error_name_query)
+        if not normalized_query:
+            return []
+        if grouped_by_lot:
+            sql = f"""
+                SELECT lot_id, product_id, error_id, error_name, process_id,
+                       SUM(quantity) AS total_error_qty,
+                       COUNT(*) AS error_record_count
+                FROM v_error_details
+                WHERE {self._exclude_test_filter()}
+                GROUP BY lot_id, product_id, error_id, error_name, process_id
+                ORDER BY total_error_qty DESC, lot_id
+            """
+        elif grouped:
+            sql = f"""
+                SELECT error_id, error_name, process_id, error_type,
+                       SUM(quantity) AS total_error_qty,
+                       COUNT(*) AS error_record_count
+                FROM v_error_details
+                WHERE {self._exclude_test_filter()}
+                GROUP BY error_id, error_name, process_id, error_type
+                ORDER BY total_error_qty DESC, error_id, process_id
+            """
+        else:
+            sql = f"""
+                SELECT lot_id, product_id, error_id, error_name, process_id,
+                       error_type, quantity
+                FROM v_error_details
+                WHERE {self._exclude_test_filter()}
+                ORDER BY quantity DESC, lot_id
+            """
+        rows = self._fetch_all(sql)
+        exact = [
+            row
+            for row in rows
+            if normalize_mes_text(str(row.get("error_name") or "")) == normalized_query
+        ]
+        if exact:
+            return exact[:20]
+        return [
+            row
+            for row in rows
+            if normalized_query in normalize_mes_text(str(row.get("error_name") or ""))
+            or normalize_mes_text(str(row.get("error_name") or "")) in normalized_query
+        ][:20]
+
     @classmethod
     def _extract_lot_id(cls, question: str) -> str | None:
         match = cls.LOT_PATTERN.search(question)
         return match.group(0) if match else None
+
+    @staticmethod
+    def _extract_quoted_error_name(question: str) -> str | None:
+        match = re.search(r"[\"“”']([^\"“”']+)[\"“”']", question or "")
+        if not match:
+            return None
+        candidate = match.group(1).strip()
+        if not candidate or re.search(r"\d{6}(?:-\d{2})?-\d{3}", candidate):
+            return None
+        return candidate
 
     @staticmethod
     def _extract_code_after(question: str, label_pattern: str) -> str | None:
@@ -752,6 +1101,55 @@ class MesDatabase:
         )
 
     @staticmethod
+    def _asks_quantity(normalized: str) -> bool:
+        return any(
+            marker in normalized
+            for marker in (
+                "quantity",
+                "so luong",
+                "tong",
+                "tong so",
+                "bao nhieu",
+                "total",
+                "sum",
+            )
+        )
+
+    @staticmethod
+    def _asks_number_only(normalized: str) -> bool:
+        return any(
+            marker in normalized
+            for marker in (
+                "chi tra loi bang 1 so",
+                "mot so duy nhat",
+                "1 so duy nhat",
+                "only one number",
+                "one number only",
+                "just one number",
+            )
+        )
+
+    @staticmethod
+    def _is_lot_error_record_count_question(normalized: str) -> bool:
+        return MesDatabase._asks_count(normalized) and any(
+            marker in normalized
+            for marker in ("ban ghi", "record", "records", "su kien")
+        )
+
+    @staticmethod
+    def _is_lot_distinct_error_count_question(normalized: str) -> bool:
+        return MesDatabase._asks_count(normalized) and any(
+            marker in normalized
+            for marker in (
+                "loai loi",
+                "ma loi khac nhau",
+                "distinct",
+                "different error",
+                "different errors",
+            )
+        )
+
+    @staticmethod
     def _is_count_error_records_question(normalized: str) -> bool:
         return MesDatabase._asks_count(normalized) and (
             "ban ghi" in normalized
@@ -790,6 +1188,27 @@ class MesDatabase:
             )
         )
         return has_lot and has_listing
+
+    @staticmethod
+    def _is_lowest_lot_error_question(normalized: str) -> bool:
+        has_lot = bool(re.search(r"\b(lot|lots|lo)\b", normalized))
+        has_error = MesDatabase._has_error_marker(normalized)
+        has_minimum = bool(
+            re.search(r"\b(it|thap|nho)\b(?:\s+\w+){0,3}\s+nhat\b", normalized)
+        ) or any(
+            marker in normalized
+            for marker in (
+                "it loi nhat",
+                "thap nhat",
+                "nho nhat",
+                "min",
+                "minimum",
+                "least",
+                "lowest",
+                "smallest",
+            )
+        )
+        return has_lot and has_error and has_minimum
 
     @staticmethod
     def _is_highest_lot_error_question(normalized: str) -> bool:
@@ -886,6 +1305,87 @@ class MesDatabase:
             )
         )
         return has_product and MesDatabase._has_error_marker(normalized) and has_maximum
+
+    @staticmethod
+    def _asks_product_lot_count(normalized: str) -> bool:
+        return (
+            MesDatabase._asks_count(normalized)
+            and bool(re.search(r"\b(lot|lots|lo)\b", normalized))
+        )
+
+    @staticmethod
+    def _asks_average_per_lot(normalized: str) -> bool:
+        return any(
+            marker in normalized
+            for marker in (
+                "trung binh",
+                "binh quan",
+                "moi lot",
+                "per lot",
+                "average",
+                "avg",
+            )
+        )
+
+    @staticmethod
+    def _unsupported_scope_reason(normalized: str) -> str:
+        if any(
+            marker in normalized
+            for marker in ("cong nhan", "nguoi san xuat", "operator", "worker")
+        ):
+            return (
+                "MES snapshot hiện không có cột công nhân/người sản xuất, "
+                "nên không thể xác định người sản xuất Lot."
+            )
+        if any(
+            marker in normalized
+            for marker in ("chi phi", "gia tien", "bao nhieu tien", "cost", "expense")
+        ):
+            return "MES snapshot hiện không có cột chi phí sửa lỗi, nên không thể tính chi phí."
+        if any(
+            marker in normalized
+            for marker in (
+                "du doan",
+                "du bao",
+                "thang sau",
+                "tuong lai",
+                "forecast",
+                "predict",
+                "prediction",
+                "next month",
+            )
+        ):
+            return (
+                "MES snapshot là dữ liệu đã ghi nhận, không phải mô hình dự báo; "
+                "không thể dự đoán lỗi tương lai từ dữ liệu này."
+            )
+        if any(marker in normalized for marker in ("khach hang", "customer", "client")):
+            return "MES snapshot hiện không có thông tin khách hàng, nên không thể xác định khách hàng của sản phẩm."
+        if any(
+            marker in normalized
+            for marker in (
+                "chua tung bi loi",
+                "khong bi loi",
+                "khong co loi",
+                "never had error",
+                "never defective",
+                "without error",
+                "no error",
+            )
+        ):
+            return (
+                "MES snapshot hiện là view dữ liệu lỗi; không đủ cơ sở để liệt kê "
+                "sản phẩm chưa từng bị lỗi."
+            )
+        return ""
+
+    def _unsupported_scope(self, reason: str) -> MesDatabaseResult:
+        return self._result(
+            "unsupported_mes_scope",
+            [{"reason": reason}],
+            reason,
+            (),
+        )
 
     @staticmethod
     def _format_ranked_lots(rows: list[dict[str, Any]]) -> str:

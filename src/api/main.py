@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import time
@@ -37,6 +38,7 @@ from src.rag.vector_store import VectorStore
 from src.rag.rag_pipeline import RAGPipeline
 from src.rag.web_search import WebSearcher
 from src.auth.employee_directory import EmployeeDirectory
+from src.auth.employee_intent import normalize_text
 from src.integrations.mes_database import MesDatabase
 from src.integrations.mes_query_service import MesQueryService
 from src.integrations.gmail_sender import (
@@ -131,6 +133,40 @@ rate_limit_events: Dict[str, Deque[float]] = defaultdict(deque)
 rate_limit_lock = asyncio.Lock()
 query_response_cache: "OrderedDict[str, tuple[float, QueryResponse]]" = OrderedDict()
 query_response_cache_lock = asyncio.Lock()
+
+EMPLOYEE_CONTEXT_REFERENCE_MARKERS = (
+    "anh nay",
+    "chi nay",
+    "nguoi nay",
+    "ong nay",
+    "ba nay",
+    "co nay",
+    "chu nay",
+    "bac nay",
+    "anh do",
+    "chi do",
+    "nguoi do",
+    "ong do",
+    "ba do",
+    "anh ay",
+    "chi ay",
+    "ong ay",
+    "ba ay",
+    "nguoi ay",
+    "nguoi vua roi",
+    "nhan su nay",
+    "nhan vien nay",
+    "this person",
+    "that person",
+    "this employee",
+    "that employee",
+    "この人",
+    "その人",
+    "この方",
+    "その方",
+    "彼",
+    "彼女",
+)
 
 # ── Observability: đếm request + đo độ trễ theo route, tỉ lệ cache hit ──
 # Nhẹ, in-memory, per-process (khi scale nhiều worker cần gom qua Redis/Prometheus).
@@ -316,6 +352,8 @@ async def set_cached_query_response(
 
 def build_query_cache_key(req: QueryRequest) -> Optional[str]:
     """query_cache_key có gắn phiên bản snapshot MES để re-import tự vô hiệu."""
+    if question_uses_employee_context_reference(req.question):
+        return None
     snapshot_version = ""
     if req.mode == "mes" and mes_database is not None:
         try:
@@ -323,6 +361,64 @@ def build_query_cache_key(req: QueryRequest) -> Optional[str]:
         except Exception:  # pragma: no cover - phòng lỗi đọc metadata
             snapshot_version = ""
     return query_cache_key(req, snapshot_version=snapshot_version)
+
+
+def question_uses_employee_context_reference(question: str) -> bool:
+    normalized = normalize_text(question)
+    if any(marker in normalized for marker in EMPLOYEE_CONTEXT_REFERENCE_MARKERS):
+        return True
+    return any(marker in (question or "") for marker in ("この人", "その人", "この方", "その方", "彼", "彼女"))
+
+
+def latest_referenced_employee(
+    conversation_context: list[dict[str, Any]],
+) -> Optional[dict[str, Any]]:
+    """Find the latest single employee mentioned in recent chat context."""
+    for role in ("assistant", "user"):
+        for item in reversed(conversation_context or []):
+            if item.get("role") != role:
+                continue
+            content = str(item.get("content") or "").strip()
+            if not content:
+                continue
+            people = employee_directory.people_context_for_text(content)
+            if len(people) == 1:
+                return people[0]
+    return None
+
+
+def resolve_employee_context_question(req: QueryRequest, question: str) -> str:
+    """Rewrite pronoun-based HR follow-ups to the latest discussed employee."""
+    if req.mode != "mkac" or not question_uses_employee_context_reference(question):
+        return question
+    if employee_directory.people_context_for_text(question):
+        return question
+    person = latest_referenced_employee(req.conversation_context)
+    if not person:
+        return question
+
+    name = str(person.get("name") or "").strip()
+    employee_id = str(person.get("id") or "").strip()
+    if not name:
+        return question
+
+    replacement = f"{name} (mã nhân viên {employee_id})" if employee_id else name
+    rewritten = re.sub(
+        r"\b(?:anh|chị|chi|người|nguoi|ông|ong|bà|ba|cô|co|chú|chu|bác|bac)\s+"
+        r"(?:này|nay|đó|do|ấy|ay|vừa rồi|vua roi)\b",
+        replacement,
+        question,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    for marker in ("この人", "その人", "この方", "その方", "彼", "彼女"):
+        if marker in rewritten:
+            rewritten = rewritten.replace(marker, replacement, 1)
+            break
+    if rewritten == question:
+        rewritten = f"{replacement}: {question}"
+    logger.info("Resolved employee context question: %r -> %r", question, rewritten)
+    return rewritten
 
 
 async def record_query_metric(
@@ -1133,8 +1229,12 @@ async def query_documents(req: QueryRequest, request: Request):
         return cached_response.model_copy(update={"session_id": req.session_id})
 
     try:
+        contextual_question = resolve_employee_context_question(req, req.question)
         directory_response = await asyncio.to_thread(
-            employee_directory_query_response, req, current_employee
+            employee_directory_query_response,
+            req,
+            current_employee,
+            question=contextual_question,
         )
         if directory_response is not None:
             logger.info(
@@ -1154,6 +1254,14 @@ async def query_documents(req: QueryRequest, request: Request):
             return prepared_response
 
         localized_req = await localize_query_request(req)
+        localized_contextual_question = resolve_employee_context_question(
+            localized_req,
+            localized_req.question,
+        )
+        if localized_contextual_question != localized_req.question:
+            localized_req = localized_req.model_copy(
+                update={"question": localized_contextual_question}
+            )
         current_user_context = await asyncio.to_thread(
             employee_context_for_query,
             localized_req,
@@ -1163,7 +1271,7 @@ async def query_documents(req: QueryRequest, request: Request):
             employee_directory_query_response,
             req,
             current_employee,
-            question=localized_req.question,
+            question=localized_contextual_question,
         )
         if directory_response is not None:
             logger.info(
@@ -1308,8 +1416,12 @@ async def query_stream(req: QueryRequest, request: Request):
             },
         )
     try:
+        contextual_question = resolve_employee_context_question(req, req.question)
         directory_response = await asyncio.to_thread(
-            employee_directory_query_response, req, current_employee
+            employee_directory_query_response,
+            req,
+            current_employee,
+            question=contextual_question,
         )
         if directory_response is not None:
             logger.info(
@@ -1341,6 +1453,14 @@ async def query_stream(req: QueryRequest, request: Request):
             )
 
         localized_req = await localize_query_request(req)
+        localized_contextual_question = resolve_employee_context_question(
+            localized_req,
+            localized_req.question,
+        )
+        if localized_contextual_question != localized_req.question:
+            localized_req = localized_req.model_copy(
+                update={"question": localized_contextual_question}
+            )
         current_user_context = await asyncio.to_thread(
             employee_context_for_query,
             localized_req,
@@ -1350,7 +1470,7 @@ async def query_stream(req: QueryRequest, request: Request):
             employee_directory_query_response,
             req,
             current_employee,
-            question=localized_req.question,
+            question=localized_contextual_question,
         )
         if directory_response is not None:
             logger.info(

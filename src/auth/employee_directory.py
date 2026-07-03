@@ -212,7 +212,14 @@ class EmployeeDirectory:
         normalized_question = normalize_text(question)
         if not self._question_requests_person_identity(normalized_question):
             return []
+        return self.people_context_for_text(question)
 
+    def people_context_for_text(self, text: str) -> list[dict[str, Any]]:
+        """Return employee profiles explicitly mentioned in any text snippet."""
+        if not self.db_path.is_file():
+            return []
+
+        normalized_text = normalize_text(text)
         with sqlite3.connect(self.db_path) as connection:
             rows = connection.execute(
                 """
@@ -226,7 +233,11 @@ class EmployeeDirectory:
         seen_ids: set[str] = set()
         for employee_id, full_name in rows:
             normalized_name = normalize_text(full_name)
-            if not normalized_name or normalized_name not in normalized_question:
+            id_mentioned = bool(
+                re.search(rf"(?<!\d){re.escape(employee_id)}(?!\d)", text or "")
+            )
+            name_mentioned = bool(normalized_name and normalized_name in normalized_text)
+            if not (id_mentioned or name_mentioned):
                 continue
             profile = self.profile(employee_id)
             if profile and profile["id"] not in seen_ids:

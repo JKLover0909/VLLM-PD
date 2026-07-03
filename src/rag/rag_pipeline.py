@@ -63,6 +63,8 @@ MODEL_ROUTES = {
 
 LOCAL_CHAT_MODEL_ALIASES = {"auto-model", "local-gemma", "local-qwen-chat"}
 LOCAL_MODEL_ALIASES = LOCAL_CHAT_MODEL_ALIASES | {"local-qwen-coder", "coding-model"}
+PRIMARY_CHAT_MODELS = {"auto-model", "local-qwen-chat"}
+OPENAI_FALLBACK_MODEL = os.getenv("OPENAI_FALLBACK_MODEL", "openai-model").strip() or "openai-model"
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 
 
@@ -218,20 +220,36 @@ class RAGPipeline:
         )
 
         try:
+            max_tokens = self._rag_answer_max_tokens(
+                question=question,
+                mode=mode,
+                search_results=search_results,
+                answer_scope=answer_scope,
+                has_images=bool(image_paths),
+            )
             response = await self.openai_client.chat.completions.create(
                 model=routed_model,
                 messages=messages,
                 temperature=self.temperature,
-                max_tokens=self._rag_answer_max_tokens(
-                    question=question,
-                    mode=mode,
-                    search_results=search_results,
-                    answer_scope=answer_scope,
-                    has_images=bool(image_paths),
-                ),
+                max_tokens=max_tokens,
                 **self._provider_options(routed_model),
             )
             answer = self._clean_model_answer(response.choices[0].message.content or "")
+            if not answer and self._should_retry_with_openai(routed_model):
+                logger.warning(
+                    "Model %s returned an empty answer; retrying with %s.",
+                    routed_model,
+                    OPENAI_FALLBACK_MODEL,
+                )
+                response = await self.openai_client.chat.completions.create(
+                    model=OPENAI_FALLBACK_MODEL,
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=max_tokens,
+                    **self._provider_options(OPENAI_FALLBACK_MODEL),
+                )
+                routed_model = OPENAI_FALLBACK_MODEL
+                answer = self._clean_model_answer(response.choices[0].message.content or "")
             return answer, search_results, routed_model, answer_scope
         except Exception as e:
             logger.error(f"Error in RAG generation: {e}")
@@ -370,17 +388,18 @@ class RAGPipeline:
         )
 
         try:
+            max_tokens = self._rag_answer_max_tokens(
+                question=question,
+                mode=mode,
+                search_results=search_results,
+                answer_scope=answer_scope,
+                has_images=bool(image_paths),
+            )
             response = await self.openai_client.chat.completions.create(
                 model=routed_model,
                 messages=messages,
                 temperature=self.temperature,
-                max_tokens=self._rag_answer_max_tokens(
-                    question=question,
-                    mode=mode,
-                    search_results=search_results,
-                    answer_scope=answer_scope,
-                    has_images=bool(image_paths),
-                ),
+                max_tokens=max_tokens,
                 stream=True,
                 **self._provider_options(routed_model),
             )
@@ -400,6 +419,25 @@ class RAGPipeline:
                 # Chỉ phát 'replace' khi bản sạch khác bản đã stream — ca thường
                 # (model ngoan) trùng nhau nên không có replace, stream thuần.
                 cleaned = self._clean_model_answer("".join(parts))
+                if not cleaned and self._should_retry_with_openai(routed_model):
+                    logger.warning(
+                        "Model %s streamed an empty answer; retrying with %s.",
+                        routed_model,
+                        OPENAI_FALLBACK_MODEL,
+                    )
+                    fallback_response = await self.openai_client.chat.completions.create(
+                        model=OPENAI_FALLBACK_MODEL,
+                        messages=messages,
+                        temperature=self.temperature,
+                        max_tokens=max_tokens,
+                        **self._provider_options(OPENAI_FALLBACK_MODEL),
+                    )
+                    fallback_answer = self._clean_model_answer(
+                        fallback_response.choices[0].message.content or ""
+                    )
+                    if fallback_answer:
+                        yield ("token", fallback_answer)
+                    return
                 if cleaned != emitted.strip():
                     yield ("replace", cleaned)
 
@@ -1348,6 +1386,10 @@ class RAGPipeline:
             num_ctx = int(os.getenv("LOCAL_CHAT_NUM_CTX", "16384"))
             return {"extra_body": {"think": False, "num_ctx": num_ctx}}
         return {}
+
+    @staticmethod
+    def _should_retry_with_openai(routed_model: str) -> bool:
+        return routed_model in PRIMARY_CHAT_MODELS and routed_model != OPENAI_FALLBACK_MODEL
 
     @staticmethod
     def _clean_model_answer(answer: str) -> str:

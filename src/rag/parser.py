@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -54,6 +55,17 @@ class DocumentParser:
     CHUNK_OVERLAP = 220
     MIN_NATIVE_PAGE_CHARS = 80
     MIN_CHUNK_CHARS = 20
+    # Page-boundary markers embedded in curated OCR markdown ("<!-- Trang N -->"
+    # or "<!-- Page N -->"). They align a curated .md page to the PDF page it
+    # was transcribed from, so citations/previews keep pointing at the original.
+    PAGE_MARKER_RE = re.compile(r"<!--\s*(?:Trang|Page)\s+(\d+)", re.IGNORECASE)
+    MARKDOWN_TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
+    # Long directory-style tables (e.g. the employee roster) retrieve far better
+    # when split by row instead of by character budget: each chunk then holds a
+    # handful of complete rows with the header, keeping every field on one line
+    # associated with its record instead of blending dozens of people together.
+    BIG_TABLE_MIN_ROWS = 12
+    TABLE_ROWS_PER_CHUNK = 15
 
     def __init__(self):
         self.max_pdf_pages = int(os.getenv("MAX_DOCUMENT_PAGES", "100"))
@@ -107,6 +119,7 @@ class DocumentParser:
         *,
         image_output_dir: str | Path | None = None,
         document_metadata: Dict[str, Any] | None = None,
+        text_source: str | Path | None = None,
     ) -> List[TextChunk]:
         path = Path(file_path)
         if not path.exists():
@@ -114,9 +127,221 @@ class DocumentParser:
 
         metadata = dict(document_metadata or {})
         suffix = path.suffix.lower()
+        if text_source:
+            # Retrieval text comes from a curated OCR markdown file, while page
+            # images / provenance still come from the original document so cited
+            # documents keep displaying the genuine (stamped, signed) original.
+            text_path = Path(text_source)
+            if suffix == ".pdf":
+                return self._process_pdf_with_text_source(
+                    path, text_path, image_output_dir, metadata
+                )
+            return self._process_text_source(text_path, path.name, metadata)
         if suffix == ".pdf":
             return self._process_pdf(path, image_output_dir, metadata)
         return self._process_with_docling(path, metadata)
+
+    def _split_markdown_pages(self, md_text: str) -> List[tuple[int, str]]:
+        """Split curated markdown into (page_number, text) using page markers.
+
+        Content before the first marker is folded into the first page. When no
+        markers are present the whole document is treated as a single page.
+        """
+        marks = list(self.PAGE_MARKER_RE.finditer(md_text))
+        if not marks:
+            return [(1, md_text)]
+        pages: List[tuple[int, str]] = []
+        preamble = md_text[: marks[0].start()].strip()
+        for i, match in enumerate(marks):
+            page_number = int(match.group(1))
+            end = marks[i + 1].start() if i + 1 < len(marks) else len(md_text)
+            body = md_text[match.end():end]
+            if i == 0 and preamble:
+                body = f"{preamble}\n{body}"
+            pages.append((page_number, body))
+        return pages
+
+    def _split_page_body(
+        self,
+        body: str,
+        *,
+        filename: str,
+        page_number: int,
+        start_index: int,
+        metadata: Dict[str, Any],
+    ) -> List[TextChunk]:
+        """Chunk one curated page: row-wise for long tables, else by size."""
+        if self._is_big_table(body):
+            return self._split_markdown_table(
+                body,
+                filename=filename,
+                page_number=page_number,
+                start_index=start_index,
+                metadata=metadata,
+            )
+        return self._split_text(
+            body,
+            filename=filename,
+            page_number=page_number,
+            start_index=start_index,
+            metadata=metadata,
+        )
+
+    def _is_big_table(self, body: str) -> bool:
+        rows = [
+            line
+            for line in body.splitlines()
+            if self.MARKDOWN_TABLE_ROW.match(line)
+        ]
+        return len(rows) >= self.BIG_TABLE_MIN_ROWS
+
+    def _split_markdown_table(
+        self,
+        body: str,
+        *,
+        filename: str,
+        page_number: int,
+        start_index: int,
+        metadata: Dict[str, Any],
+    ) -> List[TextChunk]:
+        table_rows = [
+            line
+            for line in body.splitlines()
+            if self.MARKDOWN_TABLE_ROW.match(line)
+        ]
+        # Preamble text (title, notes) that is not part of the table itself.
+        preamble = "\n".join(
+            line
+            for line in body.splitlines()
+            if line.strip() and not self.MARKDOWN_TABLE_ROW.match(line)
+        ).strip()
+        header = table_rows[:2]  # column header + the |---| separator row
+        data_rows = table_rows[2:]
+
+        chunks: List[TextChunk] = []
+        chunk_index = start_index
+        for start in range(0, len(data_rows), self.TABLE_ROWS_PER_CHUNK):
+            block_rows = data_rows[start:start + self.TABLE_ROWS_PER_CHUNK]
+            parts = header + block_rows
+            # Repeat the preamble on the first chunk so document context (title
+            # of the table) stays attached without bloating every chunk.
+            block = "\n".join(parts)
+            if start == 0 and preamble:
+                block = f"{preamble}\n{block}"
+            if len(block.strip()) >= self.MIN_CHUNK_CHARS:
+                chunks.append(
+                    self._make_chunk(
+                        block,
+                        filename,
+                        page_number,
+                        chunk_index,
+                        metadata,
+                    )
+                )
+                chunk_index += 1
+        return chunks
+
+    def _process_pdf_with_text_source(
+        self,
+        path: Path,
+        text_path: Path,
+        image_output_dir: str | Path | None,
+        document_metadata: Dict[str, Any],
+    ) -> List[TextChunk]:
+        md_text = text_path.read_text(encoding="utf-8")
+        pages = self._split_markdown_pages(md_text)
+
+        output_dir = Path(image_output_dir) if image_output_dir else None
+        if output_dir:
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+        image_by_page: Dict[int, str] = {}
+        with fitz.open(path) as pdf:
+            if self.max_pdf_pages > 0 and pdf.page_count > self.max_pdf_pages:
+                raise DocumentLimitError(
+                    f"PDF has {pdf.page_count} pages; the limit is "
+                    f"{self.max_pdf_pages} pages."
+                )
+            pdf_page_count = pdf.page_count
+            if output_dir:
+                for page_index, page in enumerate(pdf):
+                    page_number = page_index + 1
+                    target = output_dir / f"page-{page_number:04d}.png"
+                    self._render_pdf_page(page, target)
+                    image_by_page[page_number] = str(target.resolve())
+
+        marker_pages = [number for number, _ in pages]
+        if marker_pages != list(range(1, len(marker_pages) + 1)) or (
+            len(marker_pages) != pdf_page_count
+        ):
+            logger.warning(
+                "Curated text source '%s' has page markers %s that do not align "
+                "with the %s pages of '%s'; citations may be off.",
+                text_path.name,
+                marker_pages,
+                pdf_page_count,
+                path.name,
+            )
+
+        chunks: List[TextChunk] = []
+        chunk_index = 0
+        for page_number, body in pages:
+            page_metadata = {
+                **document_metadata,
+                "source": "curated-md",
+                "ocr_method": "curated",
+                "ocr_chars": len(body.strip()),
+                "text_source": text_path.name,
+            }
+            image_path = image_by_page.get(page_number)
+            if image_path:
+                page_metadata["image_path"] = image_path
+            page_chunks = self._split_page_body(
+                body,
+                filename=path.name,
+                page_number=page_number,
+                start_index=chunk_index,
+                metadata=page_metadata,
+            )
+            chunks.extend(page_chunks)
+            chunk_index += len(page_chunks)
+
+        logger.info(
+            "Document '%s' processed from curated text source '%s' into %s chunks.",
+            path.name,
+            text_path.name,
+            len(chunks),
+        )
+        return chunks
+
+    def _process_text_source(
+        self,
+        text_path: Path,
+        display_name: str,
+        document_metadata: Dict[str, Any],
+    ) -> List[TextChunk]:
+        """Use curated markdown as the text for a non-PDF source (html/docx)."""
+        md_text = text_path.read_text(encoding="utf-8")
+        chunks: List[TextChunk] = []
+        chunk_index = 0
+        for page_number, body in self._split_markdown_pages(md_text):
+            page_metadata = {
+                **document_metadata,
+                "source": "curated-md",
+                "ocr_method": "curated",
+                "ocr_chars": len(body.strip()),
+                "text_source": text_path.name,
+            }
+            page_chunks = self._split_page_body(
+                body,
+                filename=display_name,
+                page_number=page_number,
+                start_index=chunk_index,
+                metadata=page_metadata,
+            )
+            chunks.extend(page_chunks)
+            chunk_index += len(page_chunks)
+        return chunks
 
     def _process_pdf(
         self,

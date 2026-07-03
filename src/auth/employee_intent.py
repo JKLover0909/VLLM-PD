@@ -250,13 +250,25 @@ def question_requests_person_identity(normalized_question: str) -> bool:
         "thong tin",
         "lam bo phan nao",
         "lam phong nao",
+        "lam o phong nao",
+        "lam phong gi",
+        "lam o bo phan nao",
+        "lam bo phan gi",
         "thuoc bo phan nao",
         "thuoc phong ban nao",
         "chuc danh",
+        "chuc vu",
         "vi tri",
+        "vai tro",
+        "lam vai tro gi",
         "ma nhan vien",
+        # Bare "phong ban"/"bo phan" bắt được cách hỏi dùng "của" thay vì
+        # "thuộc ... nào"/"làm ... nào" (vd "phòng ban của X là gì?").
+        "phong ban",
+        "bo phan",
         "who is",
         "which department",
         "position",
+        "role",
     }
     return any(keyword in normalized_question for keyword in keywords)

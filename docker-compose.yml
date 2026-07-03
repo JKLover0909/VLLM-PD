@@ -22,6 +22,8 @@ services:
       - .env
     environment:
       OLLAMA_API_BASE: ${OLLAMA_API_BASE:-https://carless-overarch-establish.ngrok-free.dev}
+      QWEN_CHAT_API_BASE: ${QWEN_CHAT_API_BASE:-http://192.84.106.72:11434}
+      QWEN_CHAT_NGROK_API_BASE: ${QWEN_CHAT_NGROK_API_BASE:-https://carless-overarch-establish.ngrok-free.dev}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-local}
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
     command: ["--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]

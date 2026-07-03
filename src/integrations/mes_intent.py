@@ -20,7 +20,9 @@ def normalized_text(question: str) -> str:
     normalized = "".join(
         char for char in normalized if unicodedata.category(char) != "Mn"
     )
-    return re.sub(r"[^a-z0-9]+", " ", normalized).strip()
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
+    normalized = re.sub(r"\bnhiu\b", "nhieu", normalized)
+    return re.sub(r"\bnhiu\b", "nhieu", normalized)
 
 
 def is_highest_lot_error_question(question: str) -> bool:
@@ -32,6 +34,7 @@ def is_highest_lot_error_question(question: str) -> bool:
         char for char in normalized if unicodedata.category(char) != "Mn"
     )
     normalized = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
+    normalized = re.sub(r"\bnhiu\b", "nhieu", normalized)
 
     has_lot = bool(re.search(r"\b(lot|lots|lo|lo san xuat)\b", normalized))
     has_error = bool(re.search(r"\bng\b", normalized)) or any(
@@ -82,6 +85,7 @@ def is_compound_mes_question(question: str) -> bool:
         char for char in normalized if unicodedata.category(char) != "Mn"
     )
     normalized = re.sub(r"[^a-z0-9]+", " ", normalized).strip()
+    normalized = re.sub(r"\bnhiu\b", "nhieu", normalized)
     number_token = (
         r"(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)"
     )

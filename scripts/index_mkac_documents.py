@@ -75,6 +75,9 @@ def main() -> int:
         os.getenv("MKAC_MANIFEST_PATH", "config/mkac_manifest.json")
     )
     image_root = Path(os.getenv("MKAC_PAGE_IMAGE_DIR", "mkac_processed/pages"))
+    text_source_dir = Path(
+        os.getenv("MKAC_TEXT_SOURCE_DIR", "documents/MKAC-md")
+    )
     report_path = Path(
         os.getenv("MKAC_INDEX_REPORT", "logs/mkac_index_report.json")
     )
@@ -128,13 +131,33 @@ def main() -> int:
     pending = []
     for position, item in enumerate(documents, start=1):
         path = source_dir / item["filename"]
-        checksum = sha256(path)
+        text_source = text_source_dir / f"{Path(item['filename']).stem}.md"
+        text_source = text_source if text_source.is_file() else None
+        pdf_checksum = sha256(path)
+        md_checksum = sha256(text_source) if text_source else None
+        # Fold the curated markdown checksum into the identity used for skip
+        # detection, so re-running the OCR (a new .md) forces a re-index even
+        # when the original PDF is byte-for-byte unchanged.
+        checksum = (
+            pdf_checksum
+            if not md_checksum
+            else hashlib.sha256(
+                f"{pdf_checksum}:{md_checksum}".encode()
+            ).hexdigest()
+        )
+        if text_source is None and path.suffix.lower() == ".pdf":
+            print(
+                f"[{position}/{len(documents)}] WARN no curated text source for "
+                f"{path.name}; falling back to in-pipeline OCR."
+            )
         previous = indexed_metadata.get(path.name, {})
         if not args.reindex and previous.get("checksum") == checksum:
             print(f"[{position}/{len(documents)}] SKIP {path.name}")
             report["skipped"].append(path.name)
             continue
-        pending.append((position, item, path, checksum))
+        pending.append(
+            (position, item, path, checksum, text_source, pdf_checksum, md_checksum)
+        )
 
     parser = DocumentParser() if pending else None
     # The API keeps its own BGE-M3 instance resident on Machine 2. Defaulting
@@ -146,21 +169,27 @@ def main() -> int:
         if pending
         else None
     )
-    for position, item, path, checksum in pending:
+    for position, item, path, checksum, text_source, pdf_checksum, md_checksum in pending:
         print(f"[{position}/{len(documents)}] INDEX {path.name}")
         try:
             metadata = {
                 **item,
                 "checksum": checksum,
+                "pdf_checksum": pdf_checksum,
+                "md_checksum": md_checksum,
+                "text_source": text_source.name if text_source else None,
                 "knowledge_base": manifest.get("knowledge_base", "MKAC"),
                 "organization": manifest.get("organization", {}),
                 "indexed_at": datetime.now(timezone.utc).isoformat(),
             }
-            page_dir = image_root / checksum[:16]
+            # Keep the page-image directory keyed on the PDF checksum so cached
+            # page previews stay stable when only the curated .md changes.
+            page_dir = image_root / pdf_checksum[:16]
             chunks = parser.process_file(
                 path,
                 image_output_dir=page_dir if path.suffix.lower() == ".pdf" else None,
                 document_metadata=metadata,
+                text_source=text_source,
             )
             if not chunks:
                 raise RuntimeError("Parser returned no indexable chunks")
@@ -176,6 +205,7 @@ def main() -> int:
                 {
                     "filename": path.name,
                     "checksum": checksum,
+                    "text_source": text_source.name if text_source else None,
                     "chunks": len(chunks),
                     "pages_with_content": pages,
                     "characters": total_chars,

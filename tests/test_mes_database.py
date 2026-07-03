@@ -167,6 +167,90 @@ def test_top_error_codes_does_not_change_highest_lot_limit(mes_database):
     assert [row["lot_id"] for row in result.rows] == ["000002-01-000"]
 
 
+def test_lot_error_record_count_is_not_routed_to_breakdown(mes_database):
+    result = mes_database.query_question(
+        "Lot 000001-01-000 có bao nhiêu bản ghi lỗi?"
+    )
+
+    assert result is not None
+    assert result.intent == "lot_error_record_count"
+    assert result.rows[0]["error_record_count"] == 2
+    assert "2 bản ghi lỗi" in result.fallback_answer
+
+
+def test_product_lot_count_and_average_are_deterministic(mes_database):
+    lot_count = mes_database.query_question(
+        "Sản phẩm PRODUCT-A có bao nhiêu lot bị lỗi?"
+    )
+    average = mes_database.query_question(
+        "Trung bình mỗi lot của sản phẩm PRODUCT-A có bao nhiêu lỗi?"
+    )
+
+    assert lot_count is not None
+    assert lot_count.intent == "product_lot_count"
+    assert lot_count.rows[0]["lot_count"] == 1
+    assert average is not None
+    assert average.intent == "product_average_errors_per_lot"
+    assert average.rows[0]["average_error_qty_per_lot"] == 60
+
+
+def test_error_name_questions_route_by_vietnamese_name(mes_database):
+    name = mes_database.query_question(
+        'Lỗi "Ngắn mạch" thuộc loại lỗi gì, xảy ra ở process nào?'
+    )
+    quantity = mes_database.query_question(
+        'Số lượng quantity lỗi "Ngắn mạch" trong bản ghi liên quan là bao nhiêu?'
+    )
+    lots = mes_database.query_question('Lỗi "Ngắn mạch" xuất hiện ở lot nào?')
+
+    assert name is not None
+    assert name.intent == "error_name_search"
+    assert name.rows[0]["process_id"] == "PROC-1"
+    assert quantity is not None
+    assert quantity.intent == "error_quantity_by_name"
+    assert quantity.rows[0]["top_record"]["quantity"] == 100
+    assert lots is not None
+    assert lots.intent == "lots_for_error_name"
+    assert lots.rows[0]["lot_id"] == "000002-01-000"
+
+
+def test_lowest_lot_and_typo_question_are_deterministic(mes_database):
+    lowest = mes_database.query_question("Lot nào có ít lỗi nhất trong hệ thống?")
+    typo = mes_database.query_question(
+        "lot nào lỗi nhìu nhất",
+        allow_highest_lot=True,
+    )
+
+    assert lowest is not None
+    assert lowest.intent == "lowest_error_lot"
+    assert lowest.rows[0]["lot_id"] == "000001-01-000"
+    assert typo is not None
+    assert typo.intent == "highest_error_lot"
+    assert typo.rows[0]["lot_id"] == "000002-01-000"
+
+
+def test_unsupported_mes_scope_is_rejected_before_sql_agent(mes_database):
+    for question in (
+        "Lot 000001-01-000 do công nhân nào sản xuất?",
+        "Chi phí sửa lỗi của sản phẩm PRODUCT-A là bao nhiêu?",
+        "Dự đoán tháng sau sản phẩm nào sẽ lỗi nhiều nhất?",
+        "Sản phẩm nào chưa từng bị lỗi?",
+    ):
+        result = mes_database.query_question(question)
+        assert result is not None
+        assert result.intent == "unsupported_mes_scope"
+
+
+def test_number_only_error_record_count(mes_database):
+    result = mes_database.query_question(
+        "Chỉ trả lời bằng 1 số duy nhất: tổng số bản ghi lỗi trong hệ thống"
+    )
+
+    assert result is not None
+    assert result.intent == "count_error_records"
+    assert result.fallback_answer == "3"
+
+
 def test_unrelated_question_is_not_routed_to_mes(mes_database):
     assert mes_database.query_question("Quy định làm thêm giờ thế nào?") is None
 
