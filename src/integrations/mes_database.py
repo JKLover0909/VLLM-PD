@@ -212,6 +212,9 @@ class MesDatabase:
         error_name_query = self._extract_quoted_error_name(question)
         if self._is_lowest_lot_error_question(normalized):
             return self._lowest_error_lots(limit=self._extract_top_limit(normalized))
+        lot_rank = self._extract_rank_position(normalized, question)
+        if lot_rank and self._is_highest_lot_error_question(normalized):
+            return self._ranked_error_lot(lot_rank)
         if allow_highest_lot and self._is_highest_lot_error_question(normalized):
             return self._highest_error_lots(limit=self._extract_top_limit(normalized))
 
@@ -277,7 +280,7 @@ class MesDatabase:
             return self._lots_for_error(error_id)
         if error_id:
             return self._error_name(error_id)
-        product_rank = self._extract_product_rank_position(normalized, question)
+        product_rank = self._extract_rank_position(normalized, question)
         if product_rank and self._is_ranked_product_error_question(normalized, question):
             return self._ranked_error_product(product_rank)
         if self._is_highest_product_error_question(normalized):
@@ -407,18 +410,33 @@ class MesDatabase:
 
     def _lowest_error_lots(self, limit: int = 1) -> MesDatabaseResult:
         exclude_test = self._exclude_test_filter()
-        rows = self._fetch_all(
-            f"""
-            SELECT lot_id, product_id, total_error_qty, error_record_count,
-                   distinct_error_count
-            FROM v_lot_error_summary
-            WHERE {exclude_test}
-              AND total_error_qty > 0
-            ORDER BY total_error_qty ASC, lot_id
-            LIMIT ?
-            """,
-            (limit,),
-        )
+        if limit > 1:
+            rows = self._fetch_all(
+                f"""
+                SELECT lot_id, product_id, total_error_qty, error_record_count,
+                       distinct_error_count
+                FROM v_lot_error_summary
+                WHERE {exclude_test}
+                  AND total_error_qty > 0
+                ORDER BY total_error_qty ASC, lot_id
+                LIMIT ?
+                """,
+                (limit,),
+            )
+        else:
+            rows = self._fetch_all(
+                f"""
+                SELECT lot_id, product_id, total_error_qty, error_record_count,
+                       distinct_error_count
+                FROM v_lot_error_summary
+                WHERE {exclude_test}
+                  AND total_error_qty = (
+                    SELECT MIN(total_error_qty) FROM v_lot_error_summary
+                    WHERE {exclude_test} AND total_error_qty > 0
+                )
+                ORDER BY lot_id
+                """
+            )
         if not rows:
             return self._result(
                 "lowest_error_lot",
@@ -438,6 +456,39 @@ class MesDatabase:
             for value in (row["lot_id"], row["product_id"], row["total_error_qty"])
         )
         return self._result("lowest_error_lot", rows, answer, terms)
+
+    def _ranked_error_lot(self, rank: int) -> MesDatabaseResult:
+        exclude_test = self._exclude_test_filter()
+        rows = self._fetch_all(
+            f"""
+            SELECT lot_id, product_id, total_error_qty, error_record_count,
+                   distinct_error_count, unmapped_error_record_count
+            FROM v_lot_error_summary
+            WHERE {exclude_test}
+              AND total_error_qty > 0
+            ORDER BY total_error_qty DESC, lot_id
+            LIMIT 1 OFFSET ?
+            """,
+            (max(0, rank - 1),),
+        )
+        if not rows:
+            return self._result(
+                "ranked_error_lot",
+                [],
+                f"MES snapshot chưa có Lot đứng thứ {rank} theo tổng lỗi.",
+            )
+        row = rows[0]
+        answer = (
+            f"Theo MES snapshot, Lot đứng thứ {rank} theo tổng lỗi là "
+            f"Lot {row['lot_id']}, mã hàng {row['product_id']}, "
+            f"{self._number(row['total_error_qty'])} lỗi."
+        )
+        return self._result(
+            "ranked_error_lot",
+            rows,
+            answer,
+            (str(row["lot_id"]), str(row["product_id"]), str(row["total_error_qty"])),
+        )
 
     def _count_lots_with_errors(self) -> MesDatabaseResult:
         exclude_test = self._exclude_test_filter()
@@ -1195,6 +1246,18 @@ class MesDatabase:
         candidate = match.group(1).strip()
         if not candidate or re.search(r"\d{6}(?:-\d{2})?-\d{3}", candidate):
             return None
+        if normalize_mes_text(candidate) in {
+            "co loi",
+            "khong co loi",
+            "has error",
+            "has errors",
+            "with error",
+            "with errors",
+            "loi",
+            "error",
+            "errors",
+        }:
+            return None
         return candidate
 
     @staticmethod
@@ -1402,13 +1465,31 @@ class MesDatabase:
     @staticmethod
     def _is_ambiguous_lot_count_question(normalized: str) -> bool:
         compact = re.sub(r"\s+", " ", normalized or "").strip(" ?.!。")
-        return compact in {
+        if compact in {
             "co bao nhieu lot",
             "bao nhieu lot",
             "co may lot",
             "may lot",
             "how many lots",
-        }
+        }:
+            return True
+        has_lot = bool(re.search(r"\b(lot|lots|lo)\b", normalized))
+        if has_lot and MesDatabase._asks_count(normalized) and any(
+            marker in normalized
+            for marker in (
+                "khong noi ro",
+                "chua ro",
+                "mo ho",
+                "not specify",
+                "unclear",
+            )
+        ):
+            return True
+        return (
+            has_lot
+            and MesDatabase._asks_count(normalized)
+            and not MesDatabase._has_error_marker(normalized)
+        )
 
     @staticmethod
     def _is_lot_listing_question(normalized: str) -> bool:
@@ -1564,7 +1645,7 @@ class MesDatabase:
         return has_product and MesDatabase._has_error_marker(normalized)
 
     @staticmethod
-    def _extract_product_rank_position(
+    def _extract_rank_position(
         normalized: str,
         original_question: str = "",
         maximum: int = 50,

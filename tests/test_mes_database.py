@@ -145,6 +145,59 @@ def test_top_n_highest_error_lots(mes_database):
     assert "Testlot" not in result.fallback_answer
 
 
+def test_ranked_highest_error_lot(mes_database):
+    result = mes_database.query_question(
+        "Lot nào có nhiều lỗi thứ 2 sau lot lỗi nhiều nhất?",
+        allow_highest_lot=True,
+    )
+
+    assert result is not None
+    assert result.intent == "ranked_error_lot"
+    assert result.rows[0]["lot_id"] == "000001-01-000"
+    assert result.rows[0]["total_error_qty"] == 60
+
+
+def test_lowest_error_lot_returns_all_ties(mes_database):
+    result = mes_database.query_question("Lot nào có ít lỗi nhất trong hệ thống?")
+
+    assert result is not None
+    assert result.intent == "lowest_error_lot"
+    assert [row["lot_id"] for row in result.rows] == ["000001-01-000"]
+
+
+def test_quoted_generic_error_scope_does_not_become_error_name(mes_database):
+    result = mes_database.query_question(
+        'Có bao nhiêu lot? (không nói rõ "có lỗi" hay tất cả)'
+    )
+
+    assert result is not None
+    assert result.intent == "ambiguous_lot_count"
+
+
+def test_japanese_mes_questions_route_without_translation(mes_database):
+    product = mes_database.query_question(
+        "製品PRODUCT-Aには何ロットあり、総エラー数はいくつですか？"
+    )
+    compare = mes_database.query_question(
+        "PRODUCT-BとPRODUCT-Aの総エラー数を比較すると、どちらが多く、差はいくつですか？"
+    )
+    ranked_lot = mes_database.query_question(
+        "最もエラーが多いロットの次に、2番目にエラーが多いロットはどれですか？",
+        allow_highest_lot=True,
+    )
+    ambiguous = mes_database.query_question("ロットはいくつありますか？")
+
+    assert product is not None
+    assert product.intent == "product_error_summary"
+    assert product.rows[0]["product_id"] == "PRODUCT-A"
+    assert compare is not None
+    assert compare.intent == "product_error_comparison"
+    assert ranked_lot is not None
+    assert ranked_lot.intent == "ranked_error_lot"
+    assert ambiguous is not None
+    assert ambiguous.intent == "ambiguous_lot_count"
+
+
 def test_english_top_n_highest_error_lots_does_not_extract_product_from_production(mes_database):
     result = mes_database.query_question(
         "List the top 2 real production lots by total error quantity and exclude test lots.",

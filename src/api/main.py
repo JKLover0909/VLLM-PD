@@ -699,6 +699,10 @@ async def localize_query_request(req: QueryRequest) -> QueryRequest:
     """Translate Japanese UI questions into Vietnamese for the core backend."""
     if req.ui_language != "ja" or translation_service is None:
         return req
+    # MES có bộ rule deterministic đọc được các marker Nhật cơ bản. Dịch câu hỏi
+    # trước khi route dễ làm méo mã Lot/mã hàng/tên lỗi, nên để nguyên câu gốc.
+    if req.mode == "mes":
+        return req
     try:
         translated = await translation_service.translate_query(
             req.question,
@@ -1206,7 +1210,15 @@ def safety_guard_response(req: QueryRequest) -> Optional[QueryResponse]:
         blocked = True
     if any(
         marker in original
-        for marker in ("環境変数", "システムファイル", "制限を無視", "役割を無視")
+        for marker in (
+            "環境変数",
+            "システムファイル",
+            "制限を無視",
+            "役割を無視",
+            "修正",
+            "変更",
+            "更新",
+        )
     ):
         blocked = True
     if "無視" in original and ("制限" in original or "役割" in original):
