@@ -20,13 +20,18 @@ Trạng thái tài liệu này được cập nhật theo kiến trúc đang ch�
   - `Quản lý MES` (`mode=mes`).
 - Chế độ `Nghiên cứu tài liệu` vẫn còn backend/frontend code và endpoint demo,
   nhưng đang bị ẩn khỏi thanh chọn chế độ để tránh demo khi chưa tối ưu local.
-- UI có chuyển ngôn ngữ `VI / JP`. Lõi xử lý chính vẫn dùng tiếng Việt; khi UI
-  ở tiếng Nhật, backend dịch câu hỏi sang tiếng Việt và dịch câu trả lời trở lại
-  tiếng Nhật.
+- UI có chuyển ngôn ngữ `VI / JP`. Lõi xử lý chính vẫn dùng tiếng Việt. Với
+  `mode=mkac`, backend dịch câu hỏi tiếng Nhật sang tiếng Việt rồi dịch câu trả
+  lời trở lại tiếng Nhật. Với `mode=mes`, câu hỏi tiếng Nhật được đưa thẳng vào
+  bộ rule deterministic/SQL để tránh làm méo mã Lot, mã hàng và tên lỗi; chỉ câu
+  trả lời cuối cùng mới được dịch sang tiếng Nhật.
 - Người dùng MKAC/MES phải có `employee_id`. ID khách demo là `000000` và dùng
   giao diện tiếng Nhật.
 - UI chỉ hiển thị lựa chọn model dạng `Local Model`. Các route cloud còn tồn tại
   trong LiteLLM như fallback kỹ thuật, không còn là lựa chọn chính trên giao diện.
+- Frontend gửi `conversation_context` 16 lượt gần nhất để hỗ trợ các câu nối
+  tiếp như "anh này", "lot đó", "đứng thứ hai" hoặc "so với sản phẩm/phòng ban
+  vừa hỏi".
 
 ## Kiến trúc nhanh
 
@@ -38,18 +43,20 @@ Người dùng / Client
 FastAPI + React SPA
         |
         |-- Auth nhân sự: employee_id, có guest 000000
-        |-- UI i18n: VI/JP, dịch qua local-qwen-small
+        |-- UI i18n: VI/JP, dịch qua local-qwen-small khi cần
         |-- Cache câu hỏi phổ biến + delay tối thiểu để UX tự nhiên
         |
         |-- mode=mkac
         |     |-- prepared answers từ config/quick_answers.json
         |     |-- SQLite employee_directory.sqlite cho câu hỏi nhân sự có cấu trúc
+        |     |-- context resolver cho người/phòng ban được nhắc ở lượt trước
         |     |-- RAG MKAC: Qdrant collection mkac_knowledge
         |     |-- Web fallback ddgs nếu không có chunk nội bộ phù hợp
         |     |-- Gmail send action nếu câu hỏi là lệnh gửi email
         |
         |-- mode=mes
         |     |-- deterministic/template query trước
+        |     |-- context resolver cho Lot/mã hàng/ranking/so sánh nối tiếp
         |     |-- SQLite data/mes.sqlite, loại bỏ lot test
         |     |-- SQL Agent an toàn qua semantic model nếu câu hỏi phức tạp
         |     |-- Live MES API fallback cho case cần API trực tiếp
@@ -64,8 +71,8 @@ FastAPI
         v
 LiteLLM :4000
         |
-        |-- auto-model        -> Qwen3 14B local qua Ollama/ngrok
-        |-- local-qwen-chat   -> Qwen3 14B local qua LiteLLM ollama_chat
+        |-- auto-model        -> Qwen3 14B qua IP tĩnh, fallback ngrok/OpenAI
+        |-- local-qwen-chat   -> Qwen3 14B qua LiteLLM ollama_chat
         |-- local-qwen-small  -> Qwen2.5 3B Instruct trên Ollama system service
         |-- local-qwen-coder  -> Qwen2.5 Coder 14B qua llama.cpp/OpenAI API
         |-- coding-model      -> Qwen2.5 Coder, fallback Qwen3
@@ -226,7 +233,7 @@ Pipeline:
 
 ```text
 Query -> auth employee_id -> cache
-      -> localize JP -> VI nếu cần
+      -> giữ nguyên câu Nhật nếu mode=mes để bảo toàn mã/tên
       -> deterministic/template router
       -> MES SQLite snapshot
       -> deterministic SQL cho câu thời gian/top lot quan trọng
@@ -240,6 +247,19 @@ MES ưu tiên deterministic/template để giảm latency và giảm rủi ro mo
 SQL sai. SQL Agent chỉ dùng cho câu hỏi phức tạp thật sự, dựa trên
 `config/mes_semantic_model.json`, validate SQL AST bằng `sqlglot`, chỉ cho phép
 SELECT trên view an toàn và chạy SQLite read-only.
+
+Các intent deterministic đáng chú ý:
+
+- tổng lỗi/số lot/số bản ghi của mã hàng;
+- chi tiết lỗi theo Lot;
+- Lot hoặc mã hàng có tổng lỗi cao nhất/thấp nhất/đứng thứ N;
+- so sánh tổng lỗi giữa hai mã hàng;
+- mapping mã lỗi hoặc tên lỗi sang tên/process;
+- câu mơ hồ như "Có bao nhiêu lot?" sẽ hỏi lại phạm vi thay vì tự suy diễn;
+- các câu nối tiếp dùng `conversation_context`, ví dụ:
+  - "Còn đứng thứ hai là gì?";
+  - "So với 0303-0303 thì sao?";
+  - "Loại lỗi nào phổ biến nhất trong lot đó?".
 
 Token budget MES:
 
@@ -275,9 +295,12 @@ trong UI chính.
 
 Lõi backend hiểu tốt nhất tiếng Việt. Khi `ui_language="ja"`:
 
-1. Câu hỏi tiếng Nhật được dịch sang tiếng Việt.
-2. Backend xử lý như câu tiếng Việt.
-3. Câu trả lời, error message và source preview được dịch về tiếng Nhật.
+1. Với `mode=mkac`, câu hỏi tiếng Nhật được dịch sang tiếng Việt để RAG/SQLite
+   nhân sự xử lý.
+2. Với `mode=mes`, câu hỏi tiếng Nhật không dịch trước khi route SQL. Bộ rule
+   MES tự nhận diện các marker Nhật như `ロット`, `品番`, `製品`, `総エラー`,
+   `2番目`, `比較`, `何ロット` để bảo toàn mã Lot/mã hàng/tên lỗi.
+3. Câu trả lời, error message và source preview được dịch về tiếng Nhật khi cần.
 
 Model mặc định cho lớp dịch:
 
@@ -294,6 +317,10 @@ Máy 2. Model này nhẹ hơn Qwen3 14B và phù hợp cho:
 - format câu trả lời ngắn
 
 Một số câu cố định/error phổ biến dùng static translation, không gọi model.
+
+Lưu ý hiện tại: phần MES tiếng Nhật đã được đẩy mạnh sang deterministic routing.
+Phần HR/RAG tiếng Nhật vẫn phụ thuộc nhiều hơn vào dịch và retrieval nên vẫn có
+thể gặp lỗi chất lượng như dịch lệch thuật ngữ hoặc prompt leak ở một số câu khó.
 
 ## Gmail send action
 
@@ -318,6 +345,9 @@ Cách hoạt động:
 - Nếu câu hỏi là lệnh gửi email có địa chỉ người nhận, backend parse intent.
 - Nếu người dùng chỉ nói "gửi thông tin này...", backend dùng
   `conversation_context` từ các tin nhắn trước để tạo nội dung.
+- Parser Gmail chỉ xử lý intent gửi mail rõ ràng; các câu kiểu "trả lời bằng
+  tiếng Anh" hoặc câu kỹ thuật có chữ gần giống email không được biến thành lỗi
+  Gmail.
 - Gmail token và credentials nằm trong `data/`, không commit.
 - Nếu token hết hạn hoặc bị revoke, cần authenticate lại Gmail OAuth.
 
@@ -357,18 +387,43 @@ Fallback hiện tại:
 
 ```yaml
 auto-model:
+  - local-qwen-chat-ngrok
   - openai-model
-  - grok-model
+local-qwen-chat:
+  - local-qwen-chat-ngrok
+  - openai-model
 local-qwen-small:
   - local-qwen-chat
+  - openai-model
 coding-model:
   - local-qwen-coder
   - local-qwen-chat
+  - openai-model
 ```
 
 Lưu ý với Qwen3: phải gọi qua LiteLLM provider `ollama_chat` tới root Ollama
 URL, không dùng trực tiếp endpoint `/v1`, vì một số Qwen3/Ollama OpenAI-compatible
 responses có thể trả reasoning nhưng rỗng `message.content`.
+
+Trạng thái kiểm tra gần nhất:
+
+| Route | Kết quả |
+|---|---|
+| LiteLLM `auto-model` | OK |
+| LiteLLM `local-qwen-chat` | OK |
+| LiteLLM `local-qwen-chat-ngrok` | OK |
+| LiteLLM `local-qwen-small` | OK |
+| LiteLLM `local-qwen-coder` | OK |
+| LiteLLM `coding-model` | OK |
+| LiteLLM `openai-model` | OK |
+| LiteLLM `grok-model` | OK |
+| Endpoint gốc Qwen chat IP tĩnh `192.84.106.72:11434` | đang `connection refused` |
+| Endpoint gốc Qwen chat ngrok | OK |
+| Endpoint gốc Qwen small qua `host.docker.internal:11435` từ container | OK |
+| Endpoint gốc Qwen coder ngrok `/v1/chat/completions` | OK |
+
+Nghĩa là app vẫn gọi model được, nhưng Qwen chat IP tĩnh hiện đang chết; route
+chat chính đang sống nhờ fallback qua ngrok, sau đó mới tới OpenAI fallback.
 
 ## API chính
 
@@ -421,6 +476,14 @@ Các status được dùng để người dùng thấy pipeline đang tới bư�
 - đang chuyển đổi ngôn ngữ
 - đang tổng hợp câu trả lời
 
+Frontend tự gửi `conversation_context` tối đa 16 tin nhắn user/assistant gần
+nhất trong payload `/query` và `/query/stream`. Backend chỉ dùng context này cho
+các resolver có cấu trúc, không coi đây là bộ nhớ bền vững:
+
+- HR: người vừa nhắc, phòng ban vừa nhắc, so sánh phòng ban;
+- MES: Lot vừa nhắc, mã hàng vừa nhắc, xếp hạng và so sánh nối tiếp;
+- Gmail: lệnh "gửi thông tin này..." lấy nội dung từ câu trả lời gần nhất.
+
 ## Cấu hình quan trọng
 
 Các biến chính nằm trong `.env.example` hoặc `.env.docker`:
@@ -429,7 +492,8 @@ Các biến chính nằm trong `.env.example` hoặc `.env.docker`:
 LITELLM_URL=http://localhost:4000/v1
 LITELLM_MASTER_KEY=sk-local
 
-QWEN_CHAT_API_BASE=https://carless-overarch-establish.ngrok-free.dev
+QWEN_CHAT_API_BASE=http://192.84.106.72:11434
+QWEN_CHAT_NGROK_API_BASE=https://carless-overarch-establish.ngrok-free.dev
 QWEN_CHAT_MODEL=qwen3:14b
 QWEN_SMALL_API_BASE=http://host.docker.internal:11435
 QWEN_SMALL_MODEL=qwen2.5:3b-instruct
@@ -565,6 +629,39 @@ python -m pytest \
 Lưu ý: một số test import `RAGPipeline` đầy đủ cần các dependency nặng như
 `numpy`, `torch`, `sentence-transformers`. Nếu chạy ngoài Docker/env đầy đủ mà
 thiếu package, lỗi import không đồng nghĩa app Docker đang lỗi.
+
+### Regression prompt
+
+Bộ prompt regression nằm ở:
+
+```text
+Markdowns/TestPrompt.md
+```
+
+Kết quả chạy gần nhất:
+
+- tổng `180` dòng test;
+- chạy `178` dòng;
+- bỏ qua `2` dòng gửi email thật (`80`, `JA-080`);
+- không crash;
+- các lỗi deterministic chính đã sửa và xác nhận lại qua API thật:
+  - Lot nhiều lỗi thứ 2;
+  - Lot ít lỗi nhất và các Lot đồng hạng;
+  - câu "Có bao nhiêu lot?" mơ hồ;
+  - MES tiếng Nhật cho `製品0303-0303`, so sánh `KHTH_05と0303-0303`,
+    `2番目にエラーが多いロット`;
+  - câu tiếng Nhật "trả lời bằng tiếng Anh" không còn bị parser Gmail bắt nhầm;
+  - guardrail tiếng Nhật cho yêu cầu sửa/cập nhật thông tin.
+
+Log chi tiết lần chạy gần nhất được lưu tạm tại:
+
+```text
+/tmp/meibook_testprompt_results.json
+```
+
+Các vấn đề còn lại đáng chú ý nằm chủ yếu ở HR/RAG tiếng Nhật: dịch lệch thuật
+ngữ, retrieval lệch điều khoản, hoặc prompt leak ở một số câu khó. Đây là nhóm
+cần xử lý riêng, không phải lỗi deterministic MES.
 
 Smoke test MES:
 

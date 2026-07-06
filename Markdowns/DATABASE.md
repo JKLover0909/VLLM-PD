@@ -1,291 +1,426 @@
-# Thiết kế cơ sở dữ liệu MES
+# Thiết kế cơ sở dữ liệu Meibook
 
-Tài liệu này mô tả database MES cục bộ được tạo từ các bản dump ngày
-**20/06/2026**. Đây là snapshot phục vụ demo và phân tích, không thay thế dữ
-liệu MES thời gian thực.
+Tài liệu này mô tả các lớp dữ liệu hiện tại của Meibook: Qdrant cho tài liệu,
+SQLite cho nhân sự, SQLite cho MES snapshot và các thư mục nguồn phục vụ import.
 
-## 1. Mục tiêu
+## 1. Tổng quan
 
-Database hợp nhất ba nhóm dữ liệu:
+Meibook không dùng một database duy nhất. Hệ thống chia dữ liệu theo mục đích:
 
-- Thông tin Lot và mã sản phẩm.
-- Các lần ghi nhận lỗi của từng Lot.
-- Danh mục mã lỗi và tên lỗi đa ngôn ngữ.
+| Lớp dữ liệu | Công nghệ | File/Collection | Mục đích |
+|---|---|---|---|
+| Tài liệu MKAC | Qdrant | `mkac_knowledge` | RAG hành chính nhân sự |
+| Tài liệu research | Qdrant | `docmind_documents` | Upload/research theo session, UI hiện ẩn |
+| Danh bạ nhân sự | SQLite | `data/employee_directory.sqlite` | Đăng nhập, tra nhân sự/phòng ban |
+| MES snapshot | SQLite | `data/mes.sqlite` | Hỏi đáp MES deterministic/SQL |
+| MES raw source | SQL dump | `database/raw_mkac/*.sql` | Nguồn tạo `data/mes.sqlite` |
+| Gmail OAuth | JSON | `data/gmail_credentials.json`, `data/gmail_token.json` | Gửi mail qua Gmail API |
 
-Các nhóm câu hỏi mục tiêu gồm: Lot có nhiều lỗi nhất, thông tin một Lot, danh
-sách lỗi của Lot, tên của mã lỗi, và thống kê lỗi theo sản phẩm.
+Thư mục `data/` và các dump raw nhạy cảm không nên commit.
 
-## 2. Vị trí
+## 2. Qdrant tài liệu MKAC
 
-```text
-database/
-├── raw/                         # Dump gốc, không commit Git
-│   ├── M_LOT_202606200852.sql
-│   ├── D_ERROR_202606200951.sql
-│   └── P_ERROR_202606201019.sql
-├── schema/mes.sql               # Schema, index và view
-└── README.md
-
-scripts/import_mes_database.py   # Importer
-data/mes.sqlite                  # Database sinh ra, không commit Git
-```
-
-`database/raw/` và `data/` đã được `.gitignore` loại khỏi Git.
-
-## 3. Dữ liệu nguồn
-
-### `M_LOT`
-
-Chứa 566 Lot. `LOT_ID` là duy nhất trong snapshot hiện tại. Các trường chính:
-
-| Trường | Ý nghĩa |
-|---|---|
-| `ID` | ID nguồn |
-| `LOT_ID` | Mã Lot |
-| `PRODUCT_ID` | Mã sản phẩm |
-| `ROUTE_ID` | Tuyến sản xuất |
-| `STATUS` | Trạng thái Lot |
-| `PCS_LOT` | Tổng số PCS |
-| `PRODUCE_DATE` | Ngày sản xuất |
-| `RELEASE_DATE` | Ngày release |
-
-### `D_ERROR`
-
-Chứa 8.822 lần ghi nhận lỗi. `ID` nguồn có thể rỗng hoặc trùng nên không được
-dùng làm khóa chính nội bộ.
-
-| Trường | Ý nghĩa |
-|---|---|
-| `LOT_ID` | Lot phát sinh lỗi |
-| `PROCESS_ID` | Công đoạn phát hiện lỗi |
-| `ERROR_TYPE` | Loại lỗi |
-| `ERROR_ID` | Mã lỗi |
-| `QTY` | Số lượng lỗi |
-| `ERROR_TIME` | Thời gian ghi nhận |
-| `ERROR_JUDGEMENT` | Kết quả đánh giá |
-
-### `P_ERROR`
-
-Chứa 3.365 bản ghi danh mục lỗi. Các tên lỗi được lưu ở `ERROR_NAME`,
-`ERROR_NAME_VI`, `ERROR_NAME_JA`, `ERROR_NAME_EN` và `ERROR_NAME_CH`.
-
-Khóa mapping đầy đủ là:
+Collection:
 
 ```text
-ERROR_ID + PROCESS_ID + ERROR_TYPE
+mkac_knowledge
 ```
 
-Không nên nối chỉ bằng `ERROR_ID`, vì cùng mã có thể xuất hiện ở nhiều công
-đoạn hoặc loại lỗi.
+Vai trò:
 
-## 4. Schema chuẩn hóa
+- Lưu vector tài liệu hành chính, nhân sự, nội quy, quy trình MKAC.
+- Dùng trong `mode=mkac`.
+- Payload giữ `source_file`, `page_number`, `chunk_index`, `metadata`.
+- Có thể mở preview trang nguồn qua ảnh trong `mkac_processed/pages`.
 
-### `lots`
-
-- `lot_pk`: khóa chính nội bộ.
-- `source_id`: ID từ MES.
-- `lot_id`: khóa nghiệp vụ duy nhất.
-- Giữ thông tin sản phẩm, trạng thái, tuyến, số lượng và thời gian.
-
-### `error_catalog`
-
-- `error_catalog_pk`: khóa chính nội bộ.
-- Giữ toàn bộ danh mục từ nguồn.
-- `is_canonical=1` đánh dấu bản ghi dùng để mapping.
-- Chỉ có một bản ghi canonical cho mỗi bộ
-  `(error_id, process_id, error_type)`.
-
-### `error_events`
-
-- `error_pk`: khóa chính nội bộ.
-- `source_id`: ID nguồn, không bắt buộc duy nhất.
-- `lot_pk`: khóa ngoại đến `lots`, có thể rỗng nếu Lot không có trong snapshot.
-- `error_catalog_pk`: khóa ngoại đến danh mục canonical, có thể rỗng nếu chưa
-  mapping chính xác.
-- Các mã nguồn vẫn được giữ để truy vết khi khóa ngoại bị rỗng.
-
-### Metadata
-
-- `import_batches`: file nguồn, SHA-256, kích thước, số dòng và thời điểm import.
-- `schema_metadata`: phiên bản schema và chỉ số chất lượng dữ liệu.
-
-## 5. Quan hệ
-
-```text
-lots (1) ---------------------- (N) error_events
-error_catalog (1) ------------- (N) error_events
-```
-
-Quan hệ từ dữ liệu nguồn:
-
-```text
-M_LOT.LOT_ID = D_ERROR.LOT_ID
-
-D_ERROR.ERROR_ID    = P_ERROR.ERROR_ID
-D_ERROR.PROCESS_ID  = P_ERROR.PROCESS_ID
-D_ERROR.ERROR_TYPE  = P_ERROR.ERROR_TYPE
-```
-
-## 6. View truy vấn
-
-| View | Mục đích |
-|---|---|
-| `v_error_details` | Lỗi chi tiết đã nối Lot, sản phẩm và tên lỗi |
-| `v_lot_error_summary` | Tổng số lượng lỗi theo Lot |
-| `v_lot_error_breakdown` | Phân rã lỗi theo Lot, công đoạn và mã lỗi |
-| `v_product_error_summary` | Tổng hợp lỗi theo mã sản phẩm |
-
-`v_error_details` có cờ `lot_mapped` và `error_name_mapped` để phân biệt dữ
-liệu đã mapping và chưa mapping.
-
-## 7. Index
-
-Các index chính bao phủ:
-
-- Sản phẩm, trạng thái và ngày của Lot.
-- `lot_pk`, `lot_id` và `error_catalog_pk` của lỗi.
-- Bộ `(error_id, process_id, error_type)`.
-- Công đoạn, thời gian lỗi và các bản ghi chưa mapping.
-
-Truy vấn tổng lỗi theo Lot sử dụng covering index
-`idx_error_events_lot_quantity`.
-
-## 8. Chất lượng dữ liệu
+Trạng thái API gần nhất:
 
 | Chỉ số | Giá trị |
 |---|---:|
-| Lot | 566 |
-| Bản ghi lỗi | 8.822 |
-| Bản ghi danh mục lỗi | 3.365 |
-| Lỗi không nối được Lot | 2 |
-| Lỗi chưa mapping chính xác tên | 936 |
+| Số tài liệu MKAC | `18` |
+| Số chunk | `192` |
+| Collection | `mkac_knowledge` |
 
-Giới hạn hiện tại:
+Danh sách file đang có trong collection gồm các tài liệu như:
 
-1. Database là snapshot, không tự cập nhật theo MES nguồn.
-2. Chưa có bảng giải nghĩa đầy đủ `STATUS`, `LOT_TYPE` và `ERROR_TYPE`.
-3. Model không được tự đặt tên cho lỗi chưa mapping.
-4. Dữ liệu có Lot và sản phẩm test nhưng chưa có quy tắc nghiệp vụ để loại.
-5. Lot test `000316-02-000`, sản phẩm `Test_1710`, có tổng 52.300 lỗi và đứng
-   đầu toàn snapshot. Lot `000432-01-000`, sản phẩm `3736-0008`, có 15.920 lỗi.
-6. Kết quả snapshot có thể khác API MES thời gian thực; câu trả lời phải nói rõ
-   nguồn và thời điểm dữ liệu.
+- `0. Thong tin nhan su va lanh dao MKAC.html`
+- `3. DANH SÁCH KHÁM SỨC KHOẺ 2026.pdf`
+- `4. Noi quy lao dong_MKAC 12.7.2021.pdf`
+- `Quy định công tác nước ngoài.pdf`
+- `Quy định công tác trong nước.pdf`
+- `Quy định giờ làm thêm.pdf`
 
-## 9. Đưa dữ liệu vào hệ thống hỏi đáp
+## 3. Text source curated cho MKAC
 
-Trạng thái hiện tại: phương án dưới đây đã được triển khai trong
-`src/integrations/mes_database.py` và tích hợp vào `RAGPipeline`. Frontend nhận
-`answer_scope=mes_database` và hiển thị nhãn `MES snapshot`. Router MES chỉ hoạt
-động trong mode `mes`; mode `mkac` được dành riêng cho hành chính, nhân sự và
-tài liệu nội bộ MKAC.
-
-LLM không tự nhìn thấy SQLite. Backend phải truy vấn database rồi chỉ đưa kết
-quả có cấu trúc vào prompt:
+Hiện tại index MKAC ưu tiên nguồn text đã trích xuất rõ hơn:
 
 ```text
-Câu hỏi
-  -> router nhận diện intent MES
-  -> truy vấn chỉ đọc đã kiểm soát
-  -> JSON kết quả và metadata snapshot
-  -> LLM diễn đạt tự nhiên
+documents/MKAC-md/
 ```
 
-### Data dictionary cho model
+Tài liệu gốc vẫn giữ ở:
 
-Model cần được cung cấp ngắn gọn các định nghĩa:
-
-- `lot_id`: mã Lot.
-- `product_id`: mã sản phẩm.
-- `quantity`: số lượng của một bản ghi lỗi.
-- `total_error_qty`: tổng `quantity`, không phải số loại lỗi.
-- `error_record_count`: số lần ghi nhận, không phải tổng số lượng lỗi.
-- `error_id`: mã lỗi.
-- `error_name`: tên lỗi, ưu tiên tiếng Việt.
-- `process_id`: công đoạn phát hiện lỗi.
-- Tên lỗi rỗng nghĩa là chưa mapping, không được suy đoán.
-- Snapshot có thể chứa dữ liệu test và có thể khác API thời gian thực.
-
-Kết quả gửi cho model nên có metadata dạng:
-
-```json
-{
-  "source": "mes_snapshot",
-  "snapshot_imported_at": "2026-06-20T03:52:08.714894+00:00",
-  "filters": {"exclude_test_data": false},
-  "rows": []
-}
+```text
+documents/MKAC/
 ```
 
-### Intent đang hỗ trợ
+Ý nghĩa:
 
-| Intent | Nguồn truy vấn |
+- `documents/MKAC-md`: dùng để tạo chunk có nội dung sạch hơn, ít lỗi OCR hơn.
+- `documents/MKAC`: dùng làm file gốc và hiển thị trích dẫn/preview.
+- `mkac_processed/pages`: lưu ảnh trang để frontend xem nguồn tham chiếu.
+
+Số file kiểm tra gần nhất:
+
+| Đường dẫn | Số file |
+|---|---:|
+| `documents/MKAC-md` | `19` |
+| `documents/MKAC` | `19` |
+| `mkac_processed/pages` | khoảng `108` ảnh |
+
+## 4. Qdrant tài liệu research
+
+Collection:
+
+```text
+docmind_documents
+```
+
+Vai trò:
+
+- Lưu tài liệu upload theo UUID session.
+- Dùng cho `mode=research`.
+- UI research hiện đang bị ẩn, nhưng backend, endpoint upload và collection vẫn
+  còn trong code.
+
+Session demo research cố định:
+
+```text
+00000000-0000-4000-8000-000000000001
+```
+
+## 5. SQLite danh bạ nhân sự
+
+File:
+
+```text
+data/employee_directory.sqlite
+```
+
+Nguồn tạo:
+
+```text
+documents/MKAC/3. DANH SÁCH KHÁM SỨC KHOẺ 2026.pdf
+documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html
+```
+
+Vai trò:
+
+- Xác thực mã nhân viên 6 chữ số khi vào `mkac` hoặc `mes`.
+- Trả lời trực tiếp các câu hỏi có cấu trúc về nhân sự/phòng ban.
+- Cấp context người dùng hiện tại cho RAG.
+- Hỗ trợ câu nối tiếp qua `conversation_context`, ví dụ “anh này làm vai trò gì?”.
+
+Trạng thái hiện tại:
+
+| Chỉ số | Giá trị |
+|---|---:|
+| Nhân viên trong SQLite | `154` |
+
+ID đặc biệt:
+
+| ID | Ý nghĩa |
 |---|---|
-| Lot có tổng lỗi cao nhất | `v_lot_error_summary` |
-| Thông tin một Lot | `lots` và `v_lot_error_summary` |
-| Danh sách lỗi của Lot | `v_lot_error_breakdown` |
-| Tên của mã lỗi | `error_catalog` canonical |
-| Tổng lỗi theo sản phẩm | `v_product_error_summary` |
-| Lỗi phổ biến của sản phẩm | `v_error_details` |
-| Các Lot có một mã lỗi | `error_events` + `lots` |
+| `000000` | Guest demo, tạo bằng code, không cần có trong SQLite |
+| `000001` | Nguyễn Văn Thuận, Ban Giám đốc |
 
-Mỗi intent nên ánh xạ đến SQL tham số hóa cố định. Không nối nội dung câu hỏi
-trực tiếp vào SQL.
+Các nhóm intent nhân sự:
 
-### Router khuyến nghị
+- hỏi “tôi là ai”, “tôi ở phòng nào”;
+- hỏi một người theo tên/mã;
+- hỏi số người trong công ty;
+- hỏi danh sách phòng ban;
+- hỏi phòng nào đông nhất;
+- hỏi trưởng/phó phòng;
+- hỏi phòng ban vừa nhắc ở lượt trước.
 
-Giai đoạn demo đang dùng phương án kết hợp:
+## 6. MES raw source hiện tại
 
-1. Quy tắc chắc chắn cho câu phổ biến như “Lot nào lỗi nhiều nhất?”.
-2. Query service read-only chọn truy vấn tham số hóa trong allowlist.
-3. SQL Agent schema-aware xử lý câu phức hợp chưa có intent cố định.
-4. LLM cuối chỉ diễn đạt dữ liệu đã được backend truy vấn và kiểm chứng.
-
-Response nên dùng `answer_scope=mes_database` để phân biệt với `mes` của API
-thời gian thực, `mkac` của Qdrant và `web`.
-
-## 10. Có cần tạo skill không?
-
-**Chưa cần skill trong giai đoạn hiện tại.** Skill không tự cấp quyền đọc
-SQLite. Thành phần bắt buộc vẫn là backend query database an toàn.
-
-Phương án phù hợp hiện tại:
+Bộ dữ liệu MES đang dùng là bộ mới trong:
 
 ```text
-router MES + query service read-only + SQL Agent có validate + LLM diễn đạt
+database/raw_mkac/
+├── D_ERROR_202606251410.sql
+├── M_LOT_202606251410.sql
+└── P_ERROR_202606251411.sql
 ```
 
-Skill chỉ đáng tạo khi có nhiều bảng, nhiều nhóm truy vấn và cần đóng gói lâu
-dài data dictionary, quy tắc chọn API hay snapshot, quy tắc loại dữ liệu test,
-giải nghĩa mã nghiệp vụ và ví dụ câu hỏi. Ngay cả khi có skill, việc đọc dữ liệu
-vẫn phải đi qua tool hoặc API backend.
+Bộ `database/raw/` cũ không còn được dùng vì yêu cầu bảo mật dữ liệu.
 
-## 11. SQL Agent hiện tại
+Ý nghĩa ba file:
 
-SQL Agent đã được thêm để xử lý các câu hỏi phức hợp mà allowlist cố định chưa
-bao phủ, ví dụ:
+| File | Bảng nguồn | Ý nghĩa |
+|---|---|---|
+| `M_LOT_*.sql` | `M_LOT` | Thông tin Lot, mã hàng, trạng thái, ngày |
+| `D_ERROR_*.sql` | `D_ERROR` | Sự kiện lỗi theo Lot/process/mã lỗi/số lượng |
+| `P_ERROR_*.sql` | `P_ERROR` | Danh mục mã lỗi và tên lỗi |
+
+Mapping tên lỗi phải dùng khóa đầy đủ:
 
 ```text
-Trong Lot có số lượng lỗi nhiều nhất thì 3 loại lỗi gây lỗi nhiều nhất là gì?
+D_ERROR.ERROR_ID   = P_ERROR.ERROR_ID
+D_ERROR.PROCESS_ID = P_ERROR.PROCESS_ID
+D_ERROR.ERROR_TYPE = P_ERROR.ERROR_TYPE
 ```
 
-Thiết kế hiện tại:
+Không nên chỉ nối bằng `ERROR_ID`, vì cùng mã lỗi có thể xuất hiện ở nhiều
+process hoặc loại lỗi khác nhau.
 
-- Semantic model nằm ở `config/mes_semantic_model.json`.
-- Model chỉ nhìn thấy các view công khai:
-  - `v_lot_error_summary`
-  - `v_lot_error_breakdown`
-  - `v_product_error_summary`
-  - `v_error_details`
-- Model phải trả kế hoạch JSON có một câu `SELECT` hoặc `WITH ... SELECT`.
-- Backend validate bằng SQLGlot trước khi chạy.
-- SQLite được mở read-only bằng `mode=ro`, `PRAGMA query_only=ON` và authorizer.
-- SQL bị chặn nếu đụng bảng raw, ghi dữ liệu, DDL, `ATTACH`, `PRAGMA` hoặc nhiều
-  statement.
-- Backend ép `LIMIT`, timeout và giới hạn số dòng trả về.
-- Kết quả SQL được đưa lại cho LLM để diễn đạt tự nhiên.
-- Nếu LLM bỏ sót trường bắt buộc hoặc trả JSON/SQL thô, backend dùng fallback
-  deterministic từ kết quả đã query.
+## 7. SQLite MES snapshot
 
-Vì vậy, LLM có thể suy luận query từ cấu trúc database đã nạp sẵn, nhưng vẫn
-không được chạy SQL tùy ý. Mọi truy vấn đều đi qua lớp validate và chỉ đọc các
-view công khai.
+File:
+
+```text
+data/mes.sqlite
+```
+
+Schema:
+
+```text
+database/schema/mes.sql
+```
+
+Importer:
+
+```text
+scripts/import_mes_database.py
+```
+
+### Bảng chính
+
+| Bảng | Mục đích |
+|---|---|
+| `lots` | Lot đã chuẩn hóa từ `M_LOT` |
+| `error_events` | Bản ghi lỗi đã chuẩn hóa từ `D_ERROR` |
+| `error_catalog` | Danh mục lỗi đã chuẩn hóa từ `P_ERROR` |
+| `import_batches` | Metadata file import |
+| `schema_metadata` | Phiên bản schema và chỉ số chất lượng |
+
+### View phục vụ query
+
+| View | Mục đích |
+|---|---|
+| `v_error_details` | Chi tiết lỗi đã nối Lot, mã hàng, tên lỗi |
+| `v_lot_error_summary` | Tổng lỗi theo Lot |
+| `v_lot_error_breakdown` | Phân rã lỗi theo Lot/process/mã lỗi |
+| `v_product_error_summary` | Tổng lỗi theo mã hàng |
+
+Các view này là lớp công khai cho SQL Agent. Model không được truy cập bảng raw
+trực tiếp.
+
+## 8. Chất lượng dữ liệu MES hiện tại
+
+Theo `/health` gần nhất:
+
+| Chỉ số | Giá trị |
+|---|---:|
+| Raw lots | `2592` |
+| Lot hiển thị sau khi loại test | `1325` |
+| Lot test bị loại | `1267` |
+| Raw error events | `654` |
+| Error events hiển thị | `281` |
+| Error events test bị loại | `373` |
+| Error catalog | `969` |
+| Tên lỗi chưa mapping | `2` |
+| Imported at | `2026-06-25T09:25:15.464307+00:00` |
+
+Truy vấn trực tiếp `data/mes.sqlite` cho thấy tổng bảng raw:
+
+| Bảng | Số dòng |
+|---|---:|
+| `lots` | `2592` |
+| `error_events` | `654` |
+| `error_catalog` | `969` |
+
+## 9. Loại dữ liệu test
+
+Hệ thống loại dữ liệu test khỏi câu trả lời MES.
+
+Điều kiện loại test nằm trong `MesDatabase._exclude_test_filter()` và các view
+SQL Agent cũng được thiết kế để không trả dữ liệu test. Về mặt nghiệp vụ hiện
+tại, các mã có token `test` trong `product_id` hoặc `lot_id` không được đưa vào
+câu trả lời.
+
+Ví dụ số liệu hiện tại:
+
+| Nhóm | Raw | Sau loại test |
+|---|---:|---:|
+| Lot | `2592` | `1325` |
+| Error events | `654` | `281` |
+
+## 10. Top Lot hiện tại sau khi loại test
+
+Truy vấn kiểm tra gần nhất:
+
+| Lot | Mã hàng | Tổng lỗi |
+|---|---|---:|
+| `000866-05-000` | `KHTH_05` | `12870` |
+| `000866-01-000` | `KHTH_05` | `11856` |
+| `000943-03-000` | `0303-0303` | `10920` |
+| `000866-02-000` | `KHTH_05` | `4680` |
+| `000863-01-000` | `KHTH_06` | `3510` |
+
+Các câu hỏi hoặc test cũ nhắc `000346-01-000`, `000432-01-000`, `3736-0008`
+có thể đã lệch với database mới.
+
+## 11. MesDatabase query service
+
+`src/integrations/mes_database.py` mở SQLite read-only:
+
+```text
+file:/.../data/mes.sqlite?mode=ro
+PRAGMA query_only=ON
+```
+
+Nó không nối câu hỏi người dùng vào SQL. Các intent phổ biến được ánh xạ sang
+truy vấn tham số hóa cố định.
+
+Intent deterministic chính:
+
+- thông tin một Lot;
+- danh sách/chi tiết lỗi theo Lot;
+- số bản ghi lỗi của Lot;
+- số loại lỗi khác nhau của Lot;
+- tổng lỗi/số lot/trung bình lỗi theo mã hàng;
+- mã hàng có tổng lỗi cao nhất hoặc đứng thứ N;
+- Lot nhiều lỗi nhất, ít lỗi nhất, đứng thứ N;
+- mapping mã lỗi sang tên lỗi/process;
+- tìm theo tên lỗi tiếng Việt;
+- các Lot có một mã lỗi hoặc tên lỗi;
+- tổng hợp theo ngày/tháng qua lớp time-SQL;
+- câu mơ hồ như “Có bao nhiêu lot?” sẽ hỏi lại phạm vi.
+
+## 12. SQL Agent MES
+
+SQL Agent nằm ở:
+
+```text
+src/integrations/mes_sql_agent.py
+```
+
+Semantic model:
+
+```text
+config/mes_semantic_model.json
+```
+
+Nguyên tắc an toàn:
+
+1. LLM chỉ thấy data dictionary và các view allowlist.
+2. LLM sinh JSON plan chứa một câu `SELECT` hoặc `WITH ... SELECT`.
+3. Backend parse bằng `sqlglot`.
+4. Chặn DDL/DML/`ATTACH`/`PRAGMA`/multi-statement.
+5. Chỉ cho truy cập các view công khai.
+6. Ép `LIMIT`.
+7. SQLite mở read-only và có authorizer read-only.
+8. Timeout ngắn.
+9. Nếu LLM diễn đạt thiếu số liệu, trả fallback deterministic.
+
+SQL Agent dùng `local-qwen-coder` theo biến:
+
+```text
+MES_SQL_AGENT_MODEL=local-qwen-coder
+```
+
+## 13. Dữ liệu cho model
+
+Model không được “nhìn thẳng” vào SQLite. Backend truy vấn trước, sau đó chỉ đưa
+JSON kết quả đã kiểm chứng vào prompt.
+
+Các khái niệm cần giữ rõ:
+
+| Khái niệm | Ý nghĩa |
+|---|---|
+| `lot_id` | Mã Lot |
+| `product_id` | Mã hàng/sản phẩm |
+| `quantity` | Số lượng lỗi trong một event |
+| `total_error_qty` | Tổng số lượng lỗi |
+| `error_record_count` | Số bản ghi/sự kiện lỗi |
+| `error_id` | Mã lỗi |
+| `error_name` | Tên lỗi, ưu tiên `ERROR_NAME_VI` |
+| `process_id` | Công đoạn phát hiện lỗi |
+
+Không được suy đoán tên lỗi nếu mapping rỗng. Câu trả lời phải nói rõ “lỗi chưa
+rõ tên” hoặc “chưa mapping tên lỗi”.
+
+## 14. Cache dữ liệu
+
+Cache câu hỏi nằm ở API layer:
+
+- `QUERY_RESPONSE_CACHE_TTL_SECONDS=600` cho câu hỏi thường.
+- `MES_QUERY_CACHE_TTL_SECONDS=86400` cho MES snapshot.
+- `QUERY_RESPONSE_CACHE_SIZE=256`.
+
+Cache key có gắn mode, ngôn ngữ, model, employee và metadata snapshot. Các câu
+phụ thuộc `conversation_context` không cache để tránh trả nhầm lượt trước.
+
+## 15. Backup và không commit
+
+Nên backup:
+
+```text
+data/mes.sqlite
+data/employee_directory.sqlite
+data/gmail_credentials.json
+data/gmail_token.json
+qdrant_storage/
+documents/MKAC/
+documents/MKAC-md/
+mkac_processed/
+logs/
+```
+
+Không nên commit:
+
+```text
+data/
+database/raw/
+database/raw_mkac/
+*.sqlite
+gmail_token.json
+gmail_credentials.json
+client_secret_*.json
+```
+
+## 16. Kiểm tra nhanh
+
+Kiểm tra health database:
+
+```bash
+curl -fsS http://localhost:8001/health | jq '.mes_database, .employee_directory'
+```
+
+Kiểm tra MKAC Qdrant:
+
+```bash
+curl -fsS http://localhost:8001/knowledge/mkac/status | jq .
+```
+
+Kiểm tra SQLite MES trực tiếp:
+
+```bash
+sqlite3 data/mes.sqlite \
+  "SELECT key, value FROM schema_metadata ORDER BY key;"
+```
+
+Kiểm tra top Lot đã loại test:
+
+```bash
+sqlite3 data/mes.sqlite "
+SELECT product_id, lot_id, total_error_qty
+FROM v_lot_error_summary
+WHERE lower(product_id) NOT LIKE '%test%'
+  AND lower(lot_id) NOT LIKE '%test%'
+ORDER BY total_error_qty DESC
+LIMIT 5;"
+```

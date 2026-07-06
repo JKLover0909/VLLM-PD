@@ -1,227 +1,210 @@
-# Triển khai Docker web nội bộ
+# Triển khai Docker web nội bộ Meibook
 
-Tài liệu này mô tả cách triển khai Meibook lên một máy chủ khác trong mạng nội
-bộ công ty. Chế độ này chỉ chạy web hỏi đáp, RAG, Qdrant và LiteLLM. Không chạy
-ngrok và không bật Coding Agent.
+Tài liệu này mô tả cách triển khai Meibook theo cấu hình Docker web hiện tại
+trong repository `VLLM-PD`. Chế độ này phục vụ web hỏi đáp MKAC/MES, Qdrant,
+LiteLLM, SQLite nhân sự, MES snapshot và Gmail send action. Coding Agent tắt
+mặc định.
 
-Người dùng trong công ty sẽ truy cập bằng IP nội bộ của máy chủ:
+## 1. Mô hình triển khai
 
-```text
-http://<IP_NỘI_BỘ_MÁY_CHỦ>:8001
-```
-
-## Phạm vi triển khai
-
-Các thành phần được chạy:
-
-- `app`: FastAPI + React build + RAG pipeline.
-- `qdrant`: vector database.
-- `litellm`: model router nội bộ.
-
-Các thành phần không chạy trong chế độ này:
-
-- Ngrok.
-- Coding Agent.
-- MCP filesystem/git tools.
-
-Trong `docker-compose.web.yml`, chỉ web/API được expose ra LAN qua cổng `8001`.
-Qdrant `6333` và LiteLLM `4000` chỉ bind trên `127.0.0.1` của máy chủ.
-
-## File liên quan
+Người dùng truy cập:
 
 ```text
-Dockerfile
-docker-compose.web.yml
-.env.docker.example
-scripts/docker-deploy.sh
-scripts/import_employee_directory.py
-scripts/docker-index-mkac.sh
+http://<IP_MAY_CHU>:8001
 ```
 
-## Yêu cầu máy chủ
+Các service trong `docker-compose.web.yml`:
 
-- Linux.
-- Docker và Docker Compose.
-- Dung lượng đủ cho image Python/PyTorch/Docling và cache model.
-- Nếu chạy GPU: NVIDIA driver và `nvidia-container-toolkit`.
-- Nếu không chạy GPU: dùng cấu hình CPU mặc định trong `.env.docker.example`.
+| Service | Vai trò |
+|---|---|
+| `app` | FastAPI + React build + RAG/MES/Auth/Gmail |
+| `qdrant` | Vector database |
+| `litellm` | Model router |
+| `ollama-proxy` | Bridge container -> Ollama host local |
 
-## 1. Chuẩn bị mã nguồn
+Các cổng:
+
+| Service | Cổng host | Ghi chú |
+|---|---:|---|
+| `app` | `8001` | Publish ra LAN |
+| `qdrant` | `127.0.0.1:6333` | Chỉ nội bộ host |
+| `litellm` | `127.0.0.1:4000` | Chỉ nội bộ host |
+| `ollama-proxy` | `172.17.0.1:11435` | Docker gateway -> host Ollama |
+
+## 2. Thành phần cần chuẩn bị
+
+### 2.1. Mã nguồn
 
 ```bash
-cd /home/<user>/Code/llm
-git clone <repo-url> Meibook
-cd Meibook
+cd /home/jkl/Code/VLLM-PD
 ```
 
-Nếu không dùng Git remote, copy repository sang máy mới và bảo đảm có các thư
-mục dữ liệu cần thiết:
+### 2.2. Tài liệu MKAC
+
+Cần có:
 
 ```text
 documents/MKAC/
+documents/MKAC-md/
 config/mkac_manifest.json
 ```
 
-Cần có file danh sách nhân sự trong thư mục MKAC để tạo SQLite đăng nhập và tra
-cứu nhân viên:
+Ý nghĩa:
+
+- `documents/MKAC/`: tài liệu gốc để preview/trích dẫn.
+- `documents/MKAC-md/`: text curated để index nhanh và sạch hơn.
+
+### 2.3. MES raw mới
+
+Chỉ dùng bộ raw mới:
 
 ```text
-documents/MKAC/3. DANH SÁCH KHÁM SỨC KHOẺ 2026.pdf
+database/raw_mkac/
+├── M_LOT_202606251410.sql
+├── D_ERROR_202606251410.sql
+└── P_ERROR_202606251411.sql
 ```
 
-File summary nhân sự có thể copy từ máy cũ hoặc tạo lại ở bước import SQLite:
+Không dùng lại `database/raw/` cũ.
+
+### 2.4. Gmail OAuth nếu dùng gửi mail
+
+Các file runtime:
 
 ```text
-documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html
+data/gmail_credentials.json
+data/gmail_token.json
 ```
 
-## 2. Tạo cấu hình Docker
+Không commit các file này.
+
+## 3. Cấu hình môi trường
+
+Tạo file `.env.docker`:
 
 ```bash
 cp .env.docker.example .env.docker
 nano .env.docker
 ```
 
-Sửa các API key và URL model:
+Các nhóm biến quan trọng:
 
 ```env
-OLLAMA_API_BASE=...
+MACHINE2_API_PORT=8001
+
+LITELLM_MASTER_KEY=sk-local
 OPENAI_API_KEY=...
 AZURE_OPENAI_API_KEY=...
 AZURE_OPENAI_ENDPOINT=...
-MACHINE2_API_PORT=8001
-ENABLE_AGENT=false
+
+QWEN_CHAT_API_BASE=http://192.84.106.72:11434
+QWEN_CHAT_NGROK_API_BASE=https://carless-overarch-establish.ngrok-free.dev
+QWEN_SMALL_API_BASE=http://host.docker.internal:11435
+QWEN_CODER_API_BASE=https://d3d2-2405-4803-f16d-d2f0-b282-e2ff-fe05-dfe9.ngrok-free.app/v1
+QWEN_CODER_API_KEY=sk-local
+
+TRANSLATION_MODEL=local-qwen-small
+MES_SQL_AGENT_MODEL=local-qwen-coder
+
+EMPLOYEE_DIRECTORY_DB_PATH=data/employee_directory.sqlite
+MES_DATABASE_PATH=data/mes.sqlite
+
+GMAIL_SEND_ENABLED=true
+GMAIL_CREDENTIALS_PATH=data/gmail_credentials.json
+GMAIL_TOKEN_PATH=data/gmail_token.json
 ```
 
-Kiểm tra thêm các biến SQLite danh bạ nhân viên trong `.env.docker`:
+Trong `docker-compose.web.yml`, các biến model cũng được truyền trực tiếp vào
+service `litellm` để đảm bảo container thấy đúng endpoint.
 
-```env
-EMPLOYEE_DIRECTORY_SOURCE_DIR=/app/documents/MKAC
-EMPLOYEE_DIRECTORY_SOURCE_GLOB="3. DANH SÁCH KHÁM SỨC KHOẺ 2026.pdf"
-EMPLOYEE_DIRECTORY_DB_PATH=/app/data/employee_directory.sqlite
-EMPLOYEE_DIRECTORY_SUMMARY_PATH="/app/documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html"
+## 4. Ollama local model phụ trên máy host
+
+Model phụ `qwen2.5:3b-instruct` chạy trên host qua systemd Ollama. Container
+LiteLLM gọi qua `ollama-proxy`:
+
+```text
+http://host.docker.internal:11435
 ```
 
-Mặc định `.env.docker.example` dùng CPU để dễ chuyển máy:
+Kiểm tra host Ollama:
 
-```env
-EMBEDDING_DEVICE=cpu
-DOCLING_DEVICE=cpu
-EMBEDDING_DTYPE=float32
+```bash
+curl -fsS http://localhost:11434/api/tags | jq .
 ```
 
-Nếu máy deploy có NVIDIA GPU và đã cài `nvidia-container-toolkit`, có thể đổi:
+Kiểm tra qua proxy sau khi Docker chạy:
 
-```env
-EMBEDDING_DEVICE=cuda
-DOCLING_DEVICE=cuda
-EMBEDDING_DTYPE=float16
+```bash
+curl -fsS http://172.17.0.1:11435/api/tags | jq .
 ```
 
-## 3. Build và chạy
+## 5. Build và chạy
+
+Chạy script deploy:
 
 ```bash
 ./scripts/docker-deploy.sh
 ```
 
-Script sẽ:
-
-1. Build image `meibook-web`.
-2. Start `app`, `qdrant` và `litellm`.
-3. Kiểm tra `/health`.
-4. In URL local và URL LAN.
-
-Ví dụ:
-
-```text
-Meibook Docker web deployment is running.
-Local URL: http://localhost:8001
-LAN URL:   http://192.168.1.20:8001
-```
-
-## 4. Tạo hoặc copy SQLite danh bạ nhân viên
-
-Các chức năng sau phụ thuộc vào SQLite danh bạ nhân viên:
-
-- Đăng nhập bằng mã nhân viên.
-- Lời chào theo tên, chức danh và phòng ban.
-- Hỏi theo tên người, ví dụ `Nguyễn Đình Sơn là ai?`.
-- Hỏi theo phòng ban, ví dụ `bộ phận của tôi gồm những ai?`.
-- Hỏi thông tin cá nhân, ví dụ `tôi tên gì`, `tôi làm bộ phận nào`.
-
-SQLite được lưu tại:
-
-```text
-data/employee_directory.sqlite
-```
-
-Có hai cách triển khai.
-
-### Cách A: copy SQLite từ máy cũ
-
-Dùng khi muốn triển khai nhanh và dữ liệu nhân sự chưa đổi:
-
-```bash
-mkdir -p data
-cp /path/to/old/Meibook/data/employee_directory.sqlite data/
-```
-
-Nên copy kèm summary nếu có:
-
-```bash
-cp "/path/to/old/Meibook/documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html" \
-  "documents/MKAC/"
-```
-
-### Cách B: tạo lại SQLite trên máy mới
-
-Dùng khi deploy sạch hoặc vừa cập nhật danh sách nhân sự. Cần chạy sau khi
-`./scripts/docker-deploy.sh` đã start container:
+Hoặc chạy thủ công:
 
 ```bash
 set -a
 source .env.docker
 set +a
+
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml build
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml up -d
+```
+
+Kiểm tra:
+
+```bash
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml ps
+curl -fsS http://localhost:8001/health | jq .
+```
+
+## 6. Import danh bạ nhân sự
+
+Danh bạ nhân sự dùng cho:
+
+- đăng nhập bằng mã nhân viên;
+- hỏi người/phòng ban;
+- context người dùng hiện tại;
+- guest demo `000000`.
+
+Chạy import:
+
+```bash
+set -a
+source .env.docker
+set +a
+
 MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml run --rm \
   -e ENABLE_AGENT=false \
   app python scripts/import_employee_directory.py
 ```
 
-Lệnh này đọc:
-
-```text
-documents/MKAC/3. DANH SÁCH KHÁM SỨC KHOẺ 2026.pdf
-```
-
-và tạo/cập nhật:
+Kết quả:
 
 ```text
 data/employee_directory.sqlite
 documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html
 ```
 
-Script cũng tự thêm mã cố định:
-
-```text
-000001 - Nguyễn Văn Thuận - Giám đốc Meiko Automation
-```
-
-Sau khi import, restart app để chắc chắn API đọc DB mới:
+Restart app:
 
 ```bash
-set -a
-source .env.docker
-set +a
 MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
 ```
 
-Kiểm tra nhanh:
+Kiểm tra:
 
 ```bash
 curl -fsS http://localhost:8001/health | jq '.employee_directory'
 ```
 
-Kết quả mong đợi hiện tại:
+Kỳ vọng hiện tại:
 
 ```json
 {
@@ -230,109 +213,219 @@ Kết quả mong đợi hiện tại:
 }
 ```
 
-Nếu thiếu SQLite hoặc import lỗi, đăng nhập MKAC sẽ bị từ chối và các câu hỏi
-theo nhân viên/phòng ban sẽ không trả lời đúng.
+## 7. Import MES snapshot
 
-## 5. Index kho MKAC
-
-Sau lần deploy đầu tiên, index tài liệu nội bộ:
-
-```bash
-./scripts/docker-index-mkac.sh
-```
-
-Script này chạy `scripts/index_mkac_documents.py` bên trong container `app` và
-ghi vector vào Qdrant Docker.
-
-Nên chạy import SQLite trước khi index, vì script import tạo/cập nhật file:
-
-```text
-documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html
-```
-
-File này cũng là một tài liệu trong kho MKAC, dùng để trả lời các câu hỏi về số
-phòng ban, số nhân sự, lãnh đạo và thống kê theo phòng ban.
-
-Nếu thêm hoặc sửa tài liệu MKAC, chạy lại lệnh này. Với một file cụ thể, có thể
-vào container hoặc chạy script index thủ công với tham số `--file` nếu cần.
-
-Nếu chỉ cập nhật file danh sách nhân sự, chạy theo thứ tự:
+Chạy importer để tạo `data/mes.sqlite` từ `database/raw_mkac`:
 
 ```bash
 set -a
 source .env.docker
 set +a
+
 MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml run --rm \
   -e ENABLE_AGENT=false \
-  app python scripts/import_employee_directory.py
+  app python scripts/import_mes_database.py \
+    --source-dir /app/database/raw_mkac \
+    --db /app/data/mes.sqlite
+```
 
+Nếu script hiện tại dùng tham số mặc định, có thể chạy ngắn hơn:
+
+```bash
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml run --rm \
+  -e ENABLE_AGENT=false \
+  app python scripts/import_mes_database.py
+```
+
+Lưu ý: `database/raw_mkac` không được mount riêng trong
+`docker-compose.web.yml`; nó nằm trong image khi build. Nếu thay bộ dump SQL
+mới trên host, hãy rebuild image hoặc chạy importer trên host để đảm bảo
+container nhìn thấy file mới.
+
+Restart app sau khi import:
+
+```bash
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
+```
+
+Kiểm tra:
+
+```bash
+curl -fsS http://localhost:8001/health | jq '.mes_database'
+```
+
+Kỳ vọng hiện tại:
+
+```json
+{
+  "available": true,
+  "lots": 1325,
+  "raw_lots": 2592,
+  "excluded_test_lots": 1267,
+  "error_events": 281,
+  "raw_error_events": 654,
+  "excluded_test_error_events": 373,
+  "error_catalog": 969,
+  "unmapped_error_names": 2,
+  "sql_agent_available": true
+}
+```
+
+## 8. Index MKAC từ Markdown curated
+
+Index tài liệu MKAC:
+
+```bash
 ./scripts/docker-index-mkac.sh
+```
 
+Script dùng:
+
+```text
+MKAC_SOURCE_DIR=/app/documents/MKAC
+MKAC_TEXT_SOURCE_DIR=/app/documents/MKAC-md
+MKAC_PAGE_IMAGE_DIR=/app/mkac_processed/pages
+```
+
+Nghĩa là:
+
+- text lấy từ `documents/MKAC-md` nếu có;
+- file gốc và ảnh trang vẫn lấy từ `documents/MKAC`.
+
+Kiểm tra:
+
+```bash
+curl -fsS http://localhost:8001/knowledge/mkac/status | jq .
+```
+
+Kỳ vọng gần nhất:
+
+```json
+{
+  "ready": true,
+  "collection": "mkac_knowledge",
+  "num_documents": 18,
+  "num_chunks": 192
+}
+```
+
+## 9. Build frontend khi sửa UI
+
+Nếu sửa `frontend/src/main.jsx` hoặc `frontend/src/styles.css`, cần build lại:
+
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+```
+
+Sau đó restart app nếu FastAPI đang phục vụ `frontend/dist` từ container/image
+cũ. Với Docker image build sẵn, cần rebuild image:
+
+```bash
+set -a
+source .env.docker
+set +a
+
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml build app
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml up -d app
+```
+
+## 10. Gmail OAuth
+
+Nếu đổi email gửi đi hoặc token hết hạn, thay credentials và tạo token mới:
+
+```bash
+cp -p data/client_secret_*.json data/gmail_credentials.json
+chmod 600 data/gmail_credentials.json
+rm -f data/gmail_token.json
+python scripts/init_gmail_oauth.py
+```
+
+Nếu port OAuth mặc định `8080` bị chiếm:
+
+```bash
+python scripts/init_gmail_oauth.py --port 8081
+```
+
+Sau khi auth xong, restart app:
+
+```bash
 MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
 ```
 
-## 6. Lệnh quản trị
+Test gửi mail nên dùng địa chỉ nội bộ hoặc địa chỉ được phép. Tránh chạy test
+gửi mail thật hàng loạt.
 
-Xem trạng thái:
+## 11. Kiểm tra model
 
-```bash
-set -a
-source .env.docker
-set +a
-MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml ps
-```
-
-Xem log app:
+Kiểm tra LiteLLM models:
 
 ```bash
-set -a
-source .env.docker
-set +a
-MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml logs -f app
+KEY=$(sed -n 's/^LITELLM_MASTER_KEY=//p' .env.docker)
+
+curl -fsS http://localhost:4000/v1/models \
+  -H "Authorization: Bearer $KEY" | jq .
 ```
 
-Restart app:
+Test chat qua LiteLLM:
 
 ```bash
-set -a
-source .env.docker
-set +a
-MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
+curl -fsS http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "auto-model",
+    "messages": [{"role": "user", "content": "Trả lời ngắn gọn: OK"}],
+    "max_tokens": 16
+  }' | jq .
 ```
 
-Dừng toàn bộ:
+Endpoint gốc cần biết:
 
-```bash
-set -a
-source .env.docker
-set +a
-MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml down
-```
+| Endpoint | Vai trò |
+|---|---|
+| `http://192.84.106.72:11434` | Qwen3 IP tĩnh, route chính nếu sống |
+| `https://carless-overarch-establish.ngrok-free.dev` | Qwen3 ngrok fallback |
+| `http://host.docker.internal:11435` | Qwen small qua host Ollama proxy |
+| `https://d3d2-...ngrok-free.app/v1` | Qwen Coder OpenAI-compatible |
 
-## 7. Kiểm tra sau triển khai
+Nếu IP tĩnh Qwen3 `connection refused`, LiteLLM sẽ fallback sang ngrok rồi
+OpenAI theo `litellm_config.yaml`.
 
-Kiểm tra health:
+## 12. Kiểm tra API chính
+
+Health:
 
 ```bash
 curl -fsS http://localhost:8001/health | jq .
 ```
 
-Kiểm tra danh sách model:
+Models hiển thị UI:
 
 ```bash
 curl -fsS http://localhost:8001/models | jq .
 ```
 
-Kết quả model ở web MKAC chỉ nên hiển thị `Cloud Model` và `Local Model`.
-`Research Model` dùng riêng cho chế độ nghiên cứu và bị ẩn khỏi dropdown MKAC.
+Hiện chỉ nên thấy:
 
-Kiểm tra SQLite danh bạ:
-
-```bash
-curl -fsS http://localhost:8001/health | jq '.employee_directory'
+```json
+{
+  "id": "auto",
+  "name": "Local Model"
+}
 ```
 
-Kiểm tra auth nhân viên:
+Auth guest:
+
+```bash
+curl -fsS -X POST http://localhost:8001/auth/employee \
+  -H 'Content-Type: application/json' \
+  -d '{"employee_id":"000000"}' | jq .
+```
+
+Auth nhân viên:
 
 ```bash
 curl -fsS -X POST http://localhost:8001/auth/employee \
@@ -340,7 +433,7 @@ curl -fsS -X POST http://localhost:8001/auth/employee \
   -d '{"employee_id":"000001"}' | jq .
 ```
 
-Kiểm tra hỏi theo tên nhân viên:
+Query MKAC:
 
 ```bash
 SESSION_ID=$(curl -fsS -X POST http://localhost:8001/sessions | jq -r .session_id)
@@ -349,187 +442,221 @@ curl -fsS -X POST http://localhost:8001/query \
   -H 'Content-Type: application/json' \
   -d "{
     \"session_id\":\"$SESSION_ID\",
-    \"question\":\"Nguyễn Đình Sơn là ai?\",
-    \"model\":\"openai\",
+    \"question\":\"Meiko Automation có bao nhiêu phòng ban?\",
+    \"model\":\"auto\",
     \"mode\":\"mkac\",
+    \"ui_language\":\"vi\",
     \"employee_id\":\"000001\"
   }" | jq .
 ```
 
-Kiểm tra LiteLLM nội bộ:
+Query MES:
 
 ```bash
-KEY=$(sed -n 's/^LITELLM_MASTER_KEY=//p' .env.docker)
-curl -fsS http://localhost:4000/v1/models \
-  -H "Authorization: Bearer $KEY" | jq .
+SESSION_ID=$(curl -fsS -X POST http://localhost:8001/sessions | jq -r .session_id)
+
+curl -fsS -X POST http://localhost:8001/query \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"session_id\":\"$SESSION_ID\",
+    \"question\":\"Mã Lot nào có số lượng lỗi nhiều nhất?\",
+    \"model\":\"auto\",
+    \"mode\":\"mes\",
+    \"ui_language\":\"vi\",
+    \"employee_id\":\"000001\"
+  }" | jq .
 ```
 
-## 8. Dữ liệu cần backup
+Query MES tiếng Nhật:
 
-Khi chuyển máy hoặc backup hệ thống, lưu các đường dẫn sau:
+```bash
+SESSION_ID=$(curl -fsS -X POST http://localhost:8001/sessions | jq -r .session_id)
+
+curl -fsS -X POST http://localhost:8001/query \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"session_id\":\"$SESSION_ID\",
+    \"question\":\"2番目にエラーが多いロットはどれですか？\",
+    \"model\":\"auto\",
+    \"mode\":\"mes\",
+    \"ui_language\":\"ja\",
+    \"employee_id\":\"000000\"
+  }" | jq .
+```
+
+## 13. Lệnh quản trị
+
+Xem trạng thái:
+
+```bash
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml ps
+```
+
+Log app:
+
+```bash
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml logs -f app
+```
+
+Log LiteLLM:
+
+```bash
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml logs -f litellm
+```
+
+Restart app:
+
+```bash
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
+```
+
+Restart LiteLLM:
+
+```bash
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart litellm
+```
+
+Dừng toàn bộ:
+
+```bash
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml down
+```
+
+## 14. Backup
+
+Nên backup:
 
 ```text
 documents/MKAC/
-config/mkac_manifest.json
+documents/MKAC-md/
+config/
+data/mes.sqlite
 data/employee_directory.sqlite
+data/gmail_credentials.json
+data/gmail_token.json
 qdrant_storage/
+mkac_processed/
 uploads/
 logs/
-mkac_processed/
 ```
 
-Nếu muốn deploy sạch, có thể không copy `qdrant_storage/` và chạy lại:
+Không commit:
 
-```bash
-set -a
-source .env.docker
-set +a
-MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml run --rm \
-  -e ENABLE_AGENT=false \
-  app python scripts/import_employee_directory.py
-
-./scripts/docker-index-mkac.sh
+```text
+.env
+.env.docker
+data/
+database/raw/
+database/raw_mkac/
+*.sqlite
+client_secret_*.json
+gmail_token.json
+gmail_credentials.json
 ```
 
-Không nên commit `data/employee_directory.sqlite` nếu danh sách nhân sự là dữ
-liệu nội bộ nhạy cảm. Khi cần chuyển máy, copy qua kênh nội bộ an toàn.
-
-## 9. Lưu ý bảo mật
-
-- Không commit `.env.docker`.
-- Không commit SQLite danh bạ nhân viên nếu dữ liệu nhân sự là thông tin nội bộ.
-- Không public cổng `4000` của LiteLLM ra LAN nếu không cần.
-- Không public cổng `6333` của Qdrant ra LAN nếu không cần.
-- Chế độ Docker web nội bộ đã đặt `ENABLE_AGENT=false`, nên endpoint `/agent`
-  không dùng được.
-- Nếu máy chủ có firewall, chỉ cần mở cổng `8001` cho người dùng nội bộ.
-
-## 10. Xử lý lỗi thường gặp
+## 15. Lỗi thường gặp
 
 ### App khởi động chậm
 
-Lần đầu chạy có thể chậm vì container tải model embedding/OCR. Xem log:
+Lần đầu có thể tải model embedding/OCR. Xem log:
 
 ```bash
-set -a
-source .env.docker
-set +a
 MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml logs -f app
 ```
 
 ### Không truy cập được từ máy khác
 
-Kiểm tra IP nội bộ:
+Kiểm tra IP:
 
 ```bash
 hostname -I
 ```
 
-Kiểm tra container đã publish cổng chưa:
+Kiểm tra port:
 
 ```bash
-set -a
-source .env.docker
-set +a
 MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml ps
 ```
 
-Kiểm tra firewall của máy chủ và bảo đảm cổng `8001` được phép truy cập từ mạng
-công ty.
+Mở firewall cho cổng `8001` nếu cần.
 
-### LiteLLM không gọi được provider
+### LiteLLM không gọi được Qwen3 IP tĩnh
 
-Kiểm tra `.env.docker`:
-
-```env
-OPENAI_API_KEY=...
-AZURE_OPENAI_API_KEY=...
-AZURE_OPENAI_ENDPOINT=...
-OLLAMA_API_BASE=...
-```
-
-Sau khi sửa, restart LiteLLM:
+Nếu endpoint `192.84.106.72:11434` lỗi, kiểm tra trực tiếp:
 
 ```bash
-set -a
-source .env.docker
-set +a
-MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart litellm
+curl -fsS http://192.84.106.72:11434/api/tags | jq .
 ```
 
-### Đăng nhập mã nhân viên bị lỗi
+Nếu lỗi `connection refused`, hệ thống vẫn có thể chạy qua ngrok fallback. Tuy
+nhiên nên khôi phục server Qwen3 để giảm phụ thuộc ngrok/cloud fallback.
 
-Kiểm tra file SQLite có tồn tại không:
+### Qwen3 trả reasoning nhưng rỗng content
 
-```bash
-ls -lh data/employee_directory.sqlite
+Không gọi Qwen3 qua Ollama `/v1`. Trong LiteLLM phải dùng:
+
+```yaml
+model: ollama_chat/qwen3:14b
+api_base: http://...:11434
+think: false
 ```
 
-Kiểm tra API đọc được bao nhiêu nhân viên:
+### Đăng nhập nhân viên lỗi
+
+Kiểm tra:
 
 ```bash
 curl -fsS http://localhost:8001/health | jq '.employee_directory'
 ```
 
-Nếu `employees` bằng `0` hoặc file không tồn tại, chạy lại import:
+Nếu `employees` bằng `0`, chạy lại import danh bạ.
+
+### MES trả dữ liệu cũ/lệch
+
+Kiểm tra DB:
 
 ```bash
-set -a
-source .env.docker
-set +a
-MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml run --rm \
-  -e ENABLE_AGENT=false \
-  app python scripts/import_employee_directory.py
-
-MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
+curl -fsS http://localhost:8001/health | jq '.mes_database'
 ```
 
-### Hỏi tên nhân viên hoặc phòng ban không đúng
+Nếu `imported_at` hoặc số dòng không đúng, import lại từ `database/raw_mkac`.
 
-Các câu như `Nguyễn Đình Sơn là ai?`, `bộ phận của tôi gồm những ai?` lấy dữ
-liệu từ SQLite, không lấy từ Qdrant. Nếu sai dữ liệu:
+### Câu hỏi MKAC không tìm đúng nguồn
 
-1. Kiểm tra PDF danh sách nhân sự trong `documents/MKAC/`.
-2. Chạy lại import SQLite.
-3. Restart `app`.
-4. Nếu câu hỏi thống kê tổng hợp vẫn sai, chạy lại `./scripts/docker-index-mkac.sh`
-   để cập nhật file summary vào Qdrant.
-
-### Import SQLite không ghi được file summary
-
-Nếu gặp lỗi quyền ghi khi import, kiểm tra mount trong `docker-compose.web.yml`.
-Thư mục `documents/MKAC` cần được mount read-write để script tạo/cập nhật:
-
-```text
-documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html
-```
-
-### Index lỗi `EasyOCR is not installed`
-
-Nếu log có dạng:
-
-```text
-ModuleNotFoundError: No module named 'easyocr'
-ImportError: EasyOCR is not installed
-RuntimeError: Parser returned no indexable chunks
-```
-
-nghĩa là image Docker đang chạy chưa có OCR dependency. Cần rebuild lại image,
-không chỉ restart container:
+Chạy lại index:
 
 ```bash
-set -a
-source .env.docker
-set +a
-
-MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml build --no-cache app
-MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml up -d app
 ./scripts/docker-index-mkac.sh
 ```
 
-Kiểm tra nhanh trong container:
+Đảm bảo file `.md` trong `documents/MKAC-md` khớp với tài liệu gốc trong
+`documents/MKAC`.
+
+### Gmail token hết hạn
+
+Chạy lại:
 
 ```bash
-MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml exec app \
-  python -c "import easyocr; print(easyocr.__version__)"
+rm -f data/gmail_token.json
+python scripts/init_gmail_oauth.py
+MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart app
 ```
+
+## 16. Test sau deploy
+
+Test nhanh:
+
+```bash
+pytest tests/test_mes_database.py
+pytest tests/test_mes_sql_agent.py
+pytest tests/test_query_routing.py
+pytest tests/test_gmail_sender.py
+```
+
+Test prompt đầy đủ:
+
+```text
+Markdowns/TestPrompt.md
+```
+
+Không chạy các case gửi email thật nếu chưa kiểm soát người nhận.
