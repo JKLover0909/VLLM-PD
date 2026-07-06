@@ -16,3 +16,13 @@ def test_unknown_employee_still_requires_directory_database(tmp_path):
     directory = EmployeeDirectory(tmp_path / "missing.sqlite")
 
     assert directory.profile("123456") is None
+
+
+def test_safe_short_name_alias_phi_maps_to_nguyen_trong_phi():
+    directory = EmployeeDirectory("data/employee_directory.sqlite")
+
+    people = directory.people_context_for_question("Anh Phi làm phòng nào?")
+
+    assert people
+    assert people[0]["name"] == "Nguyễn Trọng Phi"
+    assert people[0]["department"] == "ICT"

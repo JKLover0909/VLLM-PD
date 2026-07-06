@@ -1098,6 +1098,8 @@ def safety_guard_response(req: QueryRequest) -> Optional[QueryResponse]:
         for marker in ("環境変数", "システムファイル", "制限を無視", "役割を無視")
     ):
         blocked = True
+    if "無視" in original and ("制限" in original or "役割" in original):
+        blocked = True
     if any(
         marker in normalized
         for marker in (
@@ -1108,9 +1110,10 @@ def safety_guard_response(req: QueryRequest) -> Optional[QueryResponse]:
             "bo qua moi gioi han",
             "ignore previous",
             "ignore all",
-            "dan",
         )
     ):
+        blocked = True
+    if re.search(r"\bdan\b", normalized):
         blocked = True
     if not blocked:
         return None

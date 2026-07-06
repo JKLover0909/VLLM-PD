@@ -70,6 +70,11 @@ def parse_email_send_command(question: str) -> EmailSendCommand | None:
         return None
 
     if not match:
+        # Một số câu safety/database có thể bị bước dịch hoặc normalize làm lẫn
+        # chữ "email" vào nội dung kỹ thuật. Không biến các câu đó thành lỗi
+        # Gmail; để guardrail/MES handler xử lý đúng phạm vi.
+        if _looks_like_non_email_database_request(text, normalized):
+            return None
         raise GmailSenderError(
             "Bạn cần nêu rõ địa chỉ email người nhận, ví dụ: gui email cho a@mkac.vn ..."
         )
@@ -118,6 +123,23 @@ def try_parse_email_send_command(question: str) -> EmailSendCommand | None:
         return parse_email_send_command(question)
     except GmailSenderError:
         return None
+
+
+def _looks_like_non_email_database_request(text: str, normalized: str) -> bool:
+    original = text or ""
+    safety_or_database_markers = (
+        "error_events",
+        "drop table",
+        "update ",
+        "bo qua moi gioi han",
+        "bo qua tat ca gioi han",
+        "liet ke toan bo",
+        "100 000",
+        "100.000",
+    )
+    if any(marker in normalized for marker in safety_or_database_markers):
+        return True
+    return bool("error_events" in original and ("全" in original or "列挙" in original))
 
 
 def _extract_explicit_body(text_without_email: str) -> str:

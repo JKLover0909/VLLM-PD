@@ -249,6 +249,8 @@ class MesDatabase:
         # Câu đếm tổng chỉ áp dụng khi hỏi toàn hệ thống, không kèm mã cụ thể.
         # Nếu có lot_id/product_id/error_id, để các nhánh chi tiết bên dưới xử lý.
         if not lot_id and not product_id and not error_id:
+            if self._is_ambiguous_lot_count_question(normalized):
+                return self._ambiguous_lot_count()
             if self._is_count_error_records_question(normalized):
                 return self._count_error_records(
                     number_only=self._asks_number_only(normalized)
@@ -454,6 +456,13 @@ class MesDatabase:
             answer,
             (str(count),),
         )
+
+    def _ambiguous_lot_count(self) -> MesDatabaseResult:
+        answer = (
+            "Câu hỏi chưa rõ phạm vi: bạn muốn đếm tất cả Lot trong MES snapshot "
+            "hay chỉ các Lot có ghi nhận lỗi?"
+        )
+        return self._result("ambiguous_lot_count", [], answer)
 
     def _count_error_records(self, *, number_only: bool = False) -> MesDatabaseResult:
         exclude_test = self._exclude_test_filter("l.product_id", "e.lot_id")
@@ -1355,6 +1364,17 @@ class MesDatabase:
             and has_lot
             and MesDatabase._has_error_marker(normalized)
         )
+
+    @staticmethod
+    def _is_ambiguous_lot_count_question(normalized: str) -> bool:
+        compact = re.sub(r"\s+", " ", normalized or "").strip(" ?.!。")
+        return compact in {
+            "co bao nhieu lot",
+            "bao nhieu lot",
+            "co may lot",
+            "may lot",
+            "how many lots",
+        }
 
     @staticmethod
     def _is_lot_listing_question(normalized: str) -> bool:

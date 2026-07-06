@@ -245,6 +245,12 @@ class EmployeeDirectory:
             return []
 
         normalized_text = normalize_text(text)
+        alias_ids: list[str] = []
+        # Alias hẹp phục vụ cách gọi thân mật trong demo. Không fuzzy toàn bộ
+        # tên "Phi" vì danh bạ có nhiều nhân viên chứa chữ Phi.
+        if re.search(r"\banh phi\b", normalized_text):
+            alias_ids.append("000006")
+
         with sqlite3.connect(self.db_path) as connection:
             rows = connection.execute(
                 """
@@ -256,6 +262,11 @@ class EmployeeDirectory:
 
         people: list[dict[str, Any]] = []
         seen_ids: set[str] = set()
+        for employee_id in alias_ids:
+            profile = self.profile(employee_id)
+            if profile and profile["id"] not in seen_ids:
+                people.append(dict(profile))
+                seen_ids.add(profile["id"])
         for employee_id, full_name in rows:
             normalized_name = normalize_text(full_name)
             id_mentioned = bool(

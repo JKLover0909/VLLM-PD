@@ -106,6 +106,14 @@ def test_list_lots_returns_recent_lots_without_sql_agent(mes_database):
     assert "Testlot" not in result.fallback_answer
 
 
+def test_ambiguous_lot_count_asks_for_scope_instead_of_guessing(mes_database):
+    result = mes_database.query_question("Có bao nhiêu lot?")
+
+    assert result is not None
+    assert result.intent == "ambiguous_lot_count"
+    assert "chưa rõ" in result.fallback_answer.lower()
+
+
 def test_highest_lot_requires_explicit_permission(mes_database):
     question = "Theo database, Lot nào có số lượng lỗi nhiều nhất?"
 
