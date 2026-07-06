@@ -132,21 +132,29 @@ def format_people_profiles(
     language: str,
 ) -> str:
     if language == "ja":
-        lines = [
-            (
+        lines = []
+        for person in people:
+            line = (
                 f"- {person['name']}（社員番号: {person['id']}、"
                 f"部門: {person.get('department') or '未登録'}、"
-                f"役職: {person.get('position') or '未登録'}）"
+                f"役職: {person.get('position') or '未登録'}"
             )
-            for person in people
-        ]
+            if person.get("birth_date"):
+                line += f"、生年月日: {person['birth_date']}"
+            if person.get("marital_status"):
+                line += f"、婚姻状況: {person['marital_status']}"
+            lines.append(line + "）")
         return "該当する社員情報は以下の通りです。\n" + "\n".join(lines)
-    lines = [
-        (
+    lines = []
+    for person in people:
+        line = (
             f"- {person['name']} - mã nhân viên {person['id']}, "
             f"phòng {person.get('department') or 'chưa có'}, "
             f"chức danh {person.get('position') or 'chưa có'}"
         )
-        for person in people
-    ]
+        if person.get("birth_date"):
+            line += f", ngày sinh {person['birth_date']}"
+        if person.get("marital_status"):
+            line += f", tình trạng hôn nhân: {person['marital_status']}"
+        lines.append(line)
     return "Thông tin nhân sự tìm thấy:\n" + "\n".join(lines)

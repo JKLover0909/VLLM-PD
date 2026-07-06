@@ -36,18 +36,73 @@ class MesDatabaseResult:
 
 
 def normalize_mes_text(value: str) -> str:
-    normalized = unicodedata.normalize("NFD", (value or "").lower().replace("đ", "d"))
+    original = value or ""
+    normalized = unicodedata.normalize("NFD", original.lower().replace("đ", "d"))
     normalized = "".join(
         char for char in normalized if unicodedata.category(char) != "Mn"
     )
     normalized = re.sub(r"[^a-z0-9_-]+", " ", normalized).strip()
-    return re.sub(r"\bnhiu\b", "nhieu", normalized)
+    normalized = re.sub(r"\bnhiu\b", "nhieu", normalized)
+
+    # UI tiếng Nhật được dịch nhẹ ở tầng giữa, nhưng các câu MES đơn giản nên
+    # vẫn tự route được khi translation tắt hoặc dịch chưa ổn định. Ta append
+    # các marker Việt/Anh để tái sử dụng bộ rule deterministic hiện có.
+    jp_tokens: list[str] = []
+    top_match = re.search(r"(?:上位|トップ)\s*(\d+)", original)
+    if top_match:
+        jp_tokens.append(f"top {top_match.group(1)}")
+    if re.search(r"(ロット|Lot)", original):
+        jp_tokens.append("lot")
+    if re.search(r"(品番|製品|製品コード)", original):
+        jp_tokens.append("ma hang san pham product")
+    if re.search(r"(エラー|不良|欠陥)", original):
+        jp_tokens.append("loi error defect")
+    if re.search(r"(記録|件数|何件)", original):
+        jp_tokens.append("ban ghi record bao nhieu")
+    if re.search(r"(種類|異なる|エラーID|エラーコード)", original):
+        jp_tokens.append("loai loi ma loi distinct")
+    if re.search(r"(総|合計|総数)", original):
+        jp_tokens.append("tong total sum")
+    if re.search(r"(いくつ|何ロット|何種類|何人|何個)", original):
+        jp_tokens.append("bao nhieu")
+    if re.search(r"(最も|一番|最大|多い|最高)", original):
+        jp_tokens.append("nhieu nhat cao nhat top most highest")
+    if re.search(r"(少ない|最小|最低)", original):
+        jp_tokens.append("it loi nhat thap nhat lowest")
+    if re.search(r"(平均|1ロットあたり|ロットあたり)", original):
+        jp_tokens.append("trung binh moi lot average per lot")
+    if re.search(r"(比較|比べ|差)", original):
+        jp_tokens.append("so sanh compare")
+    if re.search(r"(一覧|列挙|リスト|すべて)", original):
+        jp_tokens.append("liet ke danh sach list")
+    if re.search(r"(工程|プロセス)", original):
+        jp_tokens.append("process cong doan")
+    if re.search(r"(数量|数はいくつ)", original):
+        jp_tokens.append("so luong quantity")
+    if re.search(r"(表形式|表で)", original):
+        jp_tokens.append("bang table")
+    if re.search(r"(作業者|作業員|生産者|生産しました)", original):
+        jp_tokens.append("cong nhan nguoi san xuat operator worker")
+    if re.search(r"(費用|修理費|コスト)", original):
+        jp_tokens.append("chi phi cost expense")
+    if re.search(r"(顧客|客先|お客様)", original):
+        jp_tokens.append("khach hang customer")
+    if re.search(r"(予測|予想|来月|将来)", original):
+        jp_tokens.append("du doan du bao thang sau tuong lai forecast predict")
+    if re.search(r"(一度も.*エラー.*ない|エラー.*ない製品|不良.*ない製品)", original):
+        jp_tokens.append("chua tung bi loi khong bi loi never had error no error")
+    if re.search(r"(数字.*1つ|1つの数字|数字だけ)", original):
+        jp_tokens.append("mot so duy nhat one number only")
+
+    if jp_tokens:
+        normalized = " ".join(part for part in (normalized, *jp_tokens) if part)
+    return normalized
 
 
 class MesDatabase:
     """Allowlisted, parameterized queries against the MES snapshot."""
 
-    LOT_PATTERN = re.compile(r"\b\d{6}(?:-\d{2})?-\d{3}(?:-\d{2})?\b")
+    LOT_PATTERN = re.compile(r"(?<!\d)\d{6}(?:-\d{2})?-\d{3}(?:-\d{2})?(?!\d)")
     SNAPSHOT_MARKERS = (
         "snapshot",
         "database",
@@ -155,22 +210,22 @@ class MesDatabase:
 
         lot_id = self._extract_lot_id(question)
         error_name_query = self._extract_quoted_error_name(question)
-        if allow_highest_lot and self._is_highest_lot_error_question(normalized):
-            return self._highest_error_lots(limit=self._extract_top_limit(normalized))
         if self._is_lowest_lot_error_question(normalized):
             return self._lowest_error_lots(limit=self._extract_top_limit(normalized))
+        if allow_highest_lot and self._is_highest_lot_error_question(normalized):
+            return self._highest_error_lots(limit=self._extract_top_limit(normalized))
 
         product_id = self._extract_code_after(
             question,
             (
                 r"(?:mã\s+hàng|mã\s+sản\s+phẩm|sản\s+phẩm|"
                 r"\bsp\b|\bproduct\s+code\b|\bproduct\s+id\b|"
-                r"\bpart\s+number\b|\bitem\s+code\b)"
+                r"\bpart\s+number\b|\bitem\s+code\b|品番|製品|製品コード)"
             ),
         )
         error_id = self._extract_code_after(
             question,
-            r"(?:mã\s+lỗi|lỗi\s+mã|\berror\s+code\b|\bdefect\s+code\b)",
+            r"(?:mã\s+lỗi|lỗi\s+mã|\berror\s+code\b|\bdefect\s+code\b|エラーコード|エラーID)",
         )
         has_error = self._has_error_marker(normalized)
 
@@ -182,6 +237,14 @@ class MesDatabase:
             if self._asks_quantity(normalized):
                 return self._error_quantity_by_name(error_name_query)
             return self._error_name_search(error_name_query)
+
+        product_candidates = self._extract_product_candidates(question)
+        if len(product_candidates) >= 2 and self._asks_compare(normalized):
+            return self._compare_product_errors(product_candidates[:2])
+
+        process_id = self._extract_process_id(question)
+        if process_id and has_error:
+            return self._process_error_types(process_id)
 
         # Câu đếm tổng chỉ áp dụng khi hỏi toàn hệ thống, không kèm mã cụ thể.
         # Nếu có lot_id/product_id/error_id, để các nhánh chi tiết bên dưới xử lý.
@@ -220,6 +283,8 @@ class MesDatabase:
             )
         if product_id and self._asks_average_per_lot(normalized):
             return self._product_average_errors_per_lot(product_id)
+        if product_id and self._asks_product_lot_count(normalized) and self._asks_total_quantity(normalized):
+            return self._product_summary(product_id)
         if product_id and self._asks_product_lot_count(normalized):
             return self._product_lot_count(product_id)
         if product_id and has_error:
@@ -812,6 +877,55 @@ class MesDatabase:
             (product_id, str(total_error_qty), str(lot_count)),
         )
 
+    def _compare_product_errors(self, product_ids: list[str]) -> MesDatabaseResult:
+        placeholders = ",".join("?" for _ in product_ids)
+        rows = self._fetch_all(
+            f"""
+            SELECT product_id, lot_count, error_record_count, total_error_qty
+            FROM v_product_error_summary
+            WHERE product_id IN ({placeholders})
+            ORDER BY total_error_qty DESC, product_id
+            """,
+            tuple(product_ids),
+        )
+        found = {str(row["product_id"]) for row in rows}
+        missing = [product_id for product_id in product_ids if product_id not in found]
+        if len(rows) < 2:
+            if missing:
+                answer = (
+                    "Không đủ dữ liệu MES snapshot để so sánh: "
+                    + ", ".join(f"không tìm thấy mã hàng {item}" for item in missing)
+                    + "."
+                )
+            else:
+                answer = "Không đủ dữ liệu MES snapshot để so sánh hai mã hàng."
+            return self._result(
+                "product_error_comparison",
+                rows,
+                answer,
+                tuple(product_ids),
+            )
+
+        higher, lower = rows[0], rows[1]
+        diff = int(higher["total_error_qty"] or 0) - int(lower["total_error_qty"] or 0)
+        answer = (
+            f"Theo MES snapshot, mã hàng {higher['product_id']} có tổng "
+            f"{self._number(higher['total_error_qty'])} lỗi, cao hơn mã hàng "
+            f"{lower['product_id']} có {self._number(lower['total_error_qty'])} lỗi "
+            f"là {self._number(diff)} lỗi."
+        )
+        if missing:
+            answer += " Không tìm thấy dữ liệu cho: " + ", ".join(missing) + "."
+        return self._result(
+            "product_error_comparison",
+            rows,
+            answer,
+            tuple(
+                product_ids
+                + [str(higher["total_error_qty"]), str(lower["total_error_qty"])]
+            ),
+        )
+
     def _product_error_breakdown(self, product_id: str) -> MesDatabaseResult:
         rows = self._fetch_all(
             f"""
@@ -850,6 +964,42 @@ class MesDatabase:
             rows,
             answer,
             (product_id, str(rows[0]["error_id"]), str(rows[0]["total_error_qty"])),
+        )
+
+    def _process_error_types(self, process_id: str) -> MesDatabaseResult:
+        rows = self._fetch_all(
+            f"""
+            SELECT process_id, error_id, error_name,
+                   SUM(quantity) AS total_error_qty,
+                   COUNT(*) AS error_record_count
+            FROM v_error_details
+            WHERE process_id = ?
+              AND {self._exclude_test_filter("product_id", "lot_id")}
+            GROUP BY process_id, error_id, error_name
+            ORDER BY total_error_qty DESC, error_id
+            """,
+            (process_id,),
+        )
+        if not rows:
+            return self._result(
+                "process_error_types",
+                [],
+                f"Không tìm thấy dữ liệu lỗi cho process {process_id} trong MES snapshot.",
+                (process_id,),
+            )
+        descriptions = format_item_list(
+            [
+                f"{row['error_id']} - {row['error_name'] or '*Lỗi chưa rõ tên*'}: "
+                f"{self._number(row['total_error_qty'])} lỗi"
+                for row in rows
+            ]
+        )
+        answer = f"Theo MES snapshot, process {process_id} ghi nhận các loại lỗi: {descriptions}."
+        return self._result(
+            "process_error_types",
+            rows,
+            answer,
+            (process_id, str(rows[0]["error_id"]), str(rows[0]["total_error_qty"])),
         )
 
     def _highest_error_products(self, limit: int = 1) -> MesDatabaseResult:
@@ -996,7 +1146,7 @@ class MesDatabase:
 
     @staticmethod
     def _extract_quoted_error_name(question: str) -> str | None:
-        match = re.search(r"[\"“”']([^\"“”']+)[\"“”']", question or "")
+        match = re.search(r"[\"“”'「」『』]([^\"“”'「」『』]+)[\"“”'「」『』]", question or "")
         if not match:
             return None
         candidate = match.group(1).strip()
@@ -1054,6 +1204,30 @@ class MesDatabase:
         if not re.search(r"\d|[_-]", code):
             return None
         return code
+
+    @classmethod
+    def _extract_product_candidates(cls, question: str) -> list[str]:
+        candidates = re.findall(
+            r"(?<![A-Za-z0-9])[A-Za-z0-9]+(?:[_-][A-Za-z0-9]+)+(?![A-Za-z0-9])",
+            question or "",
+        )
+        products: list[str] = []
+        for candidate in candidates:
+            if cls.LOT_PATTERN.fullmatch(candidate):
+                continue
+            if normalize_mes_text(candidate) in {"error_events", "v_error_details"}:
+                continue
+            if candidate not in products:
+                products.append(candidate)
+        return products
+
+    @staticmethod
+    def _extract_process_id(question: str) -> str | None:
+        match = re.search(
+            r"(?<![A-Za-z0-9])\d{3}-[A-Za-z0-9]+-[A-Za-z](?![A-Za-z0-9])",
+            question or "",
+        )
+        return match.group(0) if match else None
 
     @staticmethod
     def _has_error_marker(normalized: str) -> bool:
@@ -1116,6 +1290,13 @@ class MesDatabase:
         )
 
     @staticmethod
+    def _asks_total_quantity(normalized: str) -> bool:
+        return any(
+            marker in normalized
+            for marker in ("tong", "tong so", "total", "sum")
+        )
+
+    @staticmethod
     def _asks_number_only(normalized: str) -> bool:
         return any(
             marker in normalized
@@ -1127,6 +1308,13 @@ class MesDatabase:
                 "one number only",
                 "just one number",
             )
+        )
+
+    @staticmethod
+    def _asks_compare(normalized: str) -> bool:
+        return any(
+            marker in normalized
+            for marker in ("so sanh", "compare", "comparison")
         )
 
     @staticmethod

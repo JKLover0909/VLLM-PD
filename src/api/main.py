@@ -45,6 +45,7 @@ from src.integrations.gmail_sender import (
     GmailSender,
     GmailSenderError,
     parse_email_send_command,
+    try_parse_email_send_command,
 )
 from src.i18n.translation import TranslationError, TranslationService
 
@@ -421,6 +422,44 @@ def resolve_employee_context_question(req: QueryRequest, question: str) -> str:
     return rewritten
 
 
+def question_uses_mes_lot_context_reference(question: str) -> bool:
+    normalized = normalize_text(question)
+    return any(
+        marker in normalized
+        for marker in (
+            "lot do",
+            "lot nay",
+            "lo do",
+            "lo nay",
+            "that lot",
+            "this lot",
+        )
+    ) or any(marker in (question or "") for marker in ("そのロット", "このロット"))
+
+
+def latest_lot_id_in_context(conversation_context: list[dict[str, Any]]) -> str:
+    for item in reversed(conversation_context or []):
+        content = str(item.get("content") or "")
+        match = MesDatabase.LOT_PATTERN.search(content)
+        if match:
+            return match.group(0)
+    return ""
+
+
+def resolve_mes_context_question(req: QueryRequest, question: str) -> str:
+    """Append the latest Lot ID for simple pronoun-based MES follow-ups."""
+    if req.mode != "mes" or not question_uses_mes_lot_context_reference(question):
+        return question
+    if MesDatabase.LOT_PATTERN.search(question or ""):
+        return question
+    lot_id = latest_lot_id_in_context(req.conversation_context)
+    if not lot_id:
+        return question
+    rewritten = f"{question.strip()} Lot {lot_id}"
+    logger.info("Resolved MES context question: %r -> %r", question, rewritten)
+    return rewritten
+
+
 async def record_query_metric(
     *,
     mode: str,
@@ -522,7 +561,7 @@ def employee_directory_query_response(
     question: Optional[str] = None,
 ) -> Optional[QueryResponse]:
     """Answer structured employee-directory questions directly from SQLite."""
-    if req.mode != "mkac" or parse_email_send_command(req.question) is not None:
+    if req.mode != "mkac" or try_parse_email_send_command(req.question) is not None:
         return None
 
     lookup_question = question or req.question
@@ -530,6 +569,7 @@ def employee_directory_query_response(
         lookup_question,
         current_department=employee.department if employee else "",
         language=req.ui_language,
+        conversation_context=req.conversation_context,
     )
     if not answer:
         return None
@@ -640,6 +680,7 @@ async def route_query(
     ensure_query_services_ready()
     routed_question = question or req.question
     if req.mode == "mes":
+        routed_question = resolve_mes_context_question(req, routed_question)
         logger.info("Routing query to MES service.")
         return await mes_query_service.query(
             question=routed_question,
@@ -666,9 +707,10 @@ async def route_query_stream(
     """Streaming variant of route_query with explicit mode separation."""
     ensure_query_services_ready()
     if req.mode == "mes":
+        routed_question = resolve_mes_context_question(req, req.question)
         logger.info("Routing streaming query to MES service.")
         return await mes_query_service.query_stream(
-            question=req.question,
+            question=routed_question,
             model=req.model,
         )
     if req.mode in {"mkac", "research"}:
@@ -688,7 +730,24 @@ async def handle_email_send_query(
     req: QueryRequest,
     current_user_context: Optional[Dict[str, Any]],
 ) -> Optional[QueryResponse]:
-    command = parse_email_send_command(req.question)
+    try:
+        command = parse_email_send_command(req.question)
+    except GmailSenderError as exc:
+        normalized = normalize_text(req.question)
+        if any(
+            marker in normalized
+            for marker in (
+                "gui email",
+                "gui mail",
+                "send email",
+                "email cho",
+                "mail cho",
+                "cho email",
+            )
+        ):
+            raise exc
+        logger.info("Ignoring ambiguous email parse miss for non-email query.")
+        return None
     if command is None:
         return None
     if gmail_sender is None or not gmail_sender.available:
@@ -1025,9 +1084,59 @@ def _load_quick_answers() -> dict:
     return _quick_answers_cache
 
 
+def safety_guard_response(req: QueryRequest) -> Optional[QueryResponse]:
+    """Block clearly unsafe cross-system requests before retrieval/model calls."""
+    normalized = normalize_text(req.question)
+    original = req.question or ""
+    blocked = False
+    if any(marker in normalized for marker in (" doc file env", " file env", ".env", "dotenv")):
+        blocked = True
+    if ".env" in original:
+        blocked = True
+    if any(
+        marker in original
+        for marker in ("環境変数", "システムファイル", "制限を無視", "役割を無視")
+    ):
+        blocked = True
+    if any(
+        marker in normalized
+        for marker in (
+            "drop table",
+            "update tat ca",
+            "sua lai thong tin",
+            "bo qua vai tro",
+            "bo qua moi gioi han",
+            "ignore previous",
+            "ignore all",
+            "dan",
+        )
+    ):
+        blocked = True
+    if not blocked:
+        return None
+
+    answer = (
+        "このリクエストは安全上の理由で実行できません。Meibookは許可されたMKAC文書、"
+        "人事ディレクトリ、MESスナップショットの範囲内でのみ回答します。"
+        if req.ui_language == "ja"
+        else (
+            "Không thể thực hiện yêu cầu này vì lý do an toàn. Meibook chỉ trả lời "
+            "trong phạm vi tài liệu MKAC, danh bạ nhân sự và MES snapshot được phép."
+        )
+    )
+    return QueryResponse(
+        answer=answer,
+        sources=[],
+        session_id=req.session_id,
+        model="auto-model",
+        mode=req.mode,
+        answer_scope="guardrail",
+    )
+
+
 def prepared_query_response(req: QueryRequest) -> Optional[QueryResponse]:
     """Return curated answers for known MKAC demo questions without calling LLM."""
-    if req.mode != "mkac" or parse_email_send_command(req.question) is not None:
+    if req.mode != "mkac" or try_parse_email_send_command(req.question) is not None:
         return None
 
     data = _load_quick_answers()
@@ -1231,6 +1340,11 @@ async def query_documents(req: QueryRequest, request: Request):
         return cached_response.model_copy(update={"session_id": req.session_id})
 
     try:
+        guard_response = safety_guard_response(req)
+        if guard_response is not None:
+            await wait_for_min_query_latency(request_started_at)
+            return guard_response
+
         contextual_question = resolve_employee_context_question(req, req.question)
         directory_response = await asyncio.to_thread(
             employee_directory_query_response,
@@ -1418,6 +1532,25 @@ async def query_stream(req: QueryRequest, request: Request):
             },
         )
     try:
+        guard_response = safety_guard_response(req)
+        if guard_response is not None:
+            async def guard_event_generator():
+                yield sse_status(req, "received")
+                await wait_for_min_query_latency(request_started_at)
+                yield sse_event({"type": "sources", "sources": []})
+                yield sse_event({"type": "meta", "model": guard_response.model, "mode": guard_response.mode, "answer_scope": guard_response.answer_scope})
+                yield sse_event({"type": "token", "content": guard_response.answer})
+                yield sse_event({"type": "done"})
+
+            return StreamingResponse(
+                guard_event_generator(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                },
+            )
+
         contextual_question = resolve_employee_context_question(req, req.question)
         directory_response = await asyncio.to_thread(
             employee_directory_query_response,
@@ -1510,7 +1643,7 @@ async def query_stream(req: QueryRequest, request: Request):
         try:
             yield sse_status(req, "received")
             yield sse_status(req, "routing")
-            if parse_email_send_command(localized_req.question) is not None:
+            if try_parse_email_send_command(localized_req.question) is not None:
                 yield sse_status(req, "email")
             email_response = await handle_email_send_query(
                 localized_req,

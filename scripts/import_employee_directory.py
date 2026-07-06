@@ -40,6 +40,8 @@ FIXED_EMPLOYEES = [
         "gender": "Nam",
         "position": "Giám đốc; Phó tổng giám đốc",
         "department": "Ban Giám đốc",
+        "birth_date": "",
+        "marital_status": "",
         "greeting": "Chào anh Nguyễn Văn Thuận, Giám đốc Meiko Automation",
         "source_file": "Thông tin cố định",
         "source_page": 0,
@@ -106,6 +108,19 @@ def extract_pdf(path: Path) -> list[dict]:
                     continue
                 if not valid_name(full_name):
                     continue
+                birth_date = values.get("NĂM SINH", "").strip()
+                if not DATE_PATTERN.fullmatch(birth_date):
+                    birth_date = ""
+                # Header "TÌNH TRẠNG HÔN NHÂN" nằm trên 2 dòng trong PDF nên tên
+                # cột sau khi ghép có thể lệch khoảng trắng — dò theo "HÔN NHÂN".
+                marital_status = next(
+                    (
+                        value.strip()
+                        for key, value in values.items()
+                        if "HÔN NHÂN" in key.upper()
+                    ),
+                    "",
+                )
                 employees.append(
                     {
                         "employee_id": employee_id,
@@ -113,6 +128,8 @@ def extract_pdf(path: Path) -> list[dict]:
                         "gender": values.get("GIỚI TÍNH", ""),
                         "position": values.get("CHỨC DANH", ""),
                         "department": normalize_department(values.get("PHÒNG BAN", "")),
+                        "birth_date": birth_date,
+                        "marital_status": marital_status,
                         "greeting": build_greeting(
                             full_name,
                             values.get("GIỚI TÍNH", ""),
@@ -141,6 +158,8 @@ def extract_pdf(path: Path) -> list[dict]:
                     "gender": "",
                     "position": "",
                     "department": "",
+                    "birth_date": "",
+                    "marital_status": "",
                     "greeting": "",
                     "source_file": path.name,
                     "source_page": page_number,
@@ -260,6 +279,8 @@ def write_database(db_path: Path, employees: list[dict]) -> None:
                 gender TEXT,
                 position TEXT,
                 department TEXT,
+                birth_date TEXT,
+                marital_status TEXT,
                 greeting TEXT,
                 source_file TEXT,
                 source_page INTEGER,
@@ -284,17 +305,21 @@ def write_database(db_path: Path, employees: list[dict]) -> None:
                 gender,
                 position,
                 department,
+                birth_date,
+                marital_status,
                 greeting,
                 source_file,
                 source_page,
                 imported_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(employee_id) DO UPDATE SET
                 full_name = excluded.full_name,
                 gender = excluded.gender,
                 position = excluded.position,
                 department = excluded.department,
+                birth_date = excluded.birth_date,
+                marital_status = excluded.marital_status,
                 greeting = excluded.greeting,
                 source_file = excluded.source_file,
                 source_page = excluded.source_page,
@@ -307,6 +332,8 @@ def write_database(db_path: Path, employees: list[dict]) -> None:
                     item.get("gender", ""),
                     item.get("position", ""),
                     item.get("department", ""),
+                    item.get("birth_date", ""),
+                    item.get("marital_status", ""),
                     item.get("greeting", ""),
                     item["source_file"],
                     item["source_page"],

@@ -17,7 +17,7 @@ from fastapi import HTTPException, Request
 
 from src.api import config
 from src.api.schemas import QueryRequest
-from src.integrations.gmail_sender import parse_email_send_command
+from src.integrations.gmail_sender import try_parse_email_send_command
 
 
 def normalize_session_id(session_id: str) -> str:
@@ -114,7 +114,11 @@ def normalize_query_cache_text(value: str) -> str:
 def query_cache_key(req: QueryRequest, *, snapshot_version: str = "") -> Optional[str]:
     if config.QUERY_RESPONSE_CACHE_SIZE <= 0 or req.mode not in {"mkac", "mes"}:
         return None
-    if parse_email_send_command(req.question) is not None:
+    if try_parse_email_send_command(req.question) is not None:
+        return None
+    # Câu follow-up ("phòng này", "còn X thì sao"...) có đáp án phụ thuộc
+    # conversation_context — cache theo câu chữ sẽ trả nhầm ngữ cảnh người khác.
+    if is_followup_question(req.question):
         return None
     # TTL áp dụng theo mode: MES dùng TTL dài riêng vì snapshot tĩnh.
     ttl = (
@@ -166,6 +170,43 @@ def is_context_reference(value: str) -> bool:
         "ben tren",
     )
     return any(marker in normalized for marker in reference_markers)
+
+
+def is_followup_question(value: str) -> bool:
+    """Câu hỏi tham chiếu ngữ cảnh hội thoại (deictic/elliptic).
+
+    Trả lời của các câu này phụ thuộc ``conversation_context`` nên không được
+    cache theo câu chữ — hai người hỏi cùng câu "liệt kê thành viên phòng này"
+    trong hai ngữ cảnh khác nhau phải nhận hai câu trả lời khác nhau.
+    """
+    if is_context_reference(value):
+        return True
+    normalized = _normalize_reference_text(value)
+    followup_markers = (
+        "phong nay",
+        "phong do",
+        "phong ban nay",
+        "phong ban do",
+        "bo phan nay",
+        "bo phan do",
+        "thi sao",
+        "cai nay",
+        "cai do",
+        "cai kia",
+        "nguoi nay",
+        "nguoi do",
+        "anh ay",
+        "chi ay",
+        "ong ay",
+        "ba ay",
+        "lot nay",
+        "lot do",
+        "san pham nay",
+        "san pham do",
+        "ma hang nay",
+        "ma hang do",
+    )
+    return any(marker in normalized for marker in followup_markers)
 
 
 def latest_assistant_context(

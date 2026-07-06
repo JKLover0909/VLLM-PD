@@ -112,6 +112,14 @@ def parse_email_send_command(question: str) -> EmailSendCommand | None:
     )
 
 
+def try_parse_email_send_command(question: str) -> EmailSendCommand | None:
+    """Parse email commands for passive checks without turning false positives into errors."""
+    try:
+        return parse_email_send_command(question)
+    except GmailSenderError:
+        return None
+
+
 def _extract_explicit_body(text_without_email: str) -> str:
     """Extract literal email content from commands like 'với nội dung: ...'."""
     body_markers = (

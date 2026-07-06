@@ -19,6 +19,8 @@ def employee_directory(tmp_path: Path) -> EmployeeDirectory:
                 gender TEXT,
                 position TEXT,
                 department TEXT,
+                birth_date TEXT,
+                marital_status TEXT,
                 greeting TEXT
             )
             """
@@ -26,15 +28,16 @@ def employee_directory(tmp_path: Path) -> EmployeeDirectory:
         connection.executemany(
             """
             INSERT INTO employees (
-                employee_id, full_name, gender, position, department, greeting
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                employee_id, full_name, gender, position, department,
+                birth_date, marital_status, greeting
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                ("000001", "Nguyễn Minh Tiến", "Nam", "Trưởng phòng", "AGV", ""),
-                ("000002", "Trần Đức Hải", "Nam", "Phó phòng", "AGV", ""),
-                ("000003", "Vũ Minh Hoàng", "Nam", "Kỹ sư", "AI", ""),
-                ("000004", "Vũ Minh Đức", "Nam", "Trưởng phòng", "R&D S", ""),
-                ("000005", "Nguyễn Thị Thu Hương", "Nữ", "Nhân viên", "Kho", ""),
+                ("000001", "Nguyễn Minh Tiến", "Nam", "Trưởng phòng", "AGV", "03/06/1989", "", ""),
+                ("000002", "Trần Đức Hải", "Nam", "Phó phòng", "AGV", "03/02/1993", "", ""),
+                ("000003", "Vũ Minh Hoàng", "Nam", "Kỹ sư", "AI", "12/06/2002", "", ""),
+                ("000004", "Vũ Minh Đức", "Nam", "Trưởng phòng", "R&D S", "30/09/1993", "", ""),
+                ("000005", "Nguyễn Thị Thu Hương", "Nữ", "Nhân viên", "Kho", "03/12/1992", "Đã kết hôn", ""),
             ],
         )
     return EmployeeDirectory(db_path)

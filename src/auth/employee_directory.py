@@ -28,6 +28,8 @@ class EmployeeRecord(TypedDict):
     gender: str
     position: str
     department: str
+    birth_date: str
+    marital_status: str
     greeting: str
     department_size: int
     department_heads: list[str]
@@ -51,6 +53,8 @@ class EmployeeDirectory:
                 "gender": "",
                 "position": "",
                 "department": "",
+                "birth_date": "",
+                "marital_status": "",
                 "greeting": "Chào mừng đến với hệ thống Meibook,",
                 "department_size": 0,
                 "department_heads": [],
@@ -62,7 +66,8 @@ class EmployeeDirectory:
         with sqlite3.connect(self.db_path) as connection:
             row = connection.execute(
                 """
-                SELECT employee_id, full_name, gender, position, department, greeting
+                SELECT employee_id, full_name, gender, position, department,
+                       birth_date, marital_status, greeting
                 FROM employees
                 WHERE employee_id = ?
                 """,
@@ -77,7 +82,9 @@ class EmployeeDirectory:
             "gender": row[2] or "",
             "position": row[3] or "",
             "department": row[4] or "",
-            "greeting": row[5] or "",
+            "birth_date": row[5] or "",
+            "marital_status": row[6] or "",
+            "greeting": row[7] or "",
             "department_size": 0,
             "department_heads": [],
             "department_deputies": [],
@@ -164,6 +171,7 @@ class EmployeeDirectory:
         question: str,
         current_department: str = "",
         language: str = "vi",
+        conversation_context: Optional[list[dict[str, Any]]] = None,
     ) -> Optional[str]:
         """Answer structured HR questions directly from the employee database."""
         if not self.db_path.is_file():
@@ -171,6 +179,14 @@ class EmployeeDirectory:
 
         normalized_question = normalize_text(question)
         departments = self._mentioned_departments(question, current_department)
+        # Câu nối tiếp kiểu "liệt kê thành viên phòng này" không nêu tên phòng —
+        # lấy phòng từ lượt hội thoại gần nhất có nhắc tới một phòng ban.
+        if (
+            not departments
+            and conversation_context
+            and self._question_references_prior_department(normalized_question)
+        ):
+            departments = self.departments_from_context(conversation_context)
 
         if self._question_requests_company_headcount(normalized_question, question):
             return self._format_company_headcount(language)
@@ -210,7 +226,16 @@ class EmployeeDirectory:
             return []
 
         normalized_question = normalize_text(question)
-        if not self._question_requests_person_identity(normalized_question):
+        has_japanese_person_marker = bool(
+            re.search(
+                r"(部署|部門|所属|役職|職位|社員番号|従業員番号|どの|どこ|誰|同じ)",
+                question or "",
+            )
+        )
+        if (
+            not self._question_requests_person_identity(normalized_question)
+            and not has_japanese_person_marker
+        ):
             return []
         return self.people_context_for_text(question)
 
@@ -306,6 +331,24 @@ class EmployeeDirectory:
                 """
             ).fetchall()
         return [{"department": department, "size": int(size or 0)} for department, size in rows]
+
+    def departments_from_context(
+        self,
+        conversation_context: list[dict[str, Any]],
+    ) -> list[str]:
+        """Resolve department references ("phòng này") from recent chat turns.
+
+        Scan newest-first so "phòng này" binds to the department discussed most
+        recently, not an older one earlier in the conversation.
+        """
+        for item in reversed(conversation_context or []):
+            content = str(item.get("content") or "")
+            if not content.strip():
+                continue
+            departments = self._mentioned_departments(content)
+            if departments:
+                return departments
+        return []
 
     def _format_company_headcount(self, language: str) -> str:
         return employee_answers.format_company_headcount(self.count(), language)
@@ -403,6 +446,9 @@ class EmployeeDirectory:
     )
     _question_requests_person_identity = staticmethod(
         employee_intent.question_requests_person_identity
+    )
+    _question_references_prior_department = staticmethod(
+        employee_intent.question_references_prior_department
     )
 
     # employee_answers

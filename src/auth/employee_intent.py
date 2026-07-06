@@ -266,9 +266,41 @@ def question_requests_person_identity(normalized_question: str) -> bool:
         # "thuộc ... nào"/"làm ... nào" (vd "phòng ban của X là gì?").
         "phong ban",
         "bo phan",
+        # Thuộc tính cá nhân có trong danh bạ (năm sinh, hôn nhân, giới tính).
+        "nam sinh",
+        "ngay sinh",
+        "sinh nam",
+        "sinh ngay",
+        "bao nhieu tuoi",
+        "tuoi bao nhieu",
+        "hon nhan",
+        "ket hon",
+        "gioi tinh",
+        # Câu nối tiếp elliptic "còn X thì sao?" — chỉ trả lời khi câu thật sự
+        # chứa tên một nhân viên trong danh bạ, nên keyword rộng vẫn an toàn.
+        "thi sao",
         "who is",
         "which department",
         "position",
         "role",
+        "date of birth",
+        "birthday",
     }
     return any(keyword in normalized_question for keyword in keywords)
+
+
+def question_references_prior_department(normalized_question: str) -> bool:
+    """Detect deictic department references that need conversation context."""
+    markers = {
+        "phong nay",
+        "phong do",
+        "phong ban nay",
+        "phong ban do",
+        "bo phan nay",
+        "bo phan do",
+        "phong vua roi",
+        "phong ban vua roi",
+        "this department",
+        "that department",
+    }
+    return any(marker in normalized_question for marker in markers)
