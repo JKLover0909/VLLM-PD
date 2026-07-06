@@ -75,6 +75,38 @@ def format_department_counts(
     return "Số nhân sự của các phòng ban được hỏi là:\n" + "\n".join(lines)
 
 
+def format_department_comparison(
+    profiles: list[dict[str, Any]],
+    language: str,
+) -> Optional[str]:
+    if len(profiles) < 2:
+        return None
+
+    max_size = max(profile["size"] for profile in profiles)
+    largest = [profile for profile in profiles if profile["size"] == max_size]
+    counts_vi = ", ".join(
+        f"{profile['department']} có {profile['size']} người"
+        for profile in profiles
+    )
+    counts_ja = "、".join(
+        f"{profile['department']}は{profile['size']}人"
+        for profile in profiles
+    )
+
+    if len(largest) == len(profiles):
+        if language == "ja":
+            departments = "、".join(profile["department"] for profile in profiles)
+            return f"{counts_ja}です。{departments}の人数は同じです。"
+        departments = ", ".join(profile["department"] for profile in profiles)
+        return f"{counts_vi}. Các phòng {departments} có số nhân sự bằng nhau."
+
+    if language == "ja":
+        departments = "、".join(profile["department"] for profile in largest)
+        return f"{counts_ja}です。人数が多いのは{departments}です。"
+    departments = ", ".join(profile["department"] for profile in largest)
+    return f"{counts_vi}. Phòng đông hơn là {departments}."
+
+
 def format_department_leadership(
     profiles: list[dict[str, Any]],
     language: str,

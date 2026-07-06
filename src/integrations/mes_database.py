@@ -277,6 +277,9 @@ class MesDatabase:
             return self._lots_for_error(error_id)
         if error_id:
             return self._error_name(error_id)
+        product_rank = self._extract_product_rank_position(normalized, question)
+        if product_rank and self._is_ranked_product_error_question(normalized, question):
+            return self._ranked_error_product(product_rank)
         if self._is_highest_product_error_question(normalized):
             return self._highest_error_products(
                 limit=self._extract_top_limit(
@@ -1057,6 +1060,37 @@ class MesDatabase:
         )
         return self._result("highest_error_product", rows, answer, terms)
 
+    def _ranked_error_product(self, rank: int) -> MesDatabaseResult:
+        exclude_test_products = self._exclude_test_filter("product_id", None)
+        rows = self._fetch_all(
+            f"""
+            SELECT product_id, lot_count, error_record_count, total_error_qty
+            FROM v_product_error_summary
+            WHERE {exclude_test_products}
+              AND total_error_qty > 0
+            ORDER BY total_error_qty DESC, product_id
+            LIMIT 1 OFFSET ?
+            """,
+            (max(0, rank - 1),),
+        )
+        if not rows:
+            return self._result(
+                "ranked_error_product",
+                [],
+                f"MES snapshot chưa có mã hàng đứng thứ {rank} theo tổng lỗi.",
+            )
+        row = rows[0]
+        answer = (
+            f"Theo MES snapshot, mã hàng đứng thứ {rank} theo tổng lỗi là "
+            f"{row['product_id']} với {self._number(row['total_error_qty'])} lỗi."
+        )
+        return self._result(
+            "ranked_error_product",
+            rows,
+            answer,
+            (str(row["product_id"]), str(row["total_error_qty"])),
+        )
+
     def _lots_for_error(self, error_id: str) -> MesDatabaseResult:
         rows = self._fetch_all(
             f"""
@@ -1513,6 +1547,76 @@ class MesDatabase:
             )
         )
         return has_product and MesDatabase._has_error_marker(normalized) and has_maximum
+
+    @staticmethod
+    def _is_ranked_product_error_question(normalized: str, original_question: str = "") -> bool:
+        has_product = any(
+            marker in normalized
+            for marker in (
+                "san pham",
+                "ma hang",
+                "product code",
+                "product id",
+                "part number",
+                "item code",
+            )
+        ) or bool(re.search(r"(品番|製品|製品コード)", original_question or ""))
+        return has_product and MesDatabase._has_error_marker(normalized)
+
+    @staticmethod
+    def _extract_product_rank_position(
+        normalized: str,
+        original_question: str = "",
+        maximum: int = 50,
+    ) -> int | None:
+        rank_words = {
+            "mot": 1,
+            "nhat": 1,
+            "hai": 2,
+            "ba": 3,
+            "bon": 4,
+            "tu": 4,
+            "nam": 5,
+            "sau": 6,
+            "bay": 7,
+            "tam": 8,
+            "chin": 9,
+            "muoi": 10,
+            "one": 1,
+            "first": 1,
+            "two": 2,
+            "second": 2,
+            "three": 3,
+            "third": 3,
+            "four": 4,
+            "fourth": 4,
+            "five": 5,
+            "fifth": 5,
+        }
+        match = re.search(
+            r"\b(?:dung\s+)?thu\s+(\d+)\b|\b(?:rank|ranking|position)\s+(\d+)\b|\b(\d+)(?:st|nd|rd|th)\b",
+            normalized,
+        )
+        if match:
+            for group in match.groups():
+                if group:
+                    return max(1, min(maximum, int(group)))
+        word_match = re.search(
+            r"\b(?:dung\s+)?thu\s+(mot|nhat|hai|ba|bon|tu|nam|sau|bay|tam|chin|muoi)\b|\b(second|third|fourth|fifth|first)\b",
+            normalized,
+        )
+        if word_match:
+            for group in word_match.groups():
+                if group:
+                    return rank_words.get(group)
+        jp_match = re.search(r"(\d+)\s*番目|第\s*(\d+)", original_question or "")
+        if jp_match:
+            for group in jp_match.groups():
+                if group:
+                    return max(1, min(maximum, int(group)))
+        if re.search(r"(二番目|2番目|第2)", original_question or ""):
+            return 2
+        return None
 
     @staticmethod
     def _asks_product_lot_count(normalized: str) -> bool:

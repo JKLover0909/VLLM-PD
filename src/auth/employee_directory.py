@@ -197,6 +197,20 @@ class EmployeeDirectory:
         if self._question_requests_largest_department(normalized_question, question):
             return self._format_largest_departments(language)
 
+        if self._question_requests_department_comparison(normalized_question, question):
+            context_departments = (
+                self.departments_from_context(conversation_context)
+                if conversation_context
+                else []
+            )
+            for department in context_departments:
+                if department not in departments:
+                    departments.append(department)
+            if len(departments) < 2:
+                return None
+            profiles = [self.department_profile(department) for department in departments]
+            return self._format_department_comparison(profiles, language)
+
         if self._question_requests_department_count(normalized_question, question):
             if not departments:
                 return None
@@ -449,6 +463,9 @@ class EmployeeDirectory:
     _question_requests_largest_department = staticmethod(
         employee_intent.question_requests_largest_department
     )
+    _question_requests_department_comparison = staticmethod(
+        employee_intent.question_requests_department_comparison
+    )
     _question_requests_department_leadership = staticmethod(
         employee_intent.question_requests_department_leadership
     )
@@ -464,6 +481,9 @@ class EmployeeDirectory:
 
     # employee_answers
     _format_department_counts = staticmethod(employee_answers.format_department_counts)
+    _format_department_comparison = staticmethod(
+        employee_answers.format_department_comparison
+    )
     _format_department_leadership = staticmethod(
         employee_answers.format_department_leadership
     )

@@ -74,6 +74,24 @@ def test_hr_structured_question_uses_employee_database(employee_directory):
     )
 
 
+def test_hr_department_comparison_uses_recent_context(employee_directory):
+    answer = employee_directory.structured_answer_for_question(
+        "So với phòng AGV thì phòng nào đông hơn?",
+        language="vi",
+        conversation_context=[
+            {
+                "role": "assistant",
+                "content": "Phòng AI hiện có 1 người.",
+            }
+        ],
+    )
+
+    assert answer is not None
+    assert "AGV có 2 người" in answer
+    assert "AI có 1 người" in answer
+    assert "Phòng đông hơn là AGV" in answer
+
+
 def test_hr_policy_question_falls_back_to_rag(employee_directory):
     assert (
         employee_directory.structured_answer_for_question(

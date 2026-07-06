@@ -594,7 +594,7 @@ async function streamQuery(payload, onEvent, signal) {
   }
 }
 
-function buildConversationContext(messages, limit = 6) {
+function buildConversationContext(messages, limit = 16) {
   return messages
     .filter((message) => message.role === "user" || message.role === "assistant")
     .filter((message) => message.content?.trim())

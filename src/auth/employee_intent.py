@@ -203,6 +203,35 @@ def question_requests_largest_department(
     )
 
 
+def question_requests_department_comparison(
+    normalized_question: str,
+    original_question: str,
+) -> bool:
+    markers = {
+        "so voi",
+        "so sanh",
+        "dong hon",
+        "nhieu nguoi hon",
+        "nhieu nhan su hon",
+        "it nguoi hon",
+        "it nhan su hon",
+        "phong nao dong hon",
+        "phong nao nhieu nguoi hon",
+        "bo phan nao dong hon",
+        "compare",
+        "comparison",
+        "which department has more",
+        "more employees",
+        "larger headcount",
+    }
+    if any(marker in normalized_question for marker in markers):
+        return True
+    return bool(
+        re.search(r"(比較|比べ|どちら|どの部署).*(多い|人数|社員数|従業員数)", original_question or "")
+        or re.search(r"(多い|人数|社員数|従業員数).*(比較|比べ|どちら)", original_question or "")
+    )
+
+
 def question_requests_department_leadership(
     normalized_question: str,
     original_question: str,

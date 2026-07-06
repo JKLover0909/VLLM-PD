@@ -446,9 +446,120 @@ def latest_lot_id_in_context(conversation_context: list[dict[str, Any]]) -> str:
     return ""
 
 
+PRODUCT_CONTEXT_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9])(?:[A-Za-z][A-Za-z0-9]*(?:[_-][A-Za-z0-9]+)+|\d{4}-\d{4})(?![A-Za-z0-9])"
+)
+
+
+def product_ids_in_text(text: str) -> list[str]:
+    products: list[str] = []
+    for match in PRODUCT_CONTEXT_PATTERN.finditer(text or ""):
+        candidate = match.group(0)
+        if MesDatabase.LOT_PATTERN.fullmatch(candidate):
+            continue
+        if candidate not in products:
+            products.append(candidate)
+    return products
+
+
+def latest_product_id_in_context(conversation_context: list[dict[str, Any]]) -> str:
+    for item in reversed(conversation_context or []):
+        content = str(item.get("content") or "")
+        products = product_ids_in_text(content)
+        if products:
+            return products[0]
+    return ""
+
+
+def latest_mes_context_kind(conversation_context: list[dict[str, Any]]) -> str:
+    for item in reversed(conversation_context or []):
+        content = str(item.get("content") or "")
+        normalized = normalize_text(content)
+        if product_ids_in_text(content) and any(
+            marker in normalized
+            for marker in ("ma hang", "san pham", "product", "品番", "製品")
+        ):
+            return "product"
+        if MesDatabase.LOT_PATTERN.search(content):
+            return "lot"
+    return ""
+
+
+def question_uses_mes_product_compare_context(question: str) -> bool:
+    normalized = normalize_text(question)
+    return any(
+        marker in normalized
+        for marker in ("so voi", "so sanh", "compare", "comparison", "thi sao")
+    ) or any(marker in (question or "") for marker in ("比較", "比べ", "それと比べ"))
+
+
+def mes_rank_position_from_question(question: str) -> int | None:
+    normalized = normalize_text(question)
+    match = re.search(r"\b(?:dung\s+)?thu\s+(\d+)\b|\b(\d+)(?:st|nd|rd|th)\b", normalized)
+    if match:
+        for group in match.groups():
+            if group:
+                return int(group)
+    word_match = re.search(
+        r"\b(?:dung\s+)?thu\s+(hai|ba|bon|tu|nam|sau|bay|tam|chin|muoi)\b|\b(second|third|fourth|fifth)\b",
+        normalized,
+    )
+    if word_match:
+        ranks = {
+            "hai": 2,
+            "second": 2,
+            "ba": 3,
+            "third": 3,
+            "bon": 4,
+            "tu": 4,
+            "fourth": 4,
+            "nam": 5,
+            "fifth": 5,
+            "sau": 6,
+            "bay": 7,
+            "tam": 8,
+            "chin": 9,
+            "muoi": 10,
+        }
+        for group in word_match.groups():
+            if group:
+                return ranks.get(group)
+    jp_match = re.search(r"(\d+)\s*番目|第\s*(\d+)", question or "")
+    if jp_match:
+        for group in jp_match.groups():
+            if group:
+                return int(group)
+    if re.search(r"(二番目|2番目|第2)", question or ""):
+        return 2
+    return None
+
+
 def resolve_mes_context_question(req: QueryRequest, question: str) -> str:
-    """Append the latest Lot ID for simple pronoun-based MES follow-ups."""
-    if req.mode != "mes" or not question_uses_mes_lot_context_reference(question):
+    """Rewrite short MES follow-ups using recent structured chat context."""
+    if req.mode != "mes":
+        return question
+
+    current_products = product_ids_in_text(question)
+    if (
+        question_uses_mes_product_compare_context(question)
+        and len(current_products) == 1
+    ):
+        previous_product = latest_product_id_in_context(req.conversation_context)
+        if previous_product and previous_product not in current_products:
+            rewritten = (
+                f"So sánh tổng lỗi giữa sản phẩm {previous_product} "
+                f"và {current_products[0]}"
+            )
+            logger.info("Resolved MES product comparison: %r -> %r", question, rewritten)
+            return rewritten
+
+    rank = mes_rank_position_from_question(question)
+    if rank and latest_mes_context_kind(req.conversation_context) == "product":
+        rewritten = f"Mã hàng có tổng lỗi đứng thứ {rank} là gì?"
+        logger.info("Resolved MES rank follow-up: %r -> %r", question, rewritten)
+        return rewritten
+
+    if not question_uses_mes_lot_context_reference(question):
         return question
     if MesDatabase.LOT_PATTERN.search(question or ""):
         return question

@@ -202,6 +202,27 @@ def test_product_lot_count_and_average_are_deterministic(mes_database):
     assert average.rows[0]["average_error_qty_per_lot"] == 60
 
 
+def test_ranked_product_follow_up_can_be_answered_deterministically(mes_database):
+    result = mes_database.query_question("Mã hàng có tổng lỗi đứng thứ 2 là gì?")
+
+    assert result is not None
+    assert result.intent == "ranked_error_product"
+    assert result.rows[0]["product_id"] == "PRODUCT-A"
+    assert result.rows[0]["total_error_qty"] == 60
+    assert "PRODUCT-A" in result.fallback_answer
+
+
+def test_product_comparison_question_is_deterministic(mes_database):
+    result = mes_database.query_question(
+        "So sánh tổng lỗi giữa sản phẩm PRODUCT-A và PRODUCT-B"
+    )
+
+    assert result is not None
+    assert result.intent == "product_error_comparison"
+    assert "PRODUCT-B" in result.fallback_answer
+    assert "PRODUCT-A" in result.fallback_answer
+
+
 def test_error_name_questions_route_by_vietnamese_name(mes_database):
     name = mes_database.query_question(
         'Lỗi "Ngắn mạch" thuộc loại lỗi gì, xảy ra ở process nào?'
