@@ -1014,7 +1014,11 @@ class RAGPipeline:
             )
             return results, images, "mkac"
 
-        results = self._retrieve(session_id, question, 10)
+        results = self._retrieve(
+            session_id,
+            question,
+            env_int("RESEARCH_TOP_K", 5, minimum=3, maximum=8),
+        )
         images = self._session_image_paths(session_id)
         if self._question_needs_vision(question):
             images = list(
@@ -1269,8 +1273,6 @@ class RAGPipeline:
         mode: str = "mkac",
     ) -> str:
         """Ánh xạ lựa chọn từ UI sang model logic của LiteLLM."""
-        if mode == "research":
-            return "grok-model"
         if has_images and model in {"auto", "grok"}:
             return "grok-model"
         if has_images:
@@ -1297,7 +1299,7 @@ class RAGPipeline:
         has_images: bool,
     ) -> int:
         if mode == "research":
-            return env_int("RESEARCH_MAX_TOKENS", 1800, minimum=512, maximum=2400)
+            return env_int("RESEARCH_MAX_TOKENS", 768, minimum=384, maximum=1200)
         if mode != "mkac":
             return self.max_tokens
         if answer_scope == "general":

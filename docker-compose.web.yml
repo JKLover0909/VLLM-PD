@@ -46,6 +46,8 @@ services:
       MES_DATABASE_MAX_TOKENS: "384"
       MES_SQL_PLANNER_MAX_TOKENS: "1200"
       MES_SQL_ANSWER_MAX_TOKENS: "384"
+      RESEARCH_TOP_K: "5"
+      RESEARCH_MAX_TOKENS: "768"
     ports:
       - "${MACHINE2_API_PORT:-8001}:8001"
     volumes:

@@ -81,7 +81,7 @@ const QUICK_PROMPTS = {
   },
 };
 
-const ACTIVE_MODE_KEYS = ["mkac", "mes"];
+const ACTIVE_MODE_KEYS = ["mkac", "mes", "research"];
 
 const MODE_OPTIONS = {
   mkac: {
@@ -149,7 +149,7 @@ const UI_TEXT = {
       },
       research: {
         label: "Nghiên cứu tài liệu",
-        shortLabel: "Nghiên cứu",
+        shortLabel: "NC",
         title: "Nghiên cứu tài liệu",
         emptyReady: "Sẵn sàng nghiên cứu tài liệu đã index trong phiên này.",
         empty: "Tải tài liệu lên để bắt đầu nghiên cứu.",
@@ -157,7 +157,7 @@ const UI_TEXT = {
         inputLabel: "Câu hỏi nghiên cứu",
         placeholderReady: "Nhập chủ đề nghiên cứu...",
         placeholderEmpty: "Hãy tải tài liệu lên trước khi đặt câu hỏi...",
-        lockedModel: "Chế độ nghiên cứu đang tạm ẩn",
+        lockedModel: "Local Model",
       },
     },
     theme: {
@@ -324,7 +324,7 @@ const UI_TEXT = {
         inputLabel: "調査質問",
         placeholderReady: "調査テーマを入力してください...",
         placeholderEmpty: "質問する前に資料をアップロードしてください...",
-        lockedModel: "資料調査モードは一時的に非表示です",
+        lockedModel: "ローカルモデル",
       },
     },
     theme: {
@@ -549,6 +549,11 @@ async function createSession() {
 
 async function getResearchDemoStatus() {
   const response = await api("/research/demo");
+  return response.json();
+}
+
+async function getSessionInfo(sessionId) {
+  const response = await api(`/sessions/${sessionId}`);
   return response.json();
 }
 
@@ -998,17 +1003,21 @@ function App() {
           healthResponse,
           modelResponse,
           mkacResponse,
+          researchDemoResponse,
         ] = await Promise.all([
           api("/health"),
           api(`/models?language=${encodeURIComponent(language)}`),
           api("/knowledge/mkac/status"),
+          api("/research/demo"),
         ]);
         const healthData = await healthResponse.json();
         const modelData = await modelResponse.json();
         const mkacData = await mkacResponse.json();
+        const researchDemoData = await researchDemoResponse.json();
 
         setModels(modelData.models || []);
         setMkacStatus(mkacData);
+        setResearchDemo(researchDemoData);
         setMesStatus(healthData.mes_database || {});
         setModel((current) => {
           const nextDefault = modelData.default || "auto";
@@ -1112,6 +1121,27 @@ function App() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function syncResearchFiles() {
+      if (mode !== "research" || !sessionId) return;
+      try {
+        const info = await getSessionInfo(sessionId);
+        if (cancelled) return;
+        setFiles(info.files || []);
+      } catch {
+        if (cancelled) return;
+        setFiles([]);
+      }
+    }
+
+    syncResearchFiles();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, sessionId]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -1262,11 +1292,38 @@ function App() {
     }));
     setModeMessages(workspaceMode, [], uiLanguage);
     setModeSources(workspaceMode, [], uiLanguage);
+    if (workspaceMode === "research" && uiLanguage === language) {
+      setFiles([]);
+      setPendingFiles([]);
+      setUploadSummary(null);
+    }
     setSidebarOpen(false);
   }
 
   function useResearchDemoSession() {
-    setError(t("common.demoNotIndexed"));
+    if (!researchDemo.ready || !researchDemo.session_id) {
+      setError(t("common.demoNotIndexed"));
+      return;
+    }
+    const scopedKey = workspaceKey("research", language);
+    setSessionIds((current) => ({
+      ...current,
+      [scopedKey]: researchDemo.session_id,
+    }));
+    localStorage.setItem(sessionStorageKey("research", language), researchDemo.session_id);
+    setSessionTitles((current) => ({
+      ...current,
+      [scopedKey]: t("defaultTitles.researchDemo"),
+    }));
+    persistSessionTitle(researchDemo.session_id, t("defaultTitles.researchDemo"));
+    setModeMessages("research", [], language);
+    setModeSources("research", [], language);
+    setFiles(researchDemo.files || researchDemo.source_files || []);
+    setPendingFiles([]);
+    setUploadSummary(null);
+    setError("");
+    setSourcePanelOpen(false);
+    setSidebarOpen(false);
   }
 
   function switchMode(nextMode) {
@@ -1739,8 +1796,11 @@ function App() {
             <div className="session-strip">
               <div>
                 <span>{t("common.workSession")}</span>
-                <strong className="session-title" title={sessionTitles.research}>
-                  {sessionTitles.research}
+                <strong
+                  className="session-title"
+                  title={sessionTitles[currentWorkspaceKey]}
+                >
+                  {sessionTitles[currentWorkspaceKey]}
                 </strong>
               </div>
               <button
@@ -1948,7 +2008,7 @@ function App() {
             </div>
 
             {mode === "research" && (
-              <div className="model-select locked accent-grok" title={modeText("research").lockedModel}>
+              <div className="model-select locked accent-local" title={modeText("research").lockedModel}>
                 <Bot size={17} />
                 <span className="model-select-trigger">
                   <span>{selectedModel?.name || modeText("research").lockedModel}</span>

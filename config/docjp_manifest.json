@@ -1,0 +1,557 @@
+{
+  "knowledge_base": "DocJP",
+  "organization": {
+    "short_name": "MKAC",
+    "legal_name_ja": "メイコーオートメーション株式会社",
+    "legal_name_en": "Meiko Automation Joint Stock Company"
+  },
+  "documents": [
+    {
+      "filename": "【情報】(Meiko-UC)WebexCalling_固定電話ユーザ操作マニュアル_Rev1.0.pptx_20240119.pptx",
+      "title": "【情報】(Meiko-UC)WebexCalling_固定電話ユーザ操作マニュアル_Rev1.0_20240119",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】(連絡文書)IP固定電話の変更について_20250722.pdf",
+      "title": "【情報】(連絡文書)IP固定電話の変更について_20250722",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】(連絡文書)LINEWorksAiNote導入について_20260306.pdf",
+      "title": "【情報】(連絡文書)LINEWorksAiNote導入について_20260306",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】(連絡文書)データ書き込み制御について_20250312.pdf",
+      "title": "【情報】(連絡文書)データ書き込み制御について_20250312",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】03.貸出機器管理システム.pdf",
+      "title": "【情報】03.貸出機器管理システム",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】20251201連絡書_生成AIの利用について.pdf",
+      "title": "【情報】20251201連絡書_生成AIの利用について",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】AiNoteかんたんマニュアル.pdf",
+      "title": "【情報】AiNoteかんたんマニュアル",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】GO-GLOBALのアカウント申請・管理方法について.pdf",
+      "title": "【情報】GO-GLOBALのアカウント申請・管理方法について",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】HENNGE Email DLP.docx",
+      "title": "【情報】HENNGE Email DLP",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】HENNGE One ワンタイムパスワード.docx",
+      "title": "【情報】HENNGE One ワンタイムパスワード",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】LINE WORKS利用方法 rev1.2.xlsx",
+      "title": "【情報】LINE WORKS利用方法 rev1.2",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】Lineworks_Q&A（導入）.xlsx",
+      "title": "【情報】Lineworks_Q&A（導入）",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】PhoneAppli(Web電話帳)の使用方法について.pdf",
+      "title": "【情報】PhoneAppli(Web電話帳)の使用方法について",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】TeamsのWeb会議作成手順.pdf",
+      "title": "【情報】TeamsのWeb会議作成手順",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】WebEｘCallingシステムの利用手順について.pdf",
+      "title": "【情報】WebEｘCallingシステムの利用手順について",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】Web会議システム【Teams】利用手順.pdf",
+      "title": "【情報】Web会議システム【Teams】利用手順",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】Wi-Fiﾃｻﾞﾘﾝｸﾞ手順.docx",
+      "title": "【情報】Wi-Fiﾃｻﾞﾘﾝｸﾞ手順",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】usbﾃｻﾞﾘﾝｸﾞ.docx",
+      "title": "【情報】usbﾃｻﾞﾘﾝｸﾞ",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】①スマホアプリ初期設定.xlsx",
+      "title": "【情報】①スマホアプリ初期設定",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】②VPN接続方法.xlsx",
+      "title": "【情報】②VPN接続方法",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】ネットワークに繋がっている複合機・プリンタの設定方法.pdf",
+      "title": "【情報】ネットワークに繋がっている複合機・プリンタの設定方法",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】ファイルサーバ・ノーツDBアクセス権限の申請について.pdf",
+      "title": "【情報】ファイルサーバ・ノーツDBアクセス権限の申請について",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】ファイルサーバー(192.1.1.33、192.1.1.34)ファイル復旧操作.pdf",
+      "title": "【情報】ファイルサーバー(192.1.1.33、192.1.1.34)ファイル復旧操作",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】予約システム「Zoom会議」について.pdf",
+      "title": "【情報】予約システム「Zoom会議」について",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】使用禁止と判断したクラウドサービス.pdf",
+      "title": "【情報】使用禁止と判断したクラウドサービス",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】取引先との間でサイズの大きいファイルを受け渡すサービス HENNGE Secure Transfer.pdf",
+      "title": "【情報】取引先との間でサイズの大きいファイルを受け渡すサービス HENNGE Secure Transfer",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】設備機器と外部業者接続の注意喚起について.pdf",
+      "title": "【情報】設備機器と外部業者接続の注意喚起について",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】迷惑メールが届いた場合の対応.pdf",
+      "title": "【情報】迷惑メールが届いた場合の対応",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】連絡書_Copilotの利用について_20260205.pdf",
+      "title": "【情報】連絡書_Copilotの利用について_20260205",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】（１） 配布制限ソフト.pdf",
+      "title": "【情報】（１） 配布制限ソフト",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】（２） 管理制限ソフト.pdf",
+      "title": "【情報】（２） 管理制限ソフト",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【情報】（４） 使用禁止と判断されたソフト.pdf",
+      "title": "【情報】（４） 使用禁止と判断されたソフト",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】0_FAQ_app_20231020.pdf",
+      "title": "【法務】0_FAQ_app_20231020",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】0_anpi_app_guide_20250325.pdf",
+      "title": "【法務】0_anpi_app_guide_20250325",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】0_安否確認サービスで出来る事と応答操作について_250916.pdf",
+      "title": "【法務】0_安否確認サービスで出来る事と応答操作について_250916",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】1-1.サービスへのログイン方法.pdf",
+      "title": "【法務】1-1.サービスへのログイン方法",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】2-1.メールアドレスの新規登録 - 方法A：ブラウザ画面からの登録.pdf",
+      "title": "【法務】2-1.メールアドレスの新規登録 - 方法A：ブラウザ画面からの登録",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】2-1.メールアドレスの新規登録 - 方法B_ スマートフォン・携帯電話からのメール送信による登録.pdf",
+      "title": "【法務】2-1.メールアドレスの新規登録 - 方法B_ スマートフォン・携帯電話からのメール送信による登録",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】2-2.メールアドレスの変更.pdf",
+      "title": "【法務】2-2.メールアドレスの変更",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】2-3.登録メールアドレスへの送達確認.pdf",
+      "title": "【法務】2-3.登録メールアドレスへの送達確認",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】2-4.ログインIDの取り寄せとパスワードの再発行.pdf",
+      "title": "【法務】2-4.ログインIDの取り寄せとパスワードの再発行",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】2-4.ログインIDの取り寄せ・パスワード再発行.pdf",
+      "title": "【法務】2-4.ログインIDの取り寄せ・パスワード再発行",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】2-5.初期設定した情報の変更：ログインIDの変更.pdf",
+      "title": "【法務】2-5.初期設定した情報の変更：ログインIDの変更",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】2-6.初期設定した情報の変更：パスワードの変更.pdf",
+      "title": "【法務】2-6.初期設定した情報の変更：パスワードの変更",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】2-7.居住地の変更.pdf",
+      "title": "【法務】2-7.居住地の変更",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】2-8.ユーザ情報の確認.pdf",
+      "title": "【法務】2-8.ユーザ情報の確認",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】3-1.安否確認・非常呼集にメールから応答する.pdf",
+      "title": "【法務】3-1.安否確認・非常呼集にメールから応答する",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】3-2.安否確認・非常呼集に画面からログインして応答する方法.pdf",
+      "title": "【法務】3-2.安否確認・非常呼集に画面からログインして応答する方法",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】3rdWATCH_ユーザマニュアル_第2版.pdf",
+      "title": "【法務】3rdWATCH_ユーザマニュアル_第2版",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】3rdWATCH_管理者マニュアル（管理機能）.pdf",
+      "title": "【法務】3rdWATCH_管理者マニュアル（管理機能）",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）.pdf",
+      "title": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】4-1.危機管理情報を画面で確認する.pdf",
+      "title": "【法務】4-1.危機管理情報を画面で確認する",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】4-2.天気予報メールの受信設定.pdf",
+      "title": "【法務】4-2.天気予報メールの受信設定",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】4-3.地震情報メールの受信設定.pdf",
+      "title": "【法務】4-3.地震情報メールの受信設定",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】4-4.鉄道運行情報メールの受信設定.pdf",
+      "title": "【法務】4-4.鉄道運行情報メールの受信設定",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】4-5.避難情報メールの受信設定.pdf",
+      "title": "【法務】4-5.避難情報メールの受信設定",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】4-6.情報メールの停止・配信設定の削除.pdf",
+      "title": "【法務】4-6.情報メールの停止・配信設定の削除",
+      "category": "information_systems",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】5-1.家族安否（オプション）：家族の連絡先登録と削除.pdf",
+      "title": "【法務】5-1.家族安否（オプション）：家族の連絡先登録と削除",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】5-2.家族安否（オプション）：家族掲示板への書き込み.pdf",
+      "title": "【法務】5-2.家族安否（オプション）：家族掲示板への書き込み",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】5-3.家族安否（オプション）：要請メールの送信.pdf",
+      "title": "【法務】5-3.家族安否（オプション）：要請メールの送信",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】5-4.家族安否（オプション）：家族の安否状況を所属組織に報告する.pdf",
+      "title": "【法務】5-4.家族安否（オプション）：家族の安否状況を所属組織に報告する",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】5-5.家族安否（オプション）：家族用のログインIDの取り寄せとパスワードの再発行.pdf",
+      "title": "【法務】5-5.家族安否（オプション）：家族用のログインIDの取り寄せとパスワードの再発行",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】6.補足：メール受信許可設定で指定するドメインと設定方法.pdf",
+      "title": "【法務】6.補足：メール受信許可設定で指定するドメインと設定方法",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】契約書の製本方法.pdf",
+      "title": "【法務】契約書の製本方法",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【法務】捺印管理システム＿トップページ.pdf",
+      "title": "【法務】捺印管理システム＿トップページ",
+      "category": "legal_compliance",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル.pdf",
+      "title": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル",
+      "category": "accounting",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル.pdf",
+      "title": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル",
+      "category": "accounting",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【経理】000_001_20260629_楽楽精算QA.pdf",
+      "title": "【経理】000_001_20260629_楽楽精算QA",
+      "category": "accounting",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【総務】V5101 別紙1 労働災害発生報告書Rev3_分析シート付.xlsx",
+      "title": "【総務】V5101 別紙1 労働災害発生報告書Rev3_分析シート付",
+      "category": "general_affairs",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【総務】V5101 別紙1 労働災害発生報告書〈速報 ・ 確定(見込み／最終)〉Rev4.xlsx",
+      "title": "【総務】V5101 別紙1 労働災害発生報告書〈速報 ・ 確定(見込み／最終)〉Rev4",
+      "category": "general_affairs",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【総務】●決裁権限基準表_結合_2025最新.xlsx",
+      "title": "【総務】●決裁権限基準表_結合_2025最新",
+      "category": "general_affairs",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【総務】事象の原因系究明_元データ.xlsx",
+      "title": "【総務】事象の原因系究明_元データ",
+      "category": "general_affairs",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【総務】作業服貸与依頼票_202601版.xlsx",
+      "title": "【総務】作業服貸与依頼票_202601版",
+      "category": "general_affairs",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【総務】作業靴出庫依頼票.xls",
+      "title": "【総務】作業靴出庫依頼票",
+      "category": "general_affairs",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【総務】元データ‗様式16号の3‗通勤災害用（療養給付たる療養の給付請求書）.pdf",
+      "title": "【総務】元データ‗様式16号の3‗通勤災害用（療養給付たる療養の給付請求書）",
+      "category": "general_affairs",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【総務】元データ‗様式第5号‗労災用（療養補償給付請求書）.pdf",
+      "title": "【総務】元データ‗様式第5号‗労災用（療養補償給付請求書）",
+      "category": "general_affairs",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【総務】共通在庫品出庫依頼票.xls",
+      "title": "【総務】共通在庫品出庫依頼票",
+      "category": "general_affairs",
+      "status": "active",
+      "access_level": "internal"
+    },
+    {
+      "filename": "【総務】廃棄物・有価物保管場所配置図.pdf",
+      "title": "【総務】廃棄物・有価物保管場所配置図",
+      "category": "general_affairs",
+      "status": "active",
+      "access_level": "internal"
+    }
+  ]
+}
+

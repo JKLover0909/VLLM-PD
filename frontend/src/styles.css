@@ -2352,6 +2352,10 @@ summary:focus-visible {
     min-width: 0;
   }
 
+  .workspace-header .model-select.locked {
+    display: none;
+  }
+
   .panel-toggle {
     flex: 0 0 auto;
   }
