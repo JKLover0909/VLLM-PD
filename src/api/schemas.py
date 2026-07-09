@@ -23,6 +23,10 @@ class QueryRequest(BaseModel):
     ui_language: Literal["vi", "ja"] = "vi"
     employee_id: Optional[str] = None
     conversation_context: List[Dict[str, Any]] = Field(default_factory=list)
+    # Research knowledge scope: one of the predefined topic ids in
+    # config/research_topics.json, or "all" for the whole DocJP corpus.
+    # None keeps the legacy per-session document behaviour.
+    research_topic: Optional[str] = None
 
 
 class QueryResponse(BaseModel):
@@ -49,6 +53,34 @@ class ResearchDemoResponse(BaseModel):
     num_files: int
     files: List[str]
     source_files: List[str]
+
+
+class ResearchTopic(BaseModel):
+    id: str
+    category: Optional[str] = None
+    label_vi: str
+    label_ja: str
+    short_label_vi: str = ""
+    short_label_ja: str = ""
+    description_vi: str = ""
+    description_ja: str = ""
+    icon: str = "file_text"
+    accent: str = "neutral"
+    ready: bool = False
+    num_files: int = 0
+    num_chunks: int = 0
+    files: List[str] = Field(default_factory=list)
+    quick_prompts_vi: List[str] = Field(default_factory=list)
+    quick_prompts_ja: List[str] = Field(default_factory=list)
+
+
+class ResearchTopicsResponse(BaseModel):
+    ready: bool
+    collection: str = ""
+    session_id: str = ""
+    default_topic: str = ""
+    allow_all: bool = True
+    topics: List[ResearchTopic] = Field(default_factory=list)
 
 
 class EmployeeAuthRequest(BaseModel):

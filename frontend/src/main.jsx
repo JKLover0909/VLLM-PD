@@ -110,6 +110,8 @@ const LEGACY_MODE_SESSION_STORAGE_KEYS = {
 };
 const SESSION_STORAGE_PREFIX = "meibook-session";
 const LEGACY_SESSION_STORAGE_KEY = "meibook-session";
+const RESEARCH_TOPIC_STORAGE_PREFIX = "meibook-research-topic";
+const LEGACY_RESEARCH_TOPIC_STORAGE_KEY = "meibook-research-topic";
 const SESSION_TITLE_STORAGE_KEY = "meibook-session-titles";
 const THEME_STORAGE_KEY = "meibook-theme";
 const LANGUAGE_STORAGE_KEY = "meibook-language";
@@ -150,14 +152,21 @@ const UI_TEXT = {
       research: {
         label: "Nghiên cứu tài liệu",
         shortLabel: "NC",
-        title: "Nghiên cứu tài liệu",
-        emptyReady: "Sẵn sàng nghiên cứu tài liệu đã index trong phiên này.",
-        empty: "Tải tài liệu lên để bắt đầu nghiên cứu.",
+        title: "Nghiên cứu tài liệu nội bộ",
+        emptyReady: "Sẵn sàng nghiên cứu trong nhóm tài liệu đã chọn.",
+        empty: "Chọn một nhóm tài liệu đã được index để bắt đầu. Kết quả sẽ chỉ dựa trên nhóm đã chọn.",
         metric: "Tài liệu",
         inputLabel: "Câu hỏi nghiên cứu",
-        placeholderReady: "Nhập chủ đề nghiên cứu...",
-        placeholderEmpty: "Hãy tải tài liệu lên trước khi đặt câu hỏi...",
+        placeholderReady: "Nhập câu hỏi nghiên cứu...",
+        placeholderEmpty: "Chọn nhóm tài liệu trước khi đặt câu hỏi...",
         lockedModel: "Local Model",
+        chooseTopic: "Chọn nhóm tài liệu",
+        changeTopic: "Đổi nhóm tài liệu",
+        scopeLabel: "Phạm vi: {topic}",
+        allTopics: "Tất cả tài liệu",
+        allTopicsDescription: "Tìm kiếm trên toàn bộ kho tài liệu DocJP, không giới hạn nhóm.",
+        topicNotReady: "Nhóm này chưa được index.",
+        documentsCount: "{count} tài liệu",
       },
     },
     theme: {
@@ -317,14 +326,21 @@ const UI_TEXT = {
       research: {
         label: "資料調査",
         shortLabel: "調査",
-        title: "資料調査",
-        emptyReady: "このセッションのインデックス済み資料を調査できます。",
-        empty: "調査を始めるには資料をアップロードしてください。",
+        title: "社内資料調査",
+        emptyReady: "選択した資料カテゴリ内で調査できます。",
+        empty: "インデックス済み資料カテゴリを選択してください。回答は選択したカテゴリ内の資料に基づきます。",
         metric: "資料",
         inputLabel: "調査質問",
-        placeholderReady: "調査テーマを入力してください...",
-        placeholderEmpty: "質問する前に資料をアップロードしてください...",
+        placeholderReady: "調査質問を入力してください...",
+        placeholderEmpty: "質問する前に資料カテゴリを選択してください...",
         lockedModel: "ローカルモデル",
+        chooseTopic: "資料カテゴリを選択",
+        changeTopic: "カテゴリを変更",
+        scopeLabel: "調査範囲: {topic}",
+        allTopics: "すべての資料",
+        allTopicsDescription: "カテゴリを限定せず、DocJP資料全体から検索します。",
+        topicNotReady: "このカテゴリはまだインデックスされていません。",
+        documentsCount: "{count}件の資料",
       },
     },
     theme: {
@@ -653,6 +669,10 @@ function sessionStorageKey(workspaceMode, language = "vi") {
   return `${SESSION_STORAGE_PREFIX}-${workspaceMode}-${language}`;
 }
 
+function researchTopicStorageKey(language = "vi") {
+  return `${RESEARCH_TOPIC_STORAGE_PREFIX}-${language}`;
+}
+
 function createLanguageScopedState(factory) {
   return ACTIVE_MODE_KEYS.reduce((state, workspaceMode) => {
     for (const item of LANGUAGE_OPTIONS) {
@@ -800,6 +820,26 @@ function App() {
     files: [],
     num_chunks: 0,
   });
+  const [researchTopics, setResearchTopics] = useState({
+    ready: false,
+    collection: "",
+    session_id: "",
+    default_topic: "",
+    allow_all: true,
+    topics: [],
+  });
+  const [researchTopicId, setResearchTopicId] = useState(() => {
+    try {
+      const language = storedLanguage();
+      return (
+        localStorage.getItem(researchTopicStorageKey(language)) ||
+        localStorage.getItem(LEGACY_RESEARCH_TOPIC_STORAGE_KEY) ||
+        ""
+      );
+    } catch {
+      return "";
+    }
+  });
   const [mesStatus, setMesStatus] = useState({
     available: false,
     lots: 0,
@@ -875,7 +915,8 @@ function App() {
   const sessionId = sessionIds[currentWorkspaceKey] || "";
   const messages = messagesByMode[currentWorkspaceKey] || [];
   const sources = sourcesByMode[currentWorkspaceKey] || [];
-  const researchReady = true;
+  const researchReady =
+    mode !== "research" || Boolean(researchTopicId && researchTopics.ready);
   const mkacAuthorized = (mode !== "mkac" && mode !== "mes") || Boolean(employee?.id && employee?.name);
   const canAsk =
     Boolean(question.trim()) &&
@@ -893,6 +934,15 @@ function App() {
   const latestSources = sources.length
     ? sources
     : latestAssistantMessage?.sources || [];
+
+  function researchQuickPrompts() {
+    const topic = selectedResearchTopic();
+    if (!topic) return [];
+    const prompts =
+      language === "ja" ? topic.quick_prompts_ja : topic.quick_prompts_vi;
+    if (prompts && prompts.length > 0) return prompts;
+    return quickPromptsFor("research", language);
+  }
 
   const getSuggestions = (text, currentMode, msgId) => {
     const config = quickAnswersConfig;
@@ -1004,20 +1054,35 @@ function App() {
           modelResponse,
           mkacResponse,
           researchDemoResponse,
+          researchTopicsResponse,
         ] = await Promise.all([
           api("/health"),
           api(`/models?language=${encodeURIComponent(language)}`),
           api("/knowledge/mkac/status"),
           api("/research/demo"),
+          api("/research/topics").catch(() => null),
         ]);
         const healthData = await healthResponse.json();
         const modelData = await modelResponse.json();
         const mkacData = await mkacResponse.json();
         const researchDemoData = await researchDemoResponse.json();
+        const researchTopicsData = researchTopicsResponse
+          ? await researchTopicsResponse.json().catch(() => null)
+          : null;
 
         setModels(modelData.models || []);
         setMkacStatus(mkacData);
         setResearchDemo(researchDemoData);
+        if (researchTopicsData) {
+          setResearchTopics(researchTopicsData);
+          const validIds = new Set([
+            ...(researchTopicsData.topics || []).map((topic) => topic.id),
+            ...(researchTopicsData.allow_all ? ["all"] : []),
+          ]);
+          setResearchTopicId((current) =>
+            current && validIds.has(current) ? current : "",
+          );
+        }
         setMesStatus(healthData.mes_database || {});
         setModel((current) => {
           const nextDefault = modelData.default || "auto";
@@ -1175,6 +1240,14 @@ function App() {
   }, [language]);
 
   useEffect(() => {
+    try {
+      setResearchTopicId(localStorage.getItem(researchTopicStorageKey(language)) || "");
+    } catch {
+      setResearchTopicId("");
+    }
+  }, [language]);
+
+  useEffect(() => {
     setSessionTitles((current) => {
       const next = { ...current };
       for (const workspaceMode of VISIBLE_MODE_KEYS) {
@@ -1298,6 +1371,61 @@ function App() {
       setUploadSummary(null);
     }
     setSidebarOpen(false);
+  }
+
+  function selectedResearchTopic() {
+    if (!researchTopicId) return null;
+    if (researchTopicId === "all") {
+      return {
+        id: "all",
+        label_vi: modeText("research").allTopics,
+        label_ja: modeText("research").allTopics,
+        ready: researchTopics.ready,
+        num_files: researchTopics.topics.reduce(
+          (total, topic) => total + (topic.num_files || 0),
+          0,
+        ),
+        quick_prompts_vi: [],
+        quick_prompts_ja: [],
+      };
+    }
+    return (
+      researchTopics.topics.find((topic) => topic.id === researchTopicId) ||
+      null
+    );
+  }
+
+  function researchTopicLabel(topic) {
+    if (!topic) return "";
+    return language === "ja"
+      ? topic.label_ja || topic.label_vi || topic.id
+      : topic.label_vi || topic.label_ja || topic.id;
+  }
+
+  function selectResearchTopic(topicId) {
+    if (busy) return;
+    setResearchTopicId(topicId);
+    try {
+      localStorage.setItem(researchTopicStorageKey(language), topicId);
+    } catch {
+      // Topic selection still works in-memory when storage is unavailable.
+    }
+    setQuestion("");
+    setError("");
+    setModeSources("research", [], language);
+    setSourcePanelOpen(false);
+  }
+
+  function clearResearchTopic() {
+    if (busy) return;
+    setResearchTopicId("");
+    try {
+      localStorage.removeItem(researchTopicStorageKey(language));
+    } catch {
+      // Ignore storage failures; in-memory state is already cleared.
+    }
+    setQuestion("");
+    setError("");
   }
 
   function useResearchDemoSession() {
@@ -1559,6 +1687,8 @@ function App() {
           ui_language: requestLanguage,
           employee_id: (requestMode === "mkac" || requestMode === "mes") ? employee?.id : undefined,
           conversation_context: conversationContext,
+          research_topic:
+            requestMode === "research" ? researchTopicId || null : null,
         },
         (event) => {
           if (event.type === "status") {
@@ -1817,8 +1947,62 @@ function App() {
             <section className="sidebar-section">
               <div className="section-heading">
                 <span>{t("common.researchDocuments")}</span>
-                <span className="count-badge">{files.length}</span>
+                <span className="count-badge">
+                  {researchTopics.ready
+                    ? selectedResearchTopic()?.num_files ?? 0
+                    : files.length}
+                </span>
               </div>
+
+              {researchTopics.ready && (
+                <div className="sidebar-topic-panel">
+                  {researchTopicId ? (
+                    <>
+                      <div className="sidebar-topic-selected">
+                        <strong>
+                          {researchTopicLabel(selectedResearchTopic())}
+                        </strong>
+                        <button
+                          type="button"
+                          className="research-scope-change"
+                          onClick={clearResearchTopic}
+                          disabled={busy}
+                        >
+                          {modeText("research").changeTopic}
+                        </button>
+                      </div>
+                      <div className="file-list">
+                        {(researchTopicId === "all"
+                          ? researchTopics.topics.flatMap(
+                              (topic) => topic.files || [],
+                            )
+                          : selectedResearchTopic()?.files || []
+                        ).map((filename) => (
+                          <div className="file-item readonly" key={filename}>
+                            <FileText size={17} />
+                            <span title={filename}>{filename}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="sidebar-topic-list">
+                      {researchTopics.topics.map((topic) => (
+                        <button
+                          key={topic.id}
+                          type="button"
+                          className="sidebar-topic-item"
+                          onClick={() => selectResearchTopic(topic.id)}
+                          disabled={!topic.ready || busy}
+                        >
+                          <span>{researchTopicLabel(topic)}</span>
+                          <span className="count-badge">{topic.num_files}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <input
                 ref={fileInputRef}
@@ -1830,22 +2014,24 @@ function App() {
                 onChange={(event) => addPendingFiles(event.target.files)}
               />
 
-              <button
-                className={`upload-zone ${dragActive ? "dragging" : ""}`}
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                onDragEnter={(event) => {
-                  event.preventDefault();
-                  setDragActive(true);
-                }}
-                onDragOver={(event) => event.preventDefault()}
-                onDragLeave={() => setDragActive(false)}
-                onDrop={onDrop}
-              >
-                <UploadCloud size={23} />
-                <span>{t("common.chooseDocument")}</span>
-                <small>{t("common.supportedFiles")}</small>
-              </button>
+              {!researchTopics.ready && (
+                <button
+                  className={`upload-zone ${dragActive ? "dragging" : ""}`}
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragEnter={(event) => {
+                    event.preventDefault();
+                    setDragActive(true);
+                  }}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDragLeave={() => setDragActive(false)}
+                  onDrop={onDrop}
+                >
+                  <UploadCloud size={23} />
+                  <span>{t("common.chooseDocument")}</span>
+                  <small>{t("common.supportedFiles")}</small>
+                </button>
+              )}
 
               {pendingFiles.length > 0 && (
                 <div className="pending-panel">
@@ -1912,28 +2098,30 @@ function App() {
                 </div>
               )}
 
-              <div className="file-list">
-                {files.map((filename) => (
-                  <div className="file-item" key={filename}>
-                    <FileText size={17} />
-                    <span title={filename}>{filename}</span>
-                    <button
-                      className="icon-button subtle danger"
-                      type="button"
-                      title={t("common.deleteFile", { name: filename })}
-                      onClick={() => removeFile(filename)}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                ))}
-                {files.length === 0 && (
-                  <div className="empty-files">
-                    <FileText size={20} />
-                    <span>{t("common.noDocuments")}</span>
-                  </div>
-                )}
-              </div>
+              {!researchTopics.ready && (
+                <div className="file-list">
+                  {files.map((filename) => (
+                    <div className="file-item" key={filename}>
+                      <FileText size={17} />
+                      <span title={filename}>{filename}</span>
+                      <button
+                        className="icon-button subtle danger"
+                        type="button"
+                        title={t("common.deleteFile", { name: filename })}
+                        onClick={() => removeFile(filename)}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ))}
+                  {files.length === 0 && (
+                    <div className="empty-files">
+                      <FileText size={20} />
+                      <span>{t("common.noDocuments")}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
 
             <div className="sidebar-footer">
@@ -1973,7 +2161,11 @@ function App() {
                     ? mesStatus.available
                       ? `${mesStatus.lots || 0} Lot · ${mesStatus.error_events || 0} ${t("common.errorRecords")}`
                       : modeText("mes").unavailable
-                    : `${files.length} ${t("common.sessionDocuments")}`}
+                    : researchTopicId
+                      ? formatText(modeText("research").scopeLabel, {
+                          topic: researchTopicLabel(selectedResearchTopic()),
+                        })
+                      : modeText("research").chooseTopic}
               </span>
             </div>
           </div>
@@ -2149,38 +2341,90 @@ function App() {
                         ? modeText("mkac").empty
                         : mode === "mes"
                           ? modeText("mes").empty
-                          : files.length > 0
+                          : researchTopicId
                             ? modeText("research").emptyReady
                             : modeText("research").empty}
                     </p>
-                    {mode === "research" && files.length === 0 && (
-                      <div className="research-start-actions">
+                    {mode === "research" && !researchTopicId && (
+                      <div className="research-topic-grid">
+                        {researchTopics.topics.map((topic) => (
+                          <button
+                            key={topic.id}
+                            type="button"
+                            className={`research-topic-card accent-${topic.accent || "neutral"}`}
+                            onClick={() => selectResearchTopic(topic.id)}
+                            disabled={!topic.ready}
+                            title={
+                              topic.ready
+                                ? researchTopicLabel(topic)
+                                : modeText("research").topicNotReady
+                            }
+                          >
+                            <span className="research-topic-label">
+                              {researchTopicLabel(topic)}
+                            </span>
+                            <span className="research-topic-description">
+                              {language === "ja"
+                                ? topic.description_ja
+                                : topic.description_vi}
+                            </span>
+                            <span className="research-topic-meta">
+                              {formatText(modeText("research").documentsCount, {
+                                count: topic.num_files,
+                              })}
+                            </span>
+                          </button>
+                        ))}
+                        {researchTopics.allow_all && researchTopics.ready && (
+                          <button
+                            type="button"
+                            className="research-topic-card accent-neutral all-topics"
+                            onClick={() => selectResearchTopic("all")}
+                          >
+                            <span className="research-topic-label">
+                              {modeText("research").allTopics}
+                            </span>
+                            <span className="research-topic-description">
+                              {modeText("research").allTopicsDescription}
+                            </span>
+                            <span className="research-topic-meta">
+                              {formatText(modeText("research").documentsCount, {
+                                count: researchTopics.topics.reduce(
+                                  (total, topic) => total + (topic.num_files || 0),
+                                  0,
+                                ),
+                              })}
+                            </span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {mode === "research" && researchTopicId && (
+                      <div className="research-scope-bar">
+                        <span className="research-scope-label">
+                          {formatText(modeText("research").scopeLabel, {
+                            topic: researchTopicLabel(selectedResearchTopic()),
+                          })}
+                        </span>
                         <button
-                          className="empty-upload-button"
                           type="button"
-                          onClick={() => fileInputRef.current?.click()}
+                          className="research-scope-change"
+                          onClick={clearResearchTopic}
                         >
-                          <UploadCloud size={17} />
-                          {t("common.chooseToStart")}
-                        </button>
-                        <button
-                          className="empty-upload-button secondary"
-                          type="button"
-                          onClick={useResearchDemoSession}
-                          disabled={!researchDemo.ready}
-                        >
-                          <FlaskConical size={17} />
-                          {t("common.tryDemo")}
+                          {modeText("research").changeTopic}
                         </button>
                       </div>
                     )}
                   </div>
 
-                  {mode !== "research" || files.length > 0 ? (
+                  {mode !== "research" || researchTopicId ? (
                     <div className="prompt-section">
                       <p className="prompt-label">{t("common.promptLabel")}</p>
                       <div className="prompt-grid">
-                        {quickPromptsFor(mode, language).map((prompt) => (
+                        {(mode === "research"
+                          ? researchQuickPrompts()
+                          : quickPromptsFor(mode, language)
+                        ).map((prompt) => (
                           <button
                             key={prompt}
                             type="button"
@@ -2208,7 +2452,9 @@ function App() {
                         ? `${mkacStatus.num_documents} ${modeText("mkac").metric}`
                         : mode === "mes"
                           ? `${mesStatus.lots || 0} ${modeText("mes").metric}`
-                          : `${files.length} ${modeText("research").metric}`}
+                          : `${
+                              selectedResearchTopic()?.num_files ?? 0
+                            } ${modeText("research").metric}`}
                     </span>
                   </div>
                 </div>

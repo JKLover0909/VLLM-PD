@@ -78,6 +78,7 @@ class RAGPipeline:
         embedder: Embedder,
         vector_store: VectorStore,
         mkac_vector_store: VectorStore | None = None,
+        docjp_vector_store: VectorStore | None = None,
         web_searcher: WebSearcher | None = None,
         mes_client: MesClient | None = None,
         mes_database: MesDatabase | None = None,
@@ -90,6 +91,7 @@ class RAGPipeline:
         self.embedder = embedder
         self.vector_store = vector_store
         self.mkac_vector_store = mkac_vector_store
+        self.docjp_vector_store = docjp_vector_store
         self.web_searcher = web_searcher
         self.mes_client = mes_client if mes_client is not None else MesClient.from_env()
         self.mes_database = (
@@ -127,6 +129,7 @@ class RAGPipeline:
         mode: str = "mkac",
         current_user: Dict[str, Any] | None = None,
         conversation_context: List[Dict[str, Any]] | None = None,
+        research_topic: str | None = None,
     ) -> Tuple[str, List[SearchResult], str, str]:
         """
         Non-streaming RAG query.
@@ -184,6 +187,7 @@ class RAGPipeline:
             session_id,
             question,
             mode,
+            research_topic,
         )
         if mode == "mkac" and current_user:
             if self._is_current_company_question(question):
@@ -263,6 +267,7 @@ class RAGPipeline:
         mode: str = "mkac",
         current_user: Dict[str, Any] | None = None,
         conversation_context: List[Dict[str, Any]] | None = None,
+        research_topic: str | None = None,
     ) -> Tuple[AsyncGenerator[Tuple[str, str], None], List[SearchResult], str, str]:
         """
         Streaming RAG query.
@@ -352,6 +357,7 @@ class RAGPipeline:
             session_id,
             question,
             mode,
+            research_topic,
         )
         if mode == "mkac" and current_user:
             if self._is_current_company_question(question):
@@ -978,7 +984,14 @@ class RAGPipeline:
         session_id: str,
         question: str,
         mode: str,
+        research_topic: str | None = None,
     ) -> Tuple[List[SearchResult], List[Path], str]:
+        if mode == "research" and research_topic:
+            return self._prepare_research_query_context(
+                session_id=session_id,
+                question=question,
+                research_topic=research_topic,
+            )
         if mode == "mkac":
             if self.mkac_vector_store is None:
                 logger.warning("MKAC vector store is not configured.")
@@ -1025,6 +1038,56 @@ class RAGPipeline:
                 dict.fromkeys([*images, *self._result_image_paths(results)])
             )[:2]
         return results, images, "research"
+
+    def _prepare_research_query_context(
+        self,
+        *,
+        session_id: str,
+        question: str,
+        research_topic: str,
+    ) -> Tuple[List[SearchResult], List[Path], str]:
+        """Retrieve từ kho DocJP theo nhóm chủ đề đã chọn.
+
+        ``research_topic`` là topic id đã được validate ở tầng API. Session của
+        request chỉ là phiên hội thoại; retrieval luôn dùng session cố định của
+        collection DocJP, thu hẹp thêm bằng ``metadata.category`` trừ khi chọn
+        ``all``.
+        """
+        from src.api.research_topics import research_topic_category
+
+        store = self.docjp_vector_store
+        if store is None:
+            logger.warning(
+                "DocJP vector store is not configured; research topic %r "
+                "falls back to session documents.",
+                research_topic,
+            )
+            results = self._retrieve(
+                session_id,
+                question,
+                env_int("RESEARCH_TOP_K", 5, minimum=3, maximum=8),
+            )
+            return results, [], "research"
+
+        category = research_topic_category(research_topic)
+        metadata_filters = {"category": category} if category else None
+        docjp_session_id = os.getenv("DOCJP_SESSION_ID", "docjp")
+        query_embedding = self.embedder.embed_query(question)
+        results = store.search(
+            session_id=docjp_session_id,
+            query_embedding=query_embedding,
+            top_k=env_int("RESEARCH_TOP_K", 6, minimum=3, maximum=12),
+            score_threshold=float(os.getenv("RESEARCH_SCORE_THRESHOLD", "0.35")),
+            metadata_filters=metadata_filters,
+        )
+        logger.info(
+            "Retrieved %s DocJP chunks for topic=%s query '%s' with scores=%s",
+            len(results),
+            research_topic,
+            question[:50],
+            [round(result.score, 4) for result in results],
+        )
+        return results, [], "research"
 
     def _web_or_general(
         self,
@@ -1299,7 +1362,7 @@ class RAGPipeline:
         has_images: bool,
     ) -> int:
         if mode == "research":
-            return env_int("RESEARCH_MAX_TOKENS", 768, minimum=384, maximum=1200)
+            return env_int("RESEARCH_MAX_TOKENS", 1800, minimum=384, maximum=2048)
         if mode != "mkac":
             return self.max_tokens
         if answer_scope == "general":
@@ -1504,9 +1567,12 @@ class RAGPipeline:
         """
         Định dạng nguồn trích dẫn trả về API.
         """
+        from src.rag.media_paths import resolve_processed_image_path
+
         sources = []
         for r in results:
-            image_path = (r.chunk.metadata or {}).get("image_path")
+            stored_image_path = (r.chunk.metadata or {}).get("image_path")
+            image_path = resolve_processed_image_path(stored_image_path)
             sources.append(
                 {
                     "file": r.chunk.source_file,

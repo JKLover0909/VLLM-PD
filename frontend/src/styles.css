@@ -3152,3 +3152,223 @@ html[data-theme="dark"] .confirm-danger {
 html[data-theme="dark"] .confirm-danger:hover {
   background: #eb7d70;
 }
+
+/* ── Research topic selector ─────────────────────────── */
+
+.research-topic-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 280px));
+  justify-content: center;
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.research-topic-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  min-height: 118px;
+  padding: 15px 16px;
+  text-align: left;
+  background: #ffffff;
+  border: 1px solid #dde3e8;
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(32, 38, 48, 0.04);
+  transition: transform 0.14s ease, border-color 0.14s ease,
+    box-shadow 0.14s ease, background 0.14s ease;
+}
+
+.research-topic-card:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(32, 38, 48, 0.1);
+}
+
+.research-topic-card:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.research-topic-card.accent-blue:hover:not(:disabled) {
+  border-color: #7db8e8;
+}
+
+.research-topic-card.accent-purple:hover:not(:disabled) {
+  border-color: #b49ae0;
+}
+
+.research-topic-card.accent-green:hover:not(:disabled) {
+  border-color: #8bd0a0;
+}
+
+.research-topic-card.accent-orange:hover:not(:disabled) {
+  border-color: #ecc084;
+}
+
+.research-topic-card.all-topics {
+  border-style: dashed;
+}
+
+.research-topic-label {
+  color: #232a33;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.research-topic-description {
+  color: #5c6774;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.research-topic-meta {
+  margin-top: auto;
+  color: #7c8794;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.research-scope-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 8px 14px;
+  background: #f0f4f7;
+  border: 1px solid #dde3e8;
+  border-radius: 999px;
+}
+
+.research-scope-label {
+  color: #3b4450;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.research-scope-change {
+  color: #0d7f73;
+  font-size: 12px;
+  font-weight: 800;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.research-scope-change:hover {
+  text-decoration: underline;
+}
+
+.research-scope-change:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sidebar-topic-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sidebar-topic-selected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 11px;
+  background: #f0f4f7;
+  border: 1px solid #dde3e8;
+  border-radius: 8px;
+}
+
+.sidebar-topic-selected strong {
+  font-size: 12.5px;
+}
+
+.sidebar-topic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.sidebar-topic-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 11px;
+  color: #3b4450;
+  font-size: 12.5px;
+  font-weight: 700;
+  text-align: left;
+  background: #ffffff;
+  border: 1px solid #dde3e8;
+  border-radius: 8px;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.sidebar-topic-item:hover:not(:disabled) {
+  border-color: #8bd8d0;
+  background: #f4faf9;
+}
+
+.sidebar-topic-item:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.file-item.readonly {
+  grid-template-columns: 17px minmax(0, 1fr);
+}
+
+@media (max-width: 760px) {
+  .research-topic-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+html[data-theme="dark"] .research-topic-card {
+  background: #1d232b;
+  border-color: #3a444f;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+}
+
+html[data-theme="dark"] .research-topic-label {
+  color: #edf2f7;
+}
+
+html[data-theme="dark"] .research-topic-description {
+  color: #a7b2be;
+}
+
+html[data-theme="dark"] .research-topic-meta {
+  color: #8b96a3;
+}
+
+html[data-theme="dark"] .research-scope-bar {
+  background: #232a33;
+  border-color: #3a444f;
+}
+
+html[data-theme="dark"] .research-scope-label {
+  color: #dbe2e9;
+}
+
+html[data-theme="dark"] .research-scope-change {
+  color: #6fd3c7;
+}
+
+html[data-theme="dark"] .sidebar-topic-selected {
+  background: #232a33;
+  border-color: #3a444f;
+}
+
+html[data-theme="dark"] .sidebar-topic-item {
+  color: #dbe2e9;
+  background: #1d232b;
+  border-color: #3a444f;
+}
+
+html[data-theme="dark"] .sidebar-topic-item:hover:not(:disabled) {
+  border-color: #4a8f87;
+  background: #212d2c;
+}

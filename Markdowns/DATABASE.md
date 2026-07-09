@@ -10,7 +10,8 @@ Meibook không dùng một database duy nhất. Hệ thống chia dữ liệu th
 | Lớp dữ liệu | Công nghệ | File/Collection | Mục đích |
 |---|---|---|---|
 | Tài liệu MKAC | Qdrant | `mkac_knowledge` | RAG hành chính nhân sự |
-| Tài liệu research | Qdrant | `docmind_documents` | Upload/research theo session, UI hiện ẩn |
+| Tài liệu research legacy | Qdrant | `docmind_documents` | Upload/research theo session và demo 2 tài liệu |
+| Tài liệu Research DocJP | Qdrant | `docjp_knowledge` | Research theo topic tài liệu nội bộ Nhật |
 | Danh bạ nhân sự | SQLite | `data/employee_directory.sqlite` | Đăng nhập, tra nhân sự/phòng ban |
 | MES snapshot | SQLite | `data/mes.sqlite` | Hỏi đáp MES deterministic/SQL |
 | MES raw source | SQL dump | `database/raw_mkac/*.sql` | Nguồn tạo `data/mes.sqlite` |
@@ -78,7 +79,7 @@ Số file kiểm tra gần nhất:
 | `documents/MKAC` | `19` |
 | `mkac_processed/pages` | khoảng `108` ảnh |
 
-## 4. Qdrant tài liệu research
+## 4. Qdrant tài liệu research legacy
 
 Collection:
 
@@ -90,8 +91,8 @@ Vai trò:
 
 - Lưu tài liệu upload theo UUID session.
 - Dùng cho `mode=research`.
-- UI research hiện đang bị ẩn, nhưng backend, endpoint upload và collection vẫn
-  còn trong code.
+- Hiện là luồng legacy/fallback. UI Research mới ưu tiên topic DocJP, nhưng
+  upload/session demo cũ vẫn được giữ để dùng tài liệu demo hoặc mở rộng sau.
 
 Session demo research cố định:
 
@@ -99,7 +100,59 @@ Session demo research cố định:
 00000000-0000-4000-8000-000000000001
 ```
 
-## 5. SQLite danh bạ nhân sự
+Trạng thái demo gần nhất:
+
+| Chỉ số | Giá trị |
+|---|---:|
+| Số tài liệu demo | `2` |
+| Số chunk | `39` |
+
+## 5. Qdrant tài liệu Research DocJP
+
+Collection:
+
+```text
+docjp_knowledge
+```
+
+Vai trò:
+
+- Là luồng Research chính hiện tại trên UI.
+- Lưu bộ tài liệu nội bộ Nhật đã OCR/chuẩn hóa.
+- Retrieval dùng session logic cố định `docjp`.
+- Scope tìm kiếm được thu hẹp bằng metadata `category` theo topic.
+
+Nguồn tài liệu:
+
+```text
+documents/Research/DocJP/
+documents/Research/DocJP_md/
+config/docjp_manifest.json
+```
+
+Topic registry:
+
+```text
+config/research_topics.json
+```
+
+Các topic hiện có:
+
+| Topic | Metadata category |
+|---|---|
+| Công nghệ thông tin & Bảo mật | `information_systems` |
+| Pháp chế & Quản lý rủi ro | `legal_compliance` |
+| Kế toán | `accounting` |
+| Hành chính tổng hợp | `general_affairs` |
+
+Trạng thái Qdrant gần nhất:
+
+| Chỉ số | Giá trị |
+|---|---:|
+| Collection | `docjp_knowledge` |
+| Số vector/point | `678` |
+
+## 6. SQLite danh bạ nhân sự
 
 File:
 
@@ -144,7 +197,7 @@ Các nhóm intent nhân sự:
 - hỏi trưởng/phó phòng;
 - hỏi phòng ban vừa nhắc ở lượt trước.
 
-## 6. MES raw source hiện tại
+## 7. MES raw source hiện tại
 
 Bộ dữ liệu MES đang dùng là bộ mới trong:
 
@@ -176,7 +229,7 @@ D_ERROR.ERROR_TYPE = P_ERROR.ERROR_TYPE
 Không nên chỉ nối bằng `ERROR_ID`, vì cùng mã lỗi có thể xuất hiện ở nhiều
 process hoặc loại lỗi khác nhau.
 
-## 7. SQLite MES snapshot
+## 8. SQLite MES snapshot
 
 File:
 
@@ -218,7 +271,7 @@ scripts/import_mes_database.py
 Các view này là lớp công khai cho SQL Agent. Model không được truy cập bảng raw
 trực tiếp.
 
-## 8. Chất lượng dữ liệu MES hiện tại
+## 9. Chất lượng dữ liệu MES hiện tại
 
 Theo `/health` gần nhất:
 
@@ -242,7 +295,7 @@ Truy vấn trực tiếp `data/mes.sqlite` cho thấy tổng bảng raw:
 | `error_events` | `654` |
 | `error_catalog` | `969` |
 
-## 9. Loại dữ liệu test
+## 10. Loại dữ liệu test
 
 Hệ thống loại dữ liệu test khỏi câu trả lời MES.
 
@@ -258,7 +311,7 @@ Ví dụ số liệu hiện tại:
 | Lot | `2592` | `1325` |
 | Error events | `654` | `281` |
 
-## 10. Top Lot hiện tại sau khi loại test
+## 11. Top Lot hiện tại sau khi loại test
 
 Truy vấn kiểm tra gần nhất:
 
@@ -273,7 +326,7 @@ Truy vấn kiểm tra gần nhất:
 Các câu hỏi hoặc test cũ nhắc `000346-01-000`, `000432-01-000`, `3736-0008`
 có thể đã lệch với database mới.
 
-## 11. MesDatabase query service
+## 12. MesDatabase query service
 
 `src/integrations/mes_database.py` mở SQLite read-only:
 
@@ -300,7 +353,7 @@ Intent deterministic chính:
 - tổng hợp theo ngày/tháng qua lớp time-SQL;
 - câu mơ hồ như “Có bao nhiêu lot?” sẽ hỏi lại phạm vi.
 
-## 12. SQL Agent MES
+## 13. SQL Agent MES
 
 SQL Agent nằm ở:
 
@@ -332,7 +385,7 @@ SQL Agent dùng `local-qwen-coder` theo biến:
 MES_SQL_AGENT_MODEL=local-qwen-coder
 ```
 
-## 13. Dữ liệu cho model
+## 14. Dữ liệu cho model
 
 Model không được “nhìn thẳng” vào SQLite. Backend truy vấn trước, sau đó chỉ đưa
 JSON kết quả đã kiểm chứng vào prompt.
@@ -353,7 +406,7 @@ Các khái niệm cần giữ rõ:
 Không được suy đoán tên lỗi nếu mapping rỗng. Câu trả lời phải nói rõ “lỗi chưa
 rõ tên” hoặc “chưa mapping tên lỗi”.
 
-## 14. Cache dữ liệu
+## 15. Cache dữ liệu
 
 Cache câu hỏi nằm ở API layer:
 
@@ -364,7 +417,7 @@ Cache câu hỏi nằm ở API layer:
 Cache key có gắn mode, ngôn ngữ, model, employee và metadata snapshot. Các câu
 phụ thuộc `conversation_context` không cache để tránh trả nhầm lượt trước.
 
-## 15. Backup và không commit
+## 16. Backup và không commit
 
 Nên backup:
 
@@ -392,7 +445,7 @@ gmail_credentials.json
 client_secret_*.json
 ```
 
-## 16. Kiểm tra nhanh
+## 17. Kiểm tra nhanh
 
 Kiểm tra health database:
 

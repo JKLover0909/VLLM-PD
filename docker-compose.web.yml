@@ -46,8 +46,12 @@ services:
       MES_DATABASE_MAX_TOKENS: "384"
       MES_SQL_PLANNER_MAX_TOKENS: "1200"
       MES_SQL_ANSWER_MAX_TOKENS: "384"
-      RESEARCH_TOP_K: "5"
+      RESEARCH_TOP_K: "6"
       RESEARCH_MAX_TOKENS: "768"
+      RESEARCH_SCORE_THRESHOLD: "0.35"
+      DOCJP_COLLECTION_NAME: docjp_knowledge
+      DOCJP_SESSION_ID: docjp
+      RESEARCH_TOPICS_PATH: /app/config/research_topics.json
     ports:
       - "${MACHINE2_API_PORT:-8001}:8001"
     volumes:
@@ -60,6 +64,11 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./mkac_processed:/app/mkac_processed
+      - ./docjp_processed:/app/docjp_processed
+      # Bind mount toàn bộ code để không bao giờ phải rebuild Docker image
+      - ./src:/app/src:ro
+      - ./scripts:/app/scripts:ro
+      - ./frontend/dist:/app/frontend/dist:ro
       - hf_cache:/root/.cache/huggingface
       - torch_cache:/root/.cache/torch
     depends_on:

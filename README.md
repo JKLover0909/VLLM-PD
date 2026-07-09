@@ -15,11 +15,13 @@ Trạng thái tài liệu này được cập nhật theo kiến trúc đang ch�
 - Qdrant: chạy nội bộ cổng `6333`, lưu vector tài liệu.
 - Ollama local trên Máy 2: chạy bằng `systemd`, dùng cho model phụ
   `qwen2.5:3b-instruct`.
-- Giao diện đang hiển thị 2 chế độ:
+- Giao diện đang hiển thị 3 chế độ:
   - `Hỏi đáp hành chính nhân sự MKAC` (`mode=mkac`).
   - `Quản lý MES` (`mode=mes`).
-- Chế độ `Nghiên cứu tài liệu` vẫn còn backend/frontend code và endpoint demo,
-  nhưng đang bị ẩn khỏi thanh chọn chế độ để tránh demo khi chưa tối ưu local.
+  - `Nghiên cứu tài liệu` (`mode=research`).
+- Chế độ Research đã được bật lại trên UI. Luồng mới ưu tiên bộ tài liệu nội
+  bộ Nhật `DocJP` trong collection `docjp_knowledge`, chia theo các topic cố
+  định. Luồng demo/upload cũ vẫn còn qua `docmind_documents`.
 - UI có chuyển ngôn ngữ `VI / JP`. Lõi xử lý chính vẫn dùng tiếng Việt. Với
   `mode=mkac`, backend dịch câu hỏi tiếng Nhật sang tiếng Việt rồi dịch câu trả
   lời trở lại tiếng Nhật. Với `mode=mes`, câu hỏi tiếng Nhật được đưa thẳng vào
@@ -62,9 +64,10 @@ FastAPI + React SPA
         |     |-- Live MES API fallback cho case cần API trực tiếp
         |
         |-- mode=research
-              |-- tạm ẩn trên UI
-              |-- backend vẫn còn upload/index/demo session
-              |-- Docling/OCR -> Qdrant collection docmind_documents
+              |-- chọn topic tài liệu DocJP từ /research/topics
+              |-- RAG DocJP: Qdrant collection docjp_knowledge
+              |-- fallback/legacy demo session trong docmind_documents
+              |-- upload/index tài liệu riêng vẫn còn cho giai đoạn sau
 
 FastAPI
         |
@@ -77,7 +80,7 @@ LiteLLM :4000
         |-- local-qwen-coder  -> Qwen2.5 Coder 14B qua llama.cpp/OpenAI API
         |-- coding-model      -> Qwen2.5 Coder, fallback Qwen3
         |-- openai-model      -> route cloud fallback kỹ thuật
-        |-- grok-model        -> route research/vision cũ, hiện không hiển thị UI
+        |-- grok-model        -> route vision/dự phòng cũ
 ```
 
 Tài liệu kiến trúc chi tiết cũ hơn nằm trong [Markdowns/ARCHITECTURE.md](Markdowns/ARCHITECTURE.md).
@@ -133,7 +136,7 @@ khi đóng SSH hoặc VSCode Remote.
 |   `-- mkac_manifest.json           # Manifest tài liệu MKAC
 |-- database/schema/                 # Schema/import logic MES đã chuẩn hóa
 |-- documents/MKAC                   # Tài liệu hành chính nhân sự nội bộ
-|-- documents/Research               # Tài liệu demo research, hiện UI ẩn
+|-- documents/Research               # Tài liệu research demo và DocJP
 |-- data/                            # SQLite, Gmail token/credentials, không commit
 |-- mkac_processed/                  # Ảnh trang tài liệu để preview nguồn
 |-- docker-compose.web.yml           # Runtime Docker chính hiện tại
@@ -149,7 +152,8 @@ khi đóng SSH hoặc VSCode Remote.
 Qdrant lưu vector tài liệu:
 
 - `mkac_knowledge`: kho tài liệu nội bộ MKAC, dùng cho `mode=mkac`.
-- `docmind_documents`: tài liệu upload/research theo session, hiện UI research bị ẩn.
+- `docmind_documents`: tài liệu upload/research theo session và demo legacy.
+- `docjp_knowledge`: kho tài liệu nội bộ Nhật `DocJP`, dùng cho Research theo topic.
 
 Vector embedding dùng `BAAI/bge-m3`, kích thước vector `1024`, distance cosine.
 
@@ -276,7 +280,27 @@ câu trả lời được giới hạn ngắn để tránh Qwen local lan man.
 
 ### 3. Nghiên cứu tài liệu (`mode=research`)
 
-Research vẫn còn trong code và backend:
+Research đã được bật lại trên UI nhưng được giới hạn theo hướng demo/local:
+
+- Luồng chính hiện tại là chọn nhóm tài liệu nội bộ Nhật `DocJP`.
+- Backend đọc topic từ `config/research_topics.json`.
+- Endpoint `/research/topics` trả danh sách topic, số file/chunk và câu hỏi gợi
+  ý theo `VI/JP`.
+- Retrieval topic dùng collection Qdrant `docjp_knowledge`, session logic
+  `docjp`, filter theo `metadata.category`.
+- Topic `all` cho phép tìm trên toàn bộ `DocJP` nếu `allow_all=true`.
+- Text-only Research dùng `auto-model`/local stack, không còn ép sang Grok.
+
+Các topic DocJP hiện có:
+
+| Topic | Category | Vai trò |
+|---|---|---|
+| Công nghệ thông tin & Bảo mật | `information_systems` | IT, mạng, bảo mật, phần mềm, email, họp trực tuyến |
+| Pháp chế & Quản lý rủi ro | `legal_compliance` | 3rdWATCH, an toàn, khủng hoảng, hợp đồng, con dấu |
+| Kế toán | `accounting` | Rakuraku Seisan, thanh toán chi phí, Q&A |
+| Hành chính tổng hợp | `general_affairs` | Tai nạn lao động, biểu mẫu, vật tư, đồng phục, cơ sở vật chất |
+
+Luồng demo/upload cũ vẫn còn để tương thích:
 
 - Upload tài liệu.
 - Parse/OCR bằng Docling.
@@ -288,8 +312,24 @@ Research vẫn còn trong code và backend:
 00000000-0000-4000-8000-000000000001
 ```
 
-Tuy nhiên frontend hiện chỉ render `mkac` và `mes`, nên research chưa xuất hiện
-trong UI chính.
+Giới hạn local model hiện tại:
+
+| Biến | Giá trị khuyến nghị |
+|---|---:|
+| `RESEARCH_TOP_K` | `6` |
+| `RESEARCH_MAX_TOKENS` | `768` |
+| `RESEARCH_SCORE_THRESHOLD` | `0.35` |
+
+Mục tiêu là tránh local model phải tổng hợp quá nhiều context dài như cấu hình
+cloud cũ, giảm nguy cơ timeout khi demo.
+
+Kiểm tra gần nhất:
+
+- `/research/topics` trả `ready=true` với collection `docjp_knowledge`.
+- `/research/demo` vẫn `ready=true` với 2 file demo và 39 chunk.
+- Query Research theo topic `information_systems` truy xuất đúng nguồn DocJP,
+  nhưng câu trả lời tiếng Nhật vẫn có thể rơi vào fallback ổn định của local
+  model. Đây là điểm cần tối ưu tiếp nếu dùng Research để demo tiếng Nhật dài.
 
 ## Dịch giao diện Việt/Nhật
 
@@ -380,7 +420,7 @@ LiteLLM aliases trong `litellm_config.yaml`:
 | `local-qwen-coder` | llama.cpp OpenAI-compatible Qwen2.5 Coder 14B | SQL Agent/Coding |
 | `coding-model` | Qwen2.5 Coder 14B | LangGraph Coding Agent |
 | `openai-model` | OpenAI-compatible cloud fallback | Dự phòng kỹ thuật |
-| `grok-model` | Azure/OpenAI-compatible Grok route | Research/vision cũ |
+| `grok-model` | Azure/OpenAI-compatible Grok route | Vision/dự phòng cũ |
 | `local-gemma` | Ollama Gemma4 | Route cũ/dự phòng |
 
 Fallback hiện tại:
@@ -434,6 +474,7 @@ chat chính đang sống nhờ fallback qua ngrok, sau đó mới tới OpenAI f
 | `POST` | `/auth/employee` | Kiểm tra mã nhân viên/guest |
 | `GET` | `/knowledge/mkac/status` | Trạng thái kho MKAC |
 | `GET` | `/research/demo` | Trạng thái research demo session |
+| `GET` | `/research/topics` | Danh sách nhóm tài liệu Research DocJP |
 | `GET` | `/sources/preview` | Ảnh preview trang nguồn |
 | `GET` | `/quick-answers` | Câu hỏi gợi ý theo mode/ngôn ngữ |
 | `POST` | `/sessions` | Tạo session UUID |

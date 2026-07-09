@@ -17,6 +17,12 @@ RESEARCH_DEMO_SESSION_ID = os.getenv(
     "RESEARCH_DEMO_SESSION_ID",
     "00000000-0000-4000-8000-000000000001",
 )
+DOCJP_COLLECTION_NAME = os.getenv("DOCJP_COLLECTION_NAME", "docjp_knowledge")
+DOCJP_SESSION_ID = os.getenv("DOCJP_SESSION_ID", "docjp")
+RESEARCH_TOPICS_PATH = Path(
+    os.getenv("RESEARCH_TOPICS_PATH", "config/research_topics.json")
+)
+RESEARCH_SCORE_THRESHOLD = float(os.getenv("RESEARCH_SCORE_THRESHOLD", "0.35"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LITELLM_URL = os.getenv("LITELLM_URL", "http://localhost:4000/v1")
 LITELLM_MASTER_KEY = os.getenv("LITELLM_MASTER_KEY", "sk-local")
@@ -64,4 +70,5 @@ EMPLOYEE_DIRECTORY_DB_PATH = Path(
     os.getenv("EMPLOYEE_DIRECTORY_DB_PATH", "data/employee_directory.sqlite")
 )
 MKAC_PAGE_IMAGE_DIR = Path(os.getenv("MKAC_PAGE_IMAGE_DIR", "mkac_processed/pages"))
+DOCJP_PAGE_IMAGE_DIR = Path(os.getenv("DOCJP_PAGE_IMAGE_DIR", "docjp_processed/pages"))
 ENABLE_AGENT = os.getenv("ENABLE_AGENT", "true").lower() in {"1", "true", "yes", "on"}

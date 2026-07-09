@@ -72,6 +72,9 @@ def main() -> int:
     text_source_dir = Path(
         os.getenv("DOCJP_TEXT_SOURCE_DIR", "documents/Research/DocJP_md")
     )
+    image_root = Path(
+        os.getenv("DOCJP_PAGE_IMAGE_DIR", "docjp_processed/pages")
+    )
     report_path = Path(
         os.getenv("DOCJP_INDEX_REPORT", "logs/docjp_index_report.json")
     )
@@ -171,9 +174,12 @@ def main() -> int:
                 "organization": manifest.get("organization", {}),
                 "indexed_at": datetime.now(timezone.utc).isoformat(),
             }
+            # Directory cho ảnh trang. Giữ theo src_checksum để ảnh preview
+            # ổn định kể cả khi text_source (.md) thay đổi và file bị reindex.
+            page_dir = image_root / src_checksum[:16]
             chunks = parser.process_file(
                 path,
-                image_output_dir=None,
+                image_output_dir=page_dir if path.suffix.lower() == ".pdf" else None,
                 document_metadata=metadata,
                 text_source=text_source,
             )

@@ -85,6 +85,17 @@ class FailingOpenAIClient:
     chat = FailingChat()
 
 
+class UnavailableSqlAgent:
+    """Explicitly disabled SQL agent.
+
+    Passing ``mes_sql_agent=None`` makes MesQueryService build a real agent
+    from env, which answers from the local mes.sqlite when present and breaks
+    test isolation.
+    """
+
+    available = False
+
+
 def make_pipeline(mes_client, mes_database):
     return RAGPipeline(
         embedder=FakeEmbedder(),
@@ -474,7 +485,7 @@ def test_mes_query_service_falls_back_compound_highest_lot_to_snapshot():
     service = MesQueryService(
         mes_client=FakeMesClient(),
         mes_database=mes_database,
-        mes_sql_agent=None,
+        mes_sql_agent=UnavailableSqlAgent(),
         openai_client=FailingOpenAIClient(),
     )
     question = (

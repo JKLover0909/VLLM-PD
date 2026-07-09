@@ -37,6 +37,7 @@ from src.rag.embedder import Embedder
 from src.rag.vector_store import VectorStore
 from src.rag.rag_pipeline import RAGPipeline
 from src.rag.web_search import WebSearcher
+from src.rag.media_paths import resolve_processed_image_path
 from src.auth.employee_directory import EmployeeDirectory
 from src.auth.employee_intent import normalize_text
 from src.integrations.mes_database import MesDatabase
@@ -52,6 +53,9 @@ from src.i18n.translation import TranslationError, TranslationService
 from src.api import config
 from src.api.config import (
     AGENT_API_KEY,
+    DOCJP_COLLECTION_NAME,
+    DOCJP_PAGE_IMAGE_DIR,
+    DOCJP_SESSION_ID,
     EMPLOYEE_DIRECTORY_DB_PATH,
     FRONTEND_DIST,
     LOG_LEVEL,
@@ -72,6 +76,10 @@ from src.api.config import (
     UPLOAD_QUEUE_SIZE,
     UPLOAD_RATE_LIMIT,
 )
+from src.api.research_topics import (
+    load_research_topic_config,
+    validate_research_topic,
+)
 from src.api.schemas import (
     AgentRequest,
     AgentResponse,
@@ -81,6 +89,8 @@ from src.api.schemas import (
     QueryRequest,
     QueryResponse,
     ResearchDemoResponse,
+    ResearchTopic,
+    ResearchTopicsResponse,
     SessionInfoResponse,
     SessionResponse,
 )
@@ -122,6 +132,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 embedder: Optional[Embedder] = None
 vector_store: Optional[VectorStore] = None
 mkac_vector_store: Optional[VectorStore] = None
+docjp_vector_store: Optional[VectorStore] = None
 doc_parser: Optional[DocumentParser] = None
 rag_pipeline: Optional[RAGPipeline] = None
 mes_query_service: Optional[MesQueryService] = None
@@ -255,18 +266,24 @@ async def lifespan(app: FastAPI):
     """
     Khởi tạo các mô hình và kết nối database khi ứng dụng bắt đầu.
     """
-    global embedder, vector_store, mkac_vector_store, doc_parser, rag_pipeline
+    global embedder, vector_store, mkac_vector_store, docjp_vector_store
+    global doc_parser, rag_pipeline
     global mes_query_service
     global web_searcher
 
     logger.info("🚀 Starting Meibook API Gateway on Machine 2...")
-    
+
     # Khởi tạo Vector DB trước
     vector_store = VectorStore(host=QDRANT_HOST, port=QDRANT_PORT)
     mkac_vector_store = VectorStore(
         host=QDRANT_HOST,
         port=QDRANT_PORT,
         collection_name=os.getenv("MKAC_COLLECTION_NAME", "mkac_knowledge"),
+    )
+    docjp_vector_store = VectorStore(
+        host=QDRANT_HOST,
+        port=QDRANT_PORT,
+        collection_name=DOCJP_COLLECTION_NAME,
     )
     
     # Khởi tạo local embedder (BGE-M3)
@@ -281,6 +298,7 @@ async def lifespan(app: FastAPI):
         embedder=embedder,
         vector_store=vector_store,
         mkac_vector_store=mkac_vector_store,
+        docjp_vector_store=docjp_vector_store,
         web_searcher=web_searcher,
         mes_database=mes_database,
     )
@@ -696,12 +714,13 @@ def employee_directory_query_response(
 
 
 async def localize_query_request(req: QueryRequest) -> QueryRequest:
-    """Translate Japanese UI questions into Vietnamese for the core backend."""
+    """Translate Japanese UI questions into Vietnamese for Vietnamese-first routes."""
     if req.ui_language != "ja" or translation_service is None:
         return req
-    # MES có bộ rule deterministic đọc được các marker Nhật cơ bản. Dịch câu hỏi
-    # trước khi route dễ làm méo mã Lot/mã hàng/tên lỗi, nên để nguyên câu gốc.
-    if req.mode == "mes":
+    # MES có bộ rule deterministic đọc được các marker Nhật cơ bản. Research
+    # dùng kho DocJP tiếng Nhật, nên dịch câu hỏi Nhật sang tiếng Việt sẽ làm
+    # nhiễu retrieval và có thể dính lời nhắc của lớp dịch vào câu query.
+    if req.mode in {"mes", "research"}:
         return req
     try:
         translated = await translation_service.translate_query(
@@ -728,6 +747,8 @@ async def translate_answer_for_ui(answer: str, req: QueryRequest) -> str:
     """Translate Vietnamese backend answers back to the selected UI language."""
     if req.ui_language != "ja" or translation_service is None:
         return answer
+    if req.mode == "research" and re.search(r"[\u3040-\u30ff\u3400-\u9fff]", answer or ""):
+        return answer
     try:
         return await translation_service.translate_answer(
             answer,
@@ -745,6 +766,10 @@ async def translate_sources_for_ui(
 ) -> List[Dict[str, Any]]:
     """Translate short citation previews for non-Vietnamese UI languages."""
     if req.ui_language != "ja" or translation_service is None:
+        return sources
+
+    # DocJP index là tiếng Nhật gốc, không cần dịch lại
+    if req.mode == "research":
         return sources
 
     async def translate_preview(preview: str) -> str:
@@ -810,6 +835,7 @@ async def route_query(
             mode=req.mode,
             current_user=current_user_context,
             conversation_context=req.conversation_context,
+            research_topic=validate_research_topic(req.research_topic),
         )
     raise HTTPException(status_code=400, detail=f"Unsupported query mode: {req.mode}")
 
@@ -837,6 +863,7 @@ async def route_query_stream(
             mode=req.mode,
             current_user=current_user_context,
             conversation_context=req.conversation_context,
+            research_topic=validate_research_topic(req.research_topic),
         )
     raise HTTPException(status_code=400, detail=f"Unsupported query mode: {req.mode}")
 
@@ -845,6 +872,12 @@ async def handle_email_send_query(
     req: QueryRequest,
     current_user_context: Optional[Dict[str, Any]],
 ) -> Optional[QueryResponse]:
+    # Research là luồng hỏi đáp tài liệu DocJP; nhiều tài liệu có từ "mail/email"
+    # nhưng không phải lệnh gửi Gmail thật. Chỉ xử lý Gmail action ở các mode
+    # vận hành chính như HR/MES để tránh bắt nhầm intent trong bộ tài liệu.
+    if req.mode == "research":
+        return None
+
     try:
         command = parse_email_send_command(req.question)
     except GmailSenderError as exc:
@@ -1105,6 +1138,63 @@ async def research_demo_status():
     )
 
 
+@app.get("/research/topics", response_model=ResearchTopicsResponse)
+async def research_topics_status():
+    """Return the predefined research topic groups with index statistics."""
+    registry = load_research_topic_config()
+    if docjp_vector_store is None or not registry["topics"]:
+        return ResearchTopicsResponse(
+            ready=False,
+            collection=registry["collection"],
+            session_id=registry["session_id"],
+            default_topic=registry["default_topic"],
+            allow_all=registry["allow_all"],
+            topics=[],
+        )
+
+    def build_topics() -> list[ResearchTopic]:
+        topics: list[ResearchTopic] = []
+        for item in registry["topics"]:
+            category = item.get("category")
+            info = docjp_vector_store.get_session_info(
+                DOCJP_SESSION_ID,
+                metadata_filters={"category": category} if category else None,
+            )
+            topics.append(
+                ResearchTopic(
+                    id=item["id"],
+                    category=category,
+                    label_vi=item.get("label_vi", item["id"]),
+                    label_ja=item.get("label_ja", item["id"]),
+                    short_label_vi=item.get("short_label_vi", ""),
+                    short_label_ja=item.get("short_label_ja", ""),
+                    description_vi=item.get("description_vi", ""),
+                    description_ja=item.get("description_ja", ""),
+                    icon=item.get("icon", "file_text"),
+                    accent=item.get("accent", "neutral"),
+                    ready=bool(info),
+                    num_files=(info or {}).get("num_files", 0),
+                    num_chunks=(info or {}).get("num_chunks", 0),
+                    files=(info or {}).get("files", []),
+                    quick_prompts_vi=item.get("quick_prompts_vi", []),
+                    quick_prompts_ja=item.get("quick_prompts_ja", []),
+                )
+            )
+        return topics
+
+    # get_session_info scroll đồng bộ qua Qdrant — đẩy sang thread để không
+    # chặn event loop khi collection lớn.
+    topics = await asyncio.to_thread(build_topics)
+    return ResearchTopicsResponse(
+        ready=any(topic.ready for topic in topics),
+        collection=registry["collection"],
+        session_id=registry["session_id"],
+        default_topic=registry["default_topic"],
+        allow_all=registry["allow_all"],
+        topics=topics,
+    )
+
+
 @app.get("/sources/preview")
 async def source_page_preview(
     session_id: str,
@@ -1130,19 +1220,29 @@ async def source_page_preview(
         store = mkac_vector_store
         lookup_session_id = "mkac"
     else:
-        store = vector_store
-        lookup_session_id = normalize_session_id(session_id)
+        store = docjp_vector_store
+        lookup_session_id = DOCJP_SESSION_ID
 
     if store is None:
         preview_error(503, "Vector store is not ready.", "ベクトルデータベースはまだ準備できていません。")
 
-    image_path = store.get_page_image_path(lookup_session_id, filename, page)
-    if not image_path:
+    image_path_str = store.get_page_image_path(lookup_session_id, filename, page)
+    if not image_path_str:
         preview_error(404, "Preview image not found.", "プレビュー画像が見つかりません。")
 
-    resolved_path = Path(image_path).resolve()
-    allowed_roots = [UPLOAD_DIR.resolve(), MKAC_PAGE_IMAGE_DIR.resolve()]
-    if not any(path_is_inside(resolved_path, root) for root in allowed_roots):
+    # Re-root path đã lưu (tuyệt đối lúc index) về CWD hiện tại. Dùng chung
+    # helper với format_sources để has_page_preview và endpoint luôn khớp.
+    resolved = resolve_processed_image_path(image_path_str)
+    resolved_path = resolved.resolve() if resolved else None
+
+    allowed_roots = [
+        UPLOAD_DIR.resolve(),
+        MKAC_PAGE_IMAGE_DIR.resolve(),
+        DOCJP_PAGE_IMAGE_DIR.resolve(),
+    ]
+    if resolved_path is None or not any(
+        path_is_inside(resolved_path, root) for root in allowed_roots
+    ):
         preview_error(403, "Preview path is not allowed.", "このプレビュー画像の参照は許可されていません。")
     if not resolved_path.is_file() or resolved_path.suffix.lower() not in PREVIEW_IMAGE_EXTENSIONS:
         preview_error(404, "Preview image not found.", "プレビュー画像が見つかりません。")
@@ -1236,7 +1336,18 @@ def safety_guard_response(req: QueryRequest) -> Optional[QueryResponse]:
         )
     ):
         blocked = True
-    if re.search(r"\bdan\b", normalized):
+    if re.search(r"\bdan\b", normalized) and any(
+        marker in normalized
+        for marker in (
+            "do anything now",
+            "jailbreak",
+            "act as dan",
+            "as dan",
+            "che do dan",
+            "vai tro dan",
+            "dong vai dan",
+        )
+    ):
         blocked = True
     if not blocked:
         return None
@@ -1769,7 +1880,10 @@ async def query_stream(req: QueryRequest, request: Request):
         try:
             yield sse_status(req, "received")
             yield sse_status(req, "routing")
-            if try_parse_email_send_command(localized_req.question) is not None:
+            if (
+                localized_req.mode != "research"
+                and try_parse_email_send_command(localized_req.question) is not None
+            ):
                 yield sse_status(req, "email")
             email_response = await handle_email_send_query(
                 localized_req,
@@ -1791,7 +1905,7 @@ async def query_stream(req: QueryRequest, request: Request):
                 yield sse_event({"type": "done"})
                 return
 
-            if req.ui_language == "ja":
+            if req.ui_language == "ja" and req.mode != "research":
                 yield sse_status(req, query_processing_status_key(localized_req))
                 answer, results, routed_model, answer_scope = await route_query(
                     localized_req,

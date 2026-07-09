@@ -281,4 +281,14 @@ class TranslationService:
         clean_text = re.sub(r"(?is)<think>.*?</think>", "", clean_text).strip()
         if "</think>" in clean_text:
             clean_text = clean_text.split("</think>", 1)[1].strip()
+        clean_text = re.sub(r"(?is)^```(?:\w+)?\s*|\s*```$", "", clean_text).strip()
+        clean_text = re.sub(
+            r"(?is)^(?:đây là|dưới đây là|kết quả|bản dịch|câu đã dịch|translated query|translation)"
+            r"[^:\n]{0,160}:\s*",
+            "",
+            clean_text,
+        ).strip()
+        quoted = re.match(r'(?is)^(?:đây là|dưới đây là)[^"\n]{0,180}"(.+)"\s*$', clean_text)
+        if quoted:
+            clean_text = quoted.group(1).strip()
         return clean_text.strip(' "\'')

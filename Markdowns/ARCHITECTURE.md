@@ -9,14 +9,16 @@ LiteLLM config và trạng thái API đang chạy.
 
 ## 1. Trạng thái hiện tại
 
-Meibook hiện là hệ thống hỏi đáp nội bộ cho MKAC với hai chế độ chính trên UI:
+Meibook hiện là hệ thống hỏi đáp nội bộ cho MKAC với ba chế độ chính trên UI:
 
 - `Hỏi đáp hành chính nhân sự MKAC` (`mode=mkac`).
 - `Quản lý MES` (`mode=mes`).
+- `Nghiên cứu tài liệu` (`mode=research`).
 
-Chế độ `Nghiên cứu tài liệu` (`mode=research`) vẫn còn code backend/frontend và
-endpoint demo, nhưng đang được ẩn khỏi thanh chọn chế độ để giảm rủi ro demo khi
-chưa tối ưu local model.
+Chế độ `Nghiên cứu tài liệu` đã được bật lại. Luồng chính hiện dùng bộ tài liệu
+Nhật `DocJP` đã index trong Qdrant collection `docjp_knowledge`, chia theo topic
+cấu hình trong `config/research_topics.json`. Luồng demo/upload cũ vẫn tồn tại
+qua collection `docmind_documents`.
 
 Các điểm chính:
 
@@ -58,8 +60,9 @@ FastAPI :8001 + React SPA
         |     `-- Live MES API fallback cho một số intent
         |
         `-- mode=research
-              |-- tạm ẩn trên UI
-              `-- backend vẫn còn upload/index/demo session
+              |-- topic selector từ /research/topics
+              |-- RAG DocJP: Qdrant docjp_knowledge
+              `-- legacy upload/demo: Qdrant docmind_documents
 
 FastAPI
         |
@@ -122,7 +125,7 @@ VLLM-PD/
 ├── documents/
 │   ├── MKAC/                    # Tài liệu gốc để preview/trích dẫn
 │   ├── MKAC-md/                 # Text curated để index MKAC
-│   └── Research/                # Demo research, UI hiện ẩn
+│   └── Research/                # Demo research và bộ DocJP cho Research
 ├── data/                        # SQLite, Gmail token/credentials, không commit
 ├── mkac_processed/pages/        # Ảnh trang phục vụ preview nguồn
 ├── docker-compose.web.yml
@@ -150,13 +153,14 @@ VLLM-PD/
 
 FastAPI dùng `lifespan` để tạo singleton:
 
-1. `VectorStore` cho research collection `docmind_documents`.
+1. `VectorStore` cho research legacy collection `docmind_documents`.
 2. `VectorStore` cho MKAC collection `mkac_knowledge`.
-3. `Embedder` dùng `BAAI/bge-m3`.
-4. `DocumentParser`.
-5. `WebSearcher`.
-6. `RAGPipeline`.
-7. `MesQueryService`.
+3. `VectorStore` cho DocJP collection `docjp_knowledge`.
+4. `Embedder` dùng `BAAI/bge-m3`.
+5. `DocumentParser`.
+6. `WebSearcher`.
+7. `RAGPipeline`.
+8. `MesQueryService`.
 
 Một số singleton khác được tạo khi import module:
 
@@ -180,6 +184,7 @@ Một số singleton khác được tạo khi import module:
 | `POST` | `/sessions/{session_id}/upload` | Upload/index tài liệu research |
 | `DELETE` | `/sessions/{session_id}/files/{filename}` | Xóa file khỏi session |
 | `GET` | `/research/demo` | Metadata session demo research |
+| `GET` | `/research/topics` | Topic Research DocJP, trạng thái file/chunk |
 | `GET` | `/sources/preview` | Preview ảnh/trang nguồn trích dẫn |
 | `POST` | `/query` | Query đồng bộ |
 | `POST` | `/query/stream` | Query SSE streaming |
@@ -352,7 +357,7 @@ Các model logic:
 | `local-qwen-coder` | Qwen2.5 Coder 14B OpenAI-compatible | SQL Agent/Coding |
 | `coding-model` | Qwen2.5 Coder 14B | Tên ổn định cho Coding Agent |
 | `openai-model` | `openai/gpt-5.4-mini` | Cloud fallback kỹ thuật |
-| `grok-model` | Azure/OpenAI-compatible Grok | Route cũ cho research/vision |
+| `grok-model` | Azure/OpenAI-compatible Grok | Route cũ cho vision/dự phòng |
 
 Fallback hiện tại:
 
@@ -446,7 +451,8 @@ Các giới hạn còn lại:
 - Endpoint RAG chưa có auth user/tenant đầy đủ; employee_id là gate đơn giản.
 - Rate limit/cache vẫn in-memory.
 - CORS vẫn rộng trong code.
-- Research mode chưa được tối ưu cho local model nên UI đang ẩn.
+- Research mode đã bật lại, nhưng giới hạn `top_k` và `max_tokens` thấp hơn cấu
+  hình cloud cũ để phù hợp local model.
 - HR/RAG tiếng Nhật vẫn có thể gặp lỗi dịch lệch hoặc retrieval lệch ở câu khó.
 - OpenAI/Grok vẫn tồn tại trong config làm fallback kỹ thuật.
 

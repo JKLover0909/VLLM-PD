@@ -1,0 +1,97 @@
+{
+  "knowledge_base": "DocJP",
+  "collection": "docjp_knowledge",
+  "session_id": "docjp",
+  "default_topic": "",
+  "allow_all": true,
+  "topics": [
+    {
+      "id": "information_systems",
+      "category": "information_systems",
+      "label_vi": "Công nghệ thông tin & Bảo mật",
+      "label_ja": "情報システム・セキュリティ",
+      "short_label_vi": "CNTT",
+      "short_label_ja": "情報",
+      "description_vi": "Hướng dẫn hệ thống IT, mạng, bảo mật, phần mềm, email, họp trực tuyến và các công cụ nội bộ.",
+      "description_ja": "ITシステム、ネットワーク、セキュリティ、ソフトウェア、メール、Web会議、社内ツールに関する資料。",
+      "icon": "shield",
+      "accent": "blue",
+      "quick_prompts_vi": [
+        "Những phần mềm nào bị cấm sử dụng?",
+        "Quy định sử dụng AI tạo sinh là gì?",
+        "Cách xử lý khi nhận được email đáng ngờ?"
+      ],
+      "quick_prompts_ja": [
+        "使用禁止ソフトには何がありますか？",
+        "生成AIの利用ルールを教えてください。",
+        "迷惑メールが届いた場合はどう対応しますか？"
+      ]
+    },
+    {
+      "id": "legal_compliance",
+      "category": "legal_compliance",
+      "label_vi": "Pháp chế & Quản lý rủi ro",
+      "label_ja": "法務・リスク管理",
+      "short_label_vi": "Pháp chế",
+      "short_label_ja": "法務",
+      "description_vi": "3rdWATCH, xác nhận an toàn, quản lý khủng hoảng, hợp đồng và con dấu.",
+      "description_ja": "3rdWATCH、安否確認、危機管理、契約、捺印管理に関する資料。",
+      "icon": "scale",
+      "accent": "purple",
+      "quick_prompts_vi": [
+        "Cách đăng nhập 3rdWATCH như thế nào?",
+        "Làm sao đăng ký email nhận thông báo an toàn?",
+        "Quy trình đóng gáy hợp đồng như thế nào?"
+      ],
+      "quick_prompts_ja": [
+        "3rdWATCHへのログイン方法を教えてください。",
+        "安否確認メールアドレスの登録方法は？",
+        "契約書の製本方法を教えてください。"
+      ]
+    },
+    {
+      "id": "accounting",
+      "category": "accounting",
+      "label_vi": "Kế toán",
+      "label_ja": "経理",
+      "short_label_vi": "Kế toán",
+      "short_label_ja": "経理",
+      "description_vi": "Tài liệu hướng dẫn và Q&A về hệ thống thanh toán chi phí Rakuraku Seisan.",
+      "description_ja": "楽楽精算の操作マニュアル、スマートフォン版、Q&A資料。",
+      "icon": "calculator",
+      "accent": "green",
+      "quick_prompts_vi": [
+        "Cách sử dụng Rakuraku Seisan trên điện thoại?",
+        "Quy trình nộp thanh toán chi phí như thế nào?",
+        "Có những câu hỏi thường gặp nào về Rakuraku Seisan?"
+      ],
+      "quick_prompts_ja": [
+        "楽楽精算をスマートフォンで使う方法は？",
+        "経費精算の申請手順を教えてください。",
+        "楽楽精算のよくある質問をまとめてください。"
+      ]
+    },
+    {
+      "id": "general_affairs",
+      "category": "general_affairs",
+      "label_vi": "Hành chính tổng hợp",
+      "label_ja": "総務",
+      "short_label_vi": "Tổng vụ",
+      "short_label_ja": "総務",
+      "description_vi": "Tai nạn lao động, biểu mẫu tổng vụ, cấp phát vật tư, trang phục, quy định phê duyệt và cơ sở vật chất.",
+      "description_ja": "労働災害、総務帳票、備品・作業服貸与、決裁権限、施設関連資料。",
+      "icon": "building",
+      "accent": "orange",
+      "quick_prompts_vi": [
+        "Khi xảy ra tai nạn lao động cần báo cáo thế nào?",
+        "Cách xin cấp phát đồng phục hoặc giày bảo hộ?",
+        "Bảng thẩm quyền phê duyệt quy định những gì?"
+      ],
+      "quick_prompts_ja": [
+        "労働災害が発生した場合の報告手順は？",
+        "作業服や作業靴の貸与依頼方法は？",
+        "決裁権限基準表の内容を説明してください。"
+      ]
+    }
+  ]
+}

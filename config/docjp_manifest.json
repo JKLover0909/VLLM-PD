@@ -303,14 +303,14 @@
     {
       "filename": "【法務】2-5.初期設定した情報の変更：ログインIDの変更.pdf",
       "title": "【法務】2-5.初期設定した情報の変更：ログインIDの変更",
-      "category": "information_systems",
+      "category": "legal_compliance",
       "status": "active",
       "access_level": "internal"
     },
     {
       "filename": "【法務】2-6.初期設定した情報の変更：パスワードの変更.pdf",
       "title": "【法務】2-6.初期設定した情報の変更：パスワードの変更",
-      "category": "information_systems",
+      "category": "legal_compliance",
       "status": "active",
       "access_level": "internal"
     },
@@ -324,7 +324,7 @@
     {
       "filename": "【法務】2-8.ユーザ情報の確認.pdf",
       "title": "【法務】2-8.ユーザ情報の確認",
-      "category": "information_systems",
+      "category": "legal_compliance",
       "status": "active",
       "access_level": "internal"
     },
@@ -366,7 +366,7 @@
     {
       "filename": "【法務】4-1.危機管理情報を画面で確認する.pdf",
       "title": "【法務】4-1.危機管理情報を画面で確認する",
-      "category": "information_systems",
+      "category": "legal_compliance",
       "status": "active",
       "access_level": "internal"
     },
@@ -380,28 +380,28 @@
     {
       "filename": "【法務】4-3.地震情報メールの受信設定.pdf",
       "title": "【法務】4-3.地震情報メールの受信設定",
-      "category": "information_systems",
+      "category": "legal_compliance",
       "status": "active",
       "access_level": "internal"
     },
     {
       "filename": "【法務】4-4.鉄道運行情報メールの受信設定.pdf",
       "title": "【法務】4-4.鉄道運行情報メールの受信設定",
-      "category": "information_systems",
+      "category": "legal_compliance",
       "status": "active",
       "access_level": "internal"
     },
     {
       "filename": "【法務】4-5.避難情報メールの受信設定.pdf",
       "title": "【法務】4-5.避難情報メールの受信設定",
-      "category": "information_systems",
+      "category": "legal_compliance",
       "status": "active",
       "access_level": "internal"
     },
     {
       "filename": "【法務】4-6.情報メールの停止・配信設定の削除.pdf",
       "title": "【法務】4-6.情報メールの停止・配信設定の削除",
-      "category": "information_systems",
+      "category": "legal_compliance",
       "status": "active",
       "access_level": "internal"
     },
@@ -554,4 +554,3 @@
     }
   ]
 }
-

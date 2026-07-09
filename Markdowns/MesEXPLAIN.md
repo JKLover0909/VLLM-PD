@@ -18,10 +18,12 @@ Meibook là ứng dụng hỏi đáp nội bộ cho MKAC, gồm:
    - dùng SQL Agent an toàn cho câu phức tạp.
 3. `Gmail send action`
    - gửi email khi người dùng ra lệnh rõ ràng.
-4. `Coding Agent`
+4. `Nghiên cứu tài liệu`
+   - đã bật lại trên UI;
+   - ưu tiên bộ tài liệu Nhật `DocJP` trong `docjp_knowledge`;
+   - người dùng chọn topic trước khi hỏi.
+5. `Coding Agent`
    - vẫn còn code `/agent`, nhưng Docker web đang tắt bằng `ENABLE_AGENT=false`.
-
-Chế độ `Nghiên cứu tài liệu` vẫn còn code, nhưng đang bị ẩn khỏi UI.
 
 ## 2. Các service runtime
 
@@ -53,7 +55,7 @@ Trong Docker web:
 | `src/api/main.py` | FastAPI gateway, endpoint, auth, cache, i18n, Gmail |
 | `src/api/config.py` | Cấu hình env/rate limit/cache/upload |
 | `src/api/schemas.py` | Request/response models |
-| `src/rag/rag_pipeline.py` | RAG MKAC/research và một số legacy path |
+| `src/rag/rag_pipeline.py` | RAG MKAC/research, DocJP topic retrieval và legacy upload path |
 | `src/rag/parser.py` | Parse tài liệu, hỗ trợ text source `MKAC-md` |
 | `src/rag/embedder.py` | BGE-M3 embedding |
 | `src/rag/vector_store.py` | Qdrant wrapper |
@@ -316,7 +318,7 @@ Trong `litellm_config.yaml`:
 | `local-qwen-coder` | SQL Agent/Coding |
 | `coding-model` | tên logic ổn định cho Coding Agent |
 | `openai-model` | cloud fallback |
-| `grok-model` | route cũ research/vision |
+| `grok-model` | route cũ vision/dự phòng |
 
 Fallback quan trọng:
 
@@ -377,8 +379,8 @@ frontend/src/styles.css
 
 Điểm hiện tại:
 
-- UI chỉ hiện `HCNS` và `MES`.
-- Research bị ẩn.
+- UI hiện `HCNS`, `MES` và `Research`.
+- Research hiển thị topic selector, ưu tiên DocJP; demo/upload cũ vẫn còn.
 - UI có toggle `VN / JP`.
 - Lịch sử tách theo mode/ngôn ngữ để tránh đổi ngôn ngữ làm lẫn context.
 - Model label trên UI là `Local Model`, không lộ tên Qwen/OpenAI/Grok.

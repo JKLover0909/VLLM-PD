@@ -81,6 +81,18 @@ class VectorStore:
                 logger.info(f"Collection '{self.COLLECTION_NAME}' initialized successfully.")
             else:
                 logger.info(f"Collection '{self.COLLECTION_NAME}' already exists.")
+            # Index cho metadata.category phục vụ filter theo nhóm chủ đề
+            # (Research/DocJP). Idempotent nên gọi cho cả collection đã tồn tại.
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.COLLECTION_NAME,
+                    field_name="metadata.category",
+                    field_schema=models.PayloadSchemaType.KEYWORD,
+                )
+            except Exception as index_exc:  # noqa: BLE001
+                logger.debug(
+                    "Payload index metadata.category not (re)created: %s", index_exc
+                )
         except Exception as e:
             logger.error(f"Error checking/creating Qdrant collection: {e}")
             raise e
@@ -192,32 +204,67 @@ class VectorStore:
             logger.error(f"Error removing file '{filename}' in session '{session_id}': {e}")
             return 0
 
+    @staticmethod
+    def _build_filter(
+        session_id: str,
+        metadata_filters: Optional[Dict[str, Any]] = None,
+    ) -> models.Filter:
+        """Build a session filter, optionally narrowed by metadata fields.
+
+        ``metadata_filters`` keys address nested payload fields under
+        ``metadata`` (e.g. ``{"category": "accounting"}`` filters on
+        ``metadata.category``).
+        """
+        must: List[models.FieldCondition] = [
+            models.FieldCondition(
+                key="session_id",
+                match=models.MatchValue(value=session_id),
+            )
+        ]
+        for key, value in (metadata_filters or {}).items():
+            if value is None:
+                continue
+            must.append(
+                models.FieldCondition(
+                    key=f"metadata.{key}",
+                    match=models.MatchValue(value=value),
+                )
+            )
+        return models.Filter(must=must)
+
     def search(
         self,
         session_id: str,
         query_embedding: List[float],
         top_k: int = 5,
-        score_threshold: float = 0.3
+        score_threshold: float = 0.3,
+        *,
+        metadata_filters: Optional[Dict[str, Any]] = None,
     ) -> List[SearchResult]:
         """
         Tìm kiếm ngữ nghĩa (cosine similarity) lọc theo session_id.
         """
         try:
-            # Query Qdrant
-            hits = self.client.search(
-                collection_name=self.COLLECTION_NAME,
-                query_vector=query_embedding,
-                query_filter=models.Filter(
-                    must=[
-                        models.FieldCondition(
-                            key="session_id",
-                            match=models.MatchValue(value=session_id)
-                        )
-                    ]
-                ),
-                limit=top_k,
-                score_threshold=score_threshold
-            )
+            # Query Qdrant. qdrant-client >= 1.10 dùng query_points; bản cũ
+            # (1.9, đang chạy trong Docker image) chỉ có search().
+            query_filter = self._build_filter(session_id, metadata_filters)
+            if hasattr(self.client, "query_points"):
+                hits = self.client.query_points(
+                    collection_name=self.COLLECTION_NAME,
+                    query=query_embedding,
+                    query_filter=query_filter,
+                    limit=top_k,
+                    score_threshold=score_threshold,
+                    with_payload=True,
+                ).points
+            else:
+                hits = self.client.search(
+                    collection_name=self.COLLECTION_NAME,
+                    query_vector=query_embedding,
+                    query_filter=query_filter,
+                    limit=top_k,
+                    score_threshold=score_threshold
+                )
 
             results = []
             for hit in hits:
@@ -237,32 +284,45 @@ class VectorStore:
             logger.error(f"Error searching Qdrant: {e}")
             return []
 
-    def get_session_info(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_session_info(
+        self,
+        session_id: str,
+        *,
+        metadata_filters: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
         """
         Lấy thông tin tổng hợp về session từ database.
         """
         try:
-            # Scroll qua các bản ghi thuộc session để tổng hợp thông tin
-            res = self.client.scroll(
-                collection_name=self.COLLECTION_NAME,
-                scroll_filter=models.Filter(
-                    must=[
-                        models.FieldCondition(key="session_id", match=models.MatchValue(value=session_id))
-                    ]
-                ),
-                limit=1000,
-                with_payload=True,
-                with_vectors=False
-            )
-            points = res[0]
-            if not points:
+            # Scroll phân trang: một số session (vd. DocJP) có hơn 1000 chunks
+            # nên một lượt scroll giới hạn 1000 sẽ đếm thiếu.
+            scroll_filter = self._build_filter(session_id, metadata_filters)
+            num_chunks = 0
+            files: set[str] = set()
+            offset = None
+            while True:
+                points, offset = self.client.scroll(
+                    collection_name=self.COLLECTION_NAME,
+                    scroll_filter=scroll_filter,
+                    limit=1000,
+                    offset=offset,
+                    with_payload=["source_file"],
+                    with_vectors=False,
+                )
+                num_chunks += len(points)
+                for p in points:
+                    source_file = (p.payload or {}).get("source_file")
+                    if source_file:
+                        files.add(source_file)
+                if offset is None:
+                    break
+            if num_chunks == 0:
                 return None
 
-            files = list({p.payload.get("source_file") for p in points if p.payload})
             return {
                 "session_id": session_id,
-                "num_chunks": len(points),
-                "files": files,
+                "num_chunks": num_chunks,
+                "files": sorted(files),
                 "num_files": len(files)
             }
         except Exception as e:
