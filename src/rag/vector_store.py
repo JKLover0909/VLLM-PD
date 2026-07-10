@@ -10,7 +10,6 @@ import uuid
 from typing import List, Optional, Dict, Any
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
-from qdrant_client.http.exceptions import UnexpectedResponse
 
 from src.rag.parser import TextChunk
 

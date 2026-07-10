@@ -1,0 +1,1458 @@
+{
+  "version": 1,
+  "description": "Cached answers for Research quick prompts.",
+  "answers": [
+    {
+      "id": "information_systems-01",
+      "research_topic": "information_systems",
+      "question": "Những phần mềm nào bị cấm sử dụng?",
+      "question_vi": "Những phần mềm nào bị cấm sử dụng?",
+      "question_ja": "使用禁止ソフトには何がありますか？",
+      "aliases_vi": [],
+      "aliases_ja": [],
+      "answer_vi": "- Winny, Share, WinMX, Winnyp, うたたね, Marie, 新月, AsgumoWeb, RinGOch, Ansem, Speranza, Sparrow, Zigumo, Cabos, Perfect Dark  \n- Lhaca デラックス版1.20  \n- CADLUS  \n- Baidu IME  \n- GOM Player  \n- DocuWorks 8.0.3  \n- QuickTime for Windows  \n- Skype（個人向け）  \n- Splashtop（Personal版）  \n- PDFCrack  \n- ギガファイル便, データ便, FilePost, firestorage, Dropbox, UP300.net, マイポケット, GoogleDrive, Slack",
+      "answer_ja": "使用禁止ソフトには以下があります：  \n- Winny（および「Share」、「WinMX」、「Winnyp」、「うたたね」、「Marie」、「新月」、「AsgumoWeb」、「RinGOch」、「Ansem」、「Speranza」、「Sparrow」、「Zigumo」、「Cabos」、「Perfect Dark」など）  \n- Lhaca デラックス版1.20  \n- CADLUS（P板.COMが提供しているガーバーデータの表示・印刷ソフト）  \n- Baidu IME  \n- GOM Player  \n- DocuWorks 8.0.3  \n- QuickTime for Windows  \n- Skype（個人向け）  \n- PDFCrack  \n- ギガファイル便、データ便、FilePost、firestorage、Dropbox、UP300.net、マイポケット、GoogleDrive、Slack（クラウドサービス）",
+      "sources": [
+        {
+          "file": "【情報】（４） 使用禁止と判断されたソフト.pdf",
+          "page": 1,
+          "score": 0.6819,
+          "type": "text",
+          "preview": "# 【情報】（４） 使用禁止と判断されたソフト\n -->\n（４） 使用禁止と判断されたソフト\n〇　使用禁止ソフト　一覧\n　　　使用禁止ソフト：\n　 　　　情報システム部門より、その使用を禁止しているソフトウェア。\n名称：　\n　機能の概要：　\n禁止理由\n　　Winny\n※「Share」や「WinMX」、「Winnyp」\nそのほかに、\n「うたたね」、「Marie」、「新月」、\n「AsgumoWeb」、...",
+          "title": "【情報】（４） 使用禁止と判断されたソフト",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【情報】（２） 管理制限ソフト.pdf",
+          "page": 1,
+          "score": 0.6086,
+          "type": "text",
+          "preview": "# 【情報】（２） 管理制限ソフト\n -->\n（２） 管理制限ソフト\n〇　管理制限ソフト　一覧\n管理制限ソフト：\n　　 情報システム部にて配布するソフトウェア。「配布」については、情報システム部にて行う。\n　  　　上記の「配布制限ソフト」と異なり、全てのユーザーにて使用を許可されているソフト。\n名称：　　\n機能の概要：　\n　　LibreOffice\nOfficeとの互換性を持つフリーソフト。\nイ...",
+          "title": "【情報】（２） 管理制限ソフト",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【情報】（４） 使用禁止と判断されたソフト.pdf",
+          "page": 1,
+          "score": 0.6078,
+          "type": "text",
+          "preview": "対策版の8.0.4の提供を4/15から開始。\nhttp://www.fujixerox.co.jp/company/news/notice/2014/0314_dw.html\n　QuickTime for Windows\n　動画再生ソフトウェア\n2016 年 4 月 15 日　動画再生ソフトウェア「QuickTime for Windows」に、2 件の未解決の脆弱性が JV\nN に掲載されました...",
+          "title": "【情報】（４） 使用禁止と判断されたソフト",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【情報】使用禁止と判断したクラウドサービス.pdf",
+          "page": 1,
+          "score": 0.5855,
+          "type": "text",
+          "preview": "# 【情報】使用禁止と判断したクラウドサービス\n -->\n使用禁止と判断したクラウドサービス\n〇　使用禁止と判断したクラウドサービス　一覧\n　利用者から使用可否の問い合わせがあり、使用禁止である事を伝えたクラウドサービス\n名称\nURL例\n機能の概要\n禁止理由\n代替案\nギガファイル便\ngigafile.nu\nファイルのアップロード、ダウンロ\nード\n無料で、会員登録無しでファイルのアップロード可能であ...",
+          "title": "【情報】使用禁止と判断したクラウドサービス",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【情報】（１） 配布制限ソフト.pdf",
+          "page": 1,
+          "score": 0.5806,
+          "type": "text",
+          "preview": "# 【情報】（１） 配布制限ソフト\n -->\n（１） 配布制限ソフト\n〇　配布制限ソフト　一覧\n　　 配布制限ソフト：　　\n　　　　情報システム部もしくは該当管理部署にて配布するソフトウェア。\n　　　　「配布」については、情報システム部もしくは該当管理部署にて行う。\n　　　　無料配布されているソフトウェアではあるが、その使用については情報システム部もしくは該当管理部署の許可が必要。\n　　　　導入手...",
+          "title": "【情報】（１） 配布制限ソフト",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【情報】（２） 管理制限ソフト.pdf",
+          "page": 4,
+          "score": 0.5513,
+          "type": "text",
+          "preview": "-->\nEaseus Todo Backup (Free版) 使用しているPCのディスクイメージを作成し、PC\n移行や故障からの復旧を容易にする\nBurp Suite Community Editio\nn\nPortSwiggerが開発した脆弱性診断ツール\nOWASP ZAP\nOWASPが開発した脆弱性診断ツール\nOracle VM VirtualBox\nWindows10のパソコン上でLinux等...",
+          "title": "【情報】（２） 管理制限ソフト",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        }
+      ],
+      "citations": [
+        {
+          "file": "【情報】（４） 使用禁止と判断されたソフト.pdf",
+          "page": 1,
+          "title": "【情報】（４） 使用禁止と判断されたソフト"
+        },
+        {
+          "file": "【情報】（２） 管理制限ソフト.pdf",
+          "page": 1,
+          "title": "【情報】（２） 管理制限ソフト"
+        },
+        {
+          "file": "【情報】（４） 使用禁止と判断されたソフト.pdf",
+          "page": 1,
+          "title": "【情報】（４） 使用禁止と判断されたソフト"
+        },
+        {
+          "file": "【情報】使用禁止と判断したクラウドサービス.pdf",
+          "page": 1,
+          "title": "【情報】使用禁止と判断したクラウドサービス"
+        },
+        {
+          "file": "【情報】（１） 配布制限ソフト.pdf",
+          "page": 1,
+          "title": "【情報】（１） 配布制限ソフト"
+        },
+        {
+          "file": "【情報】（２） 管理制限ソフト.pdf",
+          "page": 4,
+          "title": "【情報】（２） 管理制限ソフト"
+        }
+      ],
+      "metadata": {
+        "source": "generated_from_current_rag",
+        "generated_at": "2026-07-09"
+      }
+    },
+    {
+      "id": "information_systems-02",
+      "research_topic": "information_systems",
+      "question": "Quy định sử dụng AI tạo sinh là gì?",
+      "question_vi": "Quy định sử dụng AI tạo sinh là gì?",
+      "question_ja": "生成AIの利用ルールを教えてください。",
+      "aliases_vi": [],
+      "aliases_ja": [],
+      "answer_vi": "Từ ngày 6 tháng 1 năm 2026, chỉ được sử dụng Copilot do Microsoft cung cấp, bao gồm:\n\n- Microsoft 365 Copilot Chat (phiên bản miễn phí cho doanh nghiệp)\n- Microsoft 365 Copilot (phiên bản trả phí, tích hợp trong Word, Excel...)\n\nCác dịch vụ AI tạo sinh khác như ChatGPT, DeepSeek và các công cụ tạo hình ảnh, video, âm nhạc không được sử dụng.",
+      "answer_ja": "生成AIの利用ルールは以下の通りです。\n\n1. **利用可能なもの**  \n   - Microsoft社が提供するCopilot（コパイロット）のみ利用可  \n     - Microsoft 365 Copilot Chat（法人無料版）  \n     - Microsoft 365 Copilot（法人有料版）  \n\n2. **利用不可なもの**  \n   - ChatGPT、DeepSeekなどの類似生成AIは利用不可  \n   - 画像や動画を生成するAI、音声・音楽を生成するAIなどは原則利用不可  \n\n3. **個人端末・スマホでの利用**  \n   - 個人の端末やスマホでChatGPTなどへ業務に関する情報を入力することは禁止されています。  \n\n4. **Copilotの利用条件**  \n   - Microsoft 365の利用が前提  \n   - 「盾のマーク」が表示されているもののみ利用可（データ保護機能あり）  \n   - 「盾のマーク」が表示されていないCopilotは利用制限されます。",
+      "sources": [
+        {
+          "file": "【情報】20251201連絡書_生成AIの利用について.pdf",
+          "page": 1,
+          "score": 0.6001,
+          "type": "text",
+          "preview": "# 【情報】20251201連絡書_生成AIの利用について\n -->\nNO.  1 / 3 \n \n \n打合議事録、      \nNO \n \n連 絡 書、       \n2025 年12 月1 日 \n発行 I SMS 事務局（情報システム\nG） \n件名：生成ＡＩの利用制限について \n（サービス・アプリ等） \n自 年  月  日 \n至 年 月   日 \n \n \n \n情報\n25.11.28\n大橋\n \n出...",
+          "title": "【情報】20251201連絡書_生成AIの利用について",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【情報】20251201連絡書_生成AIの利用について.pdf",
+          "page": 2,
+          "score": 0.5642,
+          "type": "text",
+          "preview": "-->\nNO.  2 / 3 \n \n生成AI の使用における懸念と注意事項 \n \n１．機密情報の流出の懸念 \n \n  １）生成AI に送信された情報は、AI 開発者は閲覧可能であり、今後のAI 学習データとして \n他者の回答に利用されることで、情報漏洩につながる可能性があります。 \n \n  ２）当社の場合、ほとんどの取引先様と、NDA（秘密保持契約）を締結していることから、 \n「顧客に関する情報」...",
+          "title": "【情報】20251201連絡書_生成AIの利用について",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【情報】20251201連絡書_生成AIの利用について.pdf",
+          "page": 3,
+          "score": 0.5331,
+          "type": "text",
+          "preview": "-->\nNO.  3 / 3 \n \n \n２．回答内容の正確性に対する懸念 \n \n  １）生成AI は、インターネット上に存在する膨大なテキスト情報から学習し、独自の自然言語 \n処理モデルを使って回答を生成しています。 \nAI が学習していない情報や最新の情報に関しては、回答の精度が低くなる可能性があります。 \n \n  ２）一般的な知識や事実に関する質問、文章生成、翻訳は得意な一方で、最新のニュース...",
+          "title": "【情報】20251201連絡書_生成AIの利用について",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【情報】20251201連絡書_生成AIの利用について.pdf",
+          "page": 1,
+          "score": 0.4653,
+          "type": "text",
+          "preview": "利用制限に伴い、個人の端末やスマホでChatGPT 等へ業務に関する情報を入力することは、 \n引き続き、禁止です。 (コンピュータ管理規定第７条に抵触) \n \n \n  ご不明な点などにつきましては、以下までお問合せ下さい。 \nISMS 事務局（情報システムG） 名屋（雅）（内線100419）、大橋（内線100996） \n以上 \n備\n考 \n※1) メール利用のない方には、所属部門長よりご連絡お願いい...",
+          "title": "【情報】20251201連絡書_生成AIの利用について",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【情報】(連絡文書)LINEWorksAiNote導入について_20260306.pdf",
+          "page": 1,
+          "score": 0.4271,
+          "type": "text",
+          "preview": "# 【情報】(連絡文書)LINEWorksAiNote導入について_20260306\n -->\nNO.  1 / 2 \n \n \n打合議事録\n    \nNO\n連\n絡\n書\n    \n2026 年3 月6 日\n発行\n情報システムＧ\n件名:LINE WORKS AiNote 導入\n自   年    月    日 \n至   年   月    日 \n \n \n出席者・宛先 \n社用スマートフォン利用従業員各位\n場...",
+          "title": "【情報】(連絡文書)LINEWorksAiNote導入について_20260306",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【情報】連絡書_Copilotの利用について_20260205.pdf",
+          "page": 1,
+          "score": 0.426,
+          "type": "text",
+          "preview": "# 【情報】連絡書_Copilotの利用について_20260205\n -->\nNO.  1 / 1 \n \n打合議事録、      \nNO \n \n連 絡 書、       \n2026 年2 月5 日 \n発行 ISMS 事務局（情報システムG） \n件名：Copilot の利用について \n \n自 年  月  日 \n至 年 月   日 \n \n \n \n \n出席者・宛先 \n従業員 各位 \n場所 \n時間  時 ...",
+          "title": "【情報】連絡書_Copilotの利用について_20260205",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        }
+      ],
+      "citations": [
+        {
+          "file": "【情報】20251201連絡書_生成AIの利用について.pdf",
+          "page": 1,
+          "title": "【情報】20251201連絡書_生成AIの利用について"
+        },
+        {
+          "file": "【情報】20251201連絡書_生成AIの利用について.pdf",
+          "page": 2,
+          "title": "【情報】20251201連絡書_生成AIの利用について"
+        },
+        {
+          "file": "【情報】20251201連絡書_生成AIの利用について.pdf",
+          "page": 3,
+          "title": "【情報】20251201連絡書_生成AIの利用について"
+        },
+        {
+          "file": "【情報】20251201連絡書_生成AIの利用について.pdf",
+          "page": 1,
+          "title": "【情報】20251201連絡書_生成AIの利用について"
+        },
+        {
+          "file": "【情報】(連絡文書)LINEWorksAiNote導入について_20260306.pdf",
+          "page": 1,
+          "title": "【情報】(連絡文書)LINEWorksAiNote導入について_20260306"
+        },
+        {
+          "file": "【情報】連絡書_Copilotの利用について_20260205.pdf",
+          "page": 1,
+          "title": "【情報】連絡書_Copilotの利用について_20260205"
+        }
+      ],
+      "metadata": {
+        "source": "generated_from_current_rag",
+        "generated_at": "2026-07-09"
+      }
+    },
+    {
+      "id": "information_systems-03",
+      "research_topic": "information_systems",
+      "question": "Cách xử lý khi nhận được email đáng ngờ?",
+      "question_vi": "Cách xử lý khi nhận được email đáng ngờ?",
+      "question_ja": "迷惑メールが届いた場合はどう対応しますか？",
+      "aliases_vi": [],
+      "aliases_ja": [],
+      "answer_vi": "Khi nhận được email đáng ngờ, cần thực hiện các bước sau:\n\n1. **Không trả lời** – Tránh cho đối phương biết địa chỉ email là hợp lệ.  \n2. **Không mở tệp đính kèm** – Tệp đính kèm có thể chứa virus.  \n3. **Không nhấp vào liên kết** – Liên kết có thể dẫn đến trang lừa đảo.  \n4. **Không nhập thông tin cá nhân** – Tránh bị đánh cắp thông tin như mật khẩu, số thẻ.  \n5. **Thông báo cho bộ phận Hệ thống Thông tin** – Để họ kiểm tra và cập nhật bộ lọc email.",
+      "answer_ja": "迷惑メールが届いた場合は、以下の対応を行ってください。\n\n①　返信しない  \n②　添付ファイルは開かない  \n③　URLはクリックしない  \n④　アカウント情報、個人情報、パスワード等を入力しない  \n⑤　情報システム部門に連絡をしてください",
+      "sources": [
+        {
+          "file": "【情報】迷惑メールが届いた場合の対応.pdf",
+          "page": 1,
+          "score": 0.6287,
+          "type": "text",
+          "preview": "# 【情報】迷惑メールが届いた場合の対応\n -->\n迷惑メールが届いた場合の対応\n迷惑メールが届いた場合の対応\n※各タブをクリックすると文書が表示されます。\n・届いた場合の対応・・・・届いたメールが迷惑メールかも？と思った場合の対応\n・迷惑メール例・・・・メイコーで実際に届いている迷惑メールの例です。\n・迷惑メールとは・・・・一般的な情報、迷惑メールにもいくつかの種類があります。\n①返信しない\n→...",
+          "title": "【情報】迷惑メールが届いた場合の対応",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【情報】迷惑メールが届いた場合の対応.pdf",
+          "page": 3,
+          "score": 0.6009,
+          "type": "text",
+          "preview": "-->\n迷惑メールとは\n「迷惑メール」とは、受け取りを望まない電子メールのことです。\n受信することを同意・承諾していないのに送信されたり、受信者が受け取りを拒否しても引き続き送信されたりします。\n簡単に言えば、郵便のダイレクトメールやセールスの電話の電子メール版です。また「スパムメール」と呼ばれることもあります。\n主な迷惑メールとして次のようなものがあります。\n1）ウイルス感染を目的とするもの\nメ...",
+          "title": "【情報】迷惑メールが届いた場合の対応",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【情報】HENNGE Email DLP.docx",
+          "page": 1,
+          "score": 0.5609,
+          "type": "text",
+          "preview": "①Outlookで社外宛にメールを送信します。\n\n②5分間保留後にメールが送信されます。\n\n添付ファイルがあればURLに変換され、URLが書き込まれたPDFとして受信者に送られます。\n\nPDFは3ページになっており、それぞれ日本語、英語、中国語(簡体字)の説明分が表示されます。\n\nHENNGE Email DLP利用手順（保留メールを削除する）\n\n①Outlookで社外宛にメールを送信します。\n\n...",
+          "title": "【情報】HENNGE Email DLP",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        },
+        {
+          "file": "【情報】HENNGE Email DLP.docx",
+          "page": 1,
+          "score": 0.5382,
+          "type": "text",
+          "preview": "# 【情報】HENNGE Email DLP\n\nHENNGE Email DLPについて\n\nDLPとは\n\nDLP（Data Loss Prevention）とは\n\n機密情報・個人情報などの流出防止や、内部不正の検知と抑止といった目的の機能です。\n\nHENNGE Email DLPとは\n\n社外へのメール送信ミスによる情報漏洩対策の機能となります。\n\n具体的には下記の動作を行います。\n\n①社外に送信し...",
+          "title": "【情報】HENNGE Email DLP",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        },
+        {
+          "file": "【情報】迷惑メールが届いた場合の対応.pdf",
+          "page": 2,
+          "score": 0.5344,
+          "type": "text",
+          "preview": "-->\nタイトル：【三井住友カード】 セキュリティ警告: 誰かがあなたのアカウントにサインインしようとしています よりご確認下さい\nタイトル：ETCあなたのアカウントは停止されました！番号：353899574949　\nタイトル：PAYPAYから緊急のご連絡964577",
+          "title": "【情報】迷惑メールが届いた場合の対応",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【情報】HENNGE Email DLP.docx",
+          "page": 1,
+          "score": 0.5069,
+          "type": "text",
+          "preview": "アドレスは、メールアドレス、ドメイン、サブドメインの設定が可能です。\n\nドメインは @example.com、サブドメインは .example.com の形式で指定します。\n\n③承認者のチェックは行わずに「適用」をクリックします。\n\n④利用者側に登録したことを伝えます。\n\n※以下利用者側\n\n登録した宛先に添付ファイルを送ると、暗号化されたZIPファイルが送られ、　別のメールでパスワードが送信されま...",
+          "title": "【情報】HENNGE Email DLP",
+          "category": "information_systems",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        }
+      ],
+      "citations": [
+        {
+          "file": "【情報】迷惑メールが届いた場合の対応.pdf",
+          "page": 1,
+          "title": "【情報】迷惑メールが届いた場合の対応"
+        },
+        {
+          "file": "【情報】迷惑メールが届いた場合の対応.pdf",
+          "page": 3,
+          "title": "【情報】迷惑メールが届いた場合の対応"
+        },
+        {
+          "file": "【情報】HENNGE Email DLP.docx",
+          "page": 1,
+          "title": "【情報】HENNGE Email DLP"
+        },
+        {
+          "file": "【情報】HENNGE Email DLP.docx",
+          "page": 1,
+          "title": "【情報】HENNGE Email DLP"
+        },
+        {
+          "file": "【情報】迷惑メールが届いた場合の対応.pdf",
+          "page": 2,
+          "title": "【情報】迷惑メールが届いた場合の対応"
+        },
+        {
+          "file": "【情報】HENNGE Email DLP.docx",
+          "page": 1,
+          "title": "【情報】HENNGE Email DLP"
+        }
+      ],
+      "metadata": {
+        "source": "generated_from_current_rag",
+        "generated_at": "2026-07-09"
+      }
+    },
+    {
+      "id": "legal_compliance-01",
+      "research_topic": "legal_compliance",
+      "question": "Cách đăng nhập 3rdWATCH như thế nào?",
+      "question_vi": "Cách đăng nhập 3rdWATCH như thế nào?",
+      "question_ja": "3rdWATCHへのログイン方法を教えてください。",
+      "aliases_vi": [],
+      "aliases_ja": [],
+      "answer_vi": "Để đăng nhập vào hệ thống 3rdWATCH, thực hiện các bước sau:\n\n1. Truy cập hệ thống thông qua URL: http://bcp.myrescue.net/anpi/usr.\n2. Nhập \"顧客コード\" (Mã khách hàng), \"ログインID\" (Tên đăng nhập) và \"パスワード\" (Mật khẩu).\n3. Nhấn nút \"ログイン\" (Đăng nhập).\n\nLưu ý: Nếu quên \"ログインID\" hoặc \"パスワード\", vui lòng tham khảo phần \"ログインID・パスワードの取得\" (Lấy lại tên đăng nhập và mật khẩu) trên trang 39 hoặc 12 của tài liệu.",
+      "answer_ja": "1. システムにアクセスします。  \n2. 顧客コード、ログインID、パスワードを入力してください。  \n3. 「ログイン」ボタンをクリックします。",
+      "sources": [
+        {
+          "file": "【法務】3rdWATCH_ユーザマニュアル_第2版.pdf",
+          "page": 6,
+          "score": 0.6669,
+          "type": "text",
+          "preview": "-->\nサービスへのログイン方法\nサービスへのログイン方法\n1\n2\n3\n株式会社安否\nEnglish システムにアクセスします。\n緊急情報発信支援システム\n顧客コード、ログインID、パスワードを入力してください。\n顧客コード\nログインID\nパスワード\nログイン | キャンセル\n暗号通信 (https)はこちら\nログインID、パスワードがわからない方はこちら\nメールアドレスを登録する方はこちら\nht...",
+          "title": "【法務】3rdWATCH_ユーザマニュアル_第2版",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）.pdf",
+          "page": 11,
+          "score": 0.647,
+          "type": "text",
+          "preview": "-->\nサービスへのログイン方法\nサービスへのログイン方法\n1\n2\n3\n株式会社安否\nEnglish システムにアクセスします。\n緊急情報発信支援システム\n顧客コード、ログインID、パスワードを入力してください。\n顧客コード\nログインID\nパスワード\nログイン キャンセル\n暗号通信(https)はこちら\nログインID、パスワードがわからない方はこちら\nメールアドレスを登録する方はこちら\nhttp:...",
+          "title": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）.pdf",
+          "page": 50,
+          "score": 0.6421,
+          "type": "text",
+          "preview": "-->\n3. ユーザへの個別連絡\n3-2. 再送メール\n任意のユーザへ個別にメールを送ります。\n再送メールは一度送ったユーザに再度メールを送る機能です。\n(※部署管理権限(指示権限)では再送メールを送信できません。)\nPC(スマホ)による方法と携帯電話(ガラケー)による2種類の送信方法があります。\n3-2-1. PC(スマホ) を使って送信する場合\n1\n2\n株式会社安否\n緊急情報発信支援システム\n...",
+          "title": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）.pdf",
+          "page": 38,
+          "score": 0.6389,
+          "type": "text",
+          "preview": "-->\n2. 複数ユーザへの追加連絡\n2-3. 新規案件メールを送る場合\n集計結果から任意の条件で抽出したユーザに対して新規案件メールを送信します。\n新規案件メールでは、新規案件を起動して、 ユーザに応答を求めるメールを送信します。\nPC(スマホ)による方法と携帯電話(ガラケー)による2種類の送信方法があります。\n2-3-1. PC(スマホ) を使って送信する場合\n1\n2\n株式会社安否\n緊急情報発...",
+          "title": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）.pdf",
+          "page": 26,
+          "score": 0.6356,
+          "type": "text",
+          "preview": "-->\n2. 複数ユーザへの追加連絡\n2. 複数ユーザへの追加連絡\n2-1. 指示メール\n集計結果から任意の条件で抽出したユーザに対し、追加で指示メールの送信をします。\n指示メールは応答の必要がない通常のメール送信です。\nPC(スマホ)による方法と携帯電話(ガラケー)による2種類の送信方法があります。\n2-1-1. PC(スマホ) を使って送信する場合\n1\n2\n株式会社安否\n緊急情報発信支援システ...",
+          "title": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）.pdf",
+          "page": 56,
+          "score": 0.6312,
+          "type": "text",
+          "preview": "-->\n4. 代理応答\n代理の応答\n4. 代理応答\n4-1. PC(スマホ) を使用する場合\nユーザ自身がシステムへ応答できない場合など、 管理者が状態を登録することで、 代理応答できます。\n複数のユーザで同じ応答状況を登録する場合、 管理者は応答状況をまとめて登録できます。\nPC(スマホ)による方法と携帯電話(ガラケー)による2種類の代理応答方法があります。\n4-1. PC(スマホ) を使用する...",
+          "title": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        }
+      ],
+      "citations": [
+        {
+          "file": "【法務】3rdWATCH_ユーザマニュアル_第2版.pdf",
+          "page": 6,
+          "title": "【法務】3rdWATCH_ユーザマニュアル_第2版"
+        },
+        {
+          "file": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）.pdf",
+          "page": 11,
+          "title": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）"
+        },
+        {
+          "file": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）.pdf",
+          "page": 50,
+          "title": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）"
+        },
+        {
+          "file": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）.pdf",
+          "page": 38,
+          "title": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）"
+        },
+        {
+          "file": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）.pdf",
+          "page": 26,
+          "title": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）"
+        },
+        {
+          "file": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）.pdf",
+          "page": 56,
+          "title": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）"
+        }
+      ],
+      "metadata": {
+        "source": "generated_from_current_rag",
+        "generated_at": "2026-07-09"
+      }
+    },
+    {
+      "id": "legal_compliance-02",
+      "research_topic": "legal_compliance",
+      "question": "Làm sao đăng ký email nhận thông báo an toàn?",
+      "question_vi": "Làm sao đăng ký email nhận thông báo an toàn?",
+      "question_ja": "安否確認メールアドレスの登録方法は？",
+      "aliases_vi": [],
+      "aliases_ja": [],
+      "answer_vi": "Để đăng ký email nhận thông báo an toàn, thực hiện các bước sau:\n\n1. Truy cập trang đăng nhập dịch vụ (https://bcp.myrescue.net/anpi/usr).\n2. Nhấp vào \"メールアドレスを登録する方はこちら\".\n3. Nhập \"顧客コード\", \"ログインID\", và \"パスワード\".\n4. Nhấp vào \"ログイン\".\n5. Nhập \"番号\", \"名前\", và \"メールアドレス\".\n6. Nhấp vào \"確認\".\n7. Kiểm tra hộp thư đến và nhấp vào liên kết trong email xác nhận để hoàn tất đăng ký.",
+      "answer_ja": "1. メールアドレスの新規登録を行います。\n2. PCやスマホ、携帯電話から登録できます。\n3. 登録用のメールアドレスを入力し、確認メールを受信します。\n4. 確認メールに記載されたURLをクリックし、登録情報を入力して「確認」ボタンをタップします。\n5. 登録が完了すると、ログイン用の顧客コードとログインID・パスワードが通知されます。",
+      "sources": [
+        {
+          "file": "【法務】4-5.避難情報メールの受信設定.pdf",
+          "page": 1,
+          "score": 0.645,
+          "type": "text",
+          "preview": "# 【法務】4-5.避難情報メールの受信設定\n -->\n1\n11 Steps\n4-5.避難情報メールの受信設定\n避難情報はメールで受信できます。\nこのガイドでは、避難情報メールの受信手\n順を説明します。\n※配信設定を削除したい場合は「削除」\nを、配信を一時停止したい場合は「停止」\nをクリックしてください。\n必要な情報の準備\n避難情報メールの受信設定にはログインが\n必要です。ログインのための情報を事...",
+          "title": "【法務】4-5.避難情報メールの受信設定",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【法務】3rdWATCH_ユーザマニュアル_第2版.pdf",
+          "page": 8,
+          "score": 0.6443,
+          "type": "text",
+          "preview": "-->\n1. メールアドレスの新規登録\n3\n4\n5\nEnglish\n緊急情報発信支援システム\nメールアドレス初期登録画面\n顧客コード、ログインID、パスワードを入力してください。\nコード\nログインID\nパスワード|\nログイン キャンセル\n暗号通信(https)はこちら\nログイン画面はこちら\nメールアドレス初期登録画面\nメールアドレス初期登録メール送信\n緊急情報発信支援システムをご利用頂きありがとう...",
+          "title": "【法務】3rdWATCH_ユーザマニュアル_第2版",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【法務】3rdWATCH_ユーザマニュアル_第2版.pdf",
+          "page": 10,
+          "score": 0.6442,
+          "type": "text",
+          "preview": "-->\n1. メールアドレスの新規登録\n1-2. スマホ・携帯電話を使って新規登録する場合\n1-2. スマホ・携帯電話を使って新規登録する場合\nキャンセル\nanpianpi\n送信\n1\n宛先: anpi-new@bcp.myrescue.net\nメールを送信します。\n次の情報をスマホや携帯電話からメール送信します。\nCc/Bcc. 差出人: @jp\n件名: anpianpi\nqwer t y uio...",
+          "title": "【法務】3rdWATCH_ユーザマニュアル_第2版",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【法務】5-1.家族安否（オプション）：家族の連絡先登録と削除.pdf",
+          "page": 5,
+          "score": 0.6427,
+          "type": "text",
+          "preview": "-->\n8\n9\n通知メールの受信\nSTEP5で登録通知をした場合は指定したメ\nールアドレスに「家族安否メールアドレス\n登録完了のお知らせ」のメールが送信され\nます。\n※メールに記載されているURLは家族安否\n専用のURLです\n（https://bcp.myrescue.net/famianpi/us\nr）\n※登録時にログインID・パスワードの取\n得・変更をおすすめします。URLをクリッ\nクして「ロ...",
+          "title": "【法務】5-1.家族安否（オプション）：家族の連絡先登録と削除",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【法務】3rdWATCH_ユーザマニュアル_第2版.pdf",
+          "page": 9,
+          "score": 0.6427,
+          "type": "text",
+          "preview": "-->\n1. メールアドレスの新規登録\n6\nメールアドレス登録\nメールアドレス初期登録画面\nメールアドレス初期登録メール送信\nsq11111 確認太郎様\n入力されたメールアドレス\nkasaka@rescue.co.jp\n初期登録の確認メールを送信しました。\nメールアドレスの登録手続きはこの後、確認メールを受信された端末側でしていただく必要があります。\n確認メールを受信された端末に届くメールをご確認...",
+          "title": "【法務】3rdWATCH_ユーザマニュアル_第2版",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【法務】2-1.メールアドレスの新規登録 - 方法A：ブラウザ画面からの登録.pdf",
+          "page": 2,
+          "score": 0.6396,
+          "type": "text",
+          "preview": "-->\n2\n3\n迷惑メールフィルタの設定変更\n操作の途中でサービスから自動メールが届\nきます。\n迷惑メールフィルタで拒否されたり、迷惑\nメールフォルダに振り分けられたりする\nと、続きの操作ができません。\n事前に携帯電話会社などの迷惑メールフィ\nルタで、\"myrescue.net\"を許可ドメイン\nとして設定してください。\nログイン画面から登録画面にアクセスする\nサービスのログイン画面\n（https:...",
+          "title": "【法務】2-1.メールアドレスの新規登録 - 方法A：ブラウザ画面からの登録",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        }
+      ],
+      "citations": [
+        {
+          "file": "【法務】4-5.避難情報メールの受信設定.pdf",
+          "page": 1,
+          "title": "【法務】4-5.避難情報メールの受信設定"
+        },
+        {
+          "file": "【法務】3rdWATCH_ユーザマニュアル_第2版.pdf",
+          "page": 8,
+          "title": "【法務】3rdWATCH_ユーザマニュアル_第2版"
+        },
+        {
+          "file": "【法務】3rdWATCH_ユーザマニュアル_第2版.pdf",
+          "page": 10,
+          "title": "【法務】3rdWATCH_ユーザマニュアル_第2版"
+        },
+        {
+          "file": "【法務】5-1.家族安否（オプション）：家族の連絡先登録と削除.pdf",
+          "page": 5,
+          "title": "【法務】5-1.家族安否（オプション）：家族の連絡先登録と削除"
+        },
+        {
+          "file": "【法務】3rdWATCH_ユーザマニュアル_第2版.pdf",
+          "page": 9,
+          "title": "【法務】3rdWATCH_ユーザマニュアル_第2版"
+        },
+        {
+          "file": "【法務】2-1.メールアドレスの新規登録 - 方法A：ブラウザ画面からの登録.pdf",
+          "page": 2,
+          "title": "【法務】2-1.メールアドレスの新規登録 - 方法A：ブラウザ画面からの登録"
+        }
+      ],
+      "metadata": {
+        "source": "generated_from_current_rag",
+        "generated_at": "2026-07-09"
+      }
+    },
+    {
+      "id": "legal_compliance-03",
+      "research_topic": "legal_compliance",
+      "question": "Quy trình đóng gáy hợp đồng như thế nào?",
+      "question_vi": "Quy trình đóng gáy hợp đồng như thế nào?",
+      "question_ja": "契約書の製本方法を教えてください。",
+      "aliases_vi": [],
+      "aliases_ja": [],
+      "answer_vi": "1. Cắt giấy dính (製本テープ) dài hơn chiều dài của hợp đồng khoảng 1 cm ở cả hai đầu.  \n2. Gấp giấy dính lại, tạo nếp gấp ở giữa phần bảo vệ (保護テープ).  \n3. Đính giấy dính vào mép của hợp đồng, dùng kẹp giữ cố định.  \n4. Lật mặt sau của hợp đồng, gỡ bỏ phần bảo vệ ở mặt không được kẹp.  \n5. Dán phần có keo (のり) của giấy dính vào mặt sau của hợp đồng.  \n6. Gỡ bỏ phần bảo vệ còn lại.  \n7. Sau khi dán xong, đóng dấu (割印) ở bìa trước và bìa sau.",
+      "answer_ja": "契約書の製本方法は以下の通りです。\n\n1. コピー用紙を縦長に切り、製本テープの代わりに使用します。\n2. 紙テープを契約書の縦の長さに切り、三つ折にします。\n3. 三つ折にした紙テープの左端を契約書の端に合わせ、合わせた端を折り返し、そこにのりをつけます。\n4. 赤い斜線部分を元に戻し貼りつけ、ピンクの点線箇所で右側を折り返します。\n\nまた、製本テープを使用する場合は、以下の手順を行います。\n\n1. 製本テープを契約書の縦の長さより上下1cm程度長く切り、折り返して保護テープの左右の境を中心に折り目をつけます。\n2. 契約書の端にテープを合わせ、クリップなどで動かないように端を止めます。\n3. 契約書を裏返し、クリップで留めていない方の保護テープをすべて剥がします。\n4. 保護テープを剥がした反対側も貼りつけ、のりの部分を契約書側に折り、貼りつけます。\n5. 残りの保護テープを剥がします。",
+      "sources": [
+        {
+          "file": "【法務】契約書の製本方法.pdf",
+          "page": 2,
+          "score": 0.51,
+          "type": "text",
+          "preview": "-->\n裏\n完成です！\n契約書\n表\n裏\n割印は表紙、裏表紙の二箇所押印します。\n印\n印\n右側を折り返したら契約書を裏にします。\n契約書\n表\n裏\n残りの紙テープ部分にのりを\nつけ貼り付けます。\n裏\nのりをつける",
+          "title": "【法務】契約書の製本方法",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【法務】契約書の製本方法.pdf",
+          "page": 4,
+          "score": 0.4937,
+          "type": "text",
+          "preview": "-->\nそのまま中心からずれないよう\nにのり部分を貼りつけていき（黄\n色箇所）、端を貼り付ける前にク\nリップをはずします。\n裏\nまた契約書を表にし、保護テープ側の要ら\nない部分を切り取ります。\n（赤点線部分）\n契約書\n表\n\n\n←のり\nこの時点では、\nまだ保護テープ\nは剥がしません\n保護テープを剥がした\n反対側も貼りつけます。\n契約書\n表\nのりの部分（赤斜線箇所）を契約書\n側に折り、貼りつけます...",
+          "title": "【法務】契約書の製本方法",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【法務】捺印管理システム＿トップページ.pdf",
+          "page": 1,
+          "score": 0.4807,
+          "type": "text",
+          "preview": "# 【法務】捺印管理システム＿トップページ\n -->\nAMEIKO\nログオフ\n部門 : リーガル・コンプライアンス課 名前:毛利 亨\n一般利用者及び承認者用\n申請登録\n承認・決裁(0件)\n捺印処理(0件)\n申請検索\n一時保存呼出(0件)\n申請取下\nパスワード変更\n申請登録画面に決裁項目No.を追加しました。\n※決裁権限基準表 をご確認ください。\n管理者用\n受付\n捺印受付\nメンテナンス\n申請検索\nユ...",
+          "title": "【法務】捺印管理システム＿トップページ",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【法務】契約書の製本方法.pdf",
+          "page": 3,
+          "score": 0.4656,
+          "type": "text",
+          "preview": "-->\n製本テープは裏面にの\nりがついていて、保護\nテープが左右にそれぞ\nれ剥がせるものを使用\nしています。\n←のり\n ←保護テープ\n製本テープを契約書の縦\nの長さより上下１cm程度\n長く切ります。\n次にテープを折り返し保\n護テープの左右の境を中\n心に折り目をつけます。\n製\n本\nテ\nー\nプ\n契約書\n表\n←１cm程長く切る\n←１cm程長く切る\n契約書の端にテープを\nあわせ、クリップなどで\n動かないよ...",
+          "title": "【法務】契約書の製本方法",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）.pdf",
+          "page": 3,
+          "score": 0.4612,
+          "type": "text",
+          "preview": "-->\n安否確認サービスの概要\n操作の流れ\n本書は 「安否の確認」、「代理の応答」、「案件の集計」の3パートで構成されています。\n安否の確認\n代理の応答\n案件の集計\n以下のことができます。\n以下のことができます。\n以下のことができます。\n■複数ユーザへの連絡 (P.14)\n個別代理応答(P.56)\n■集計を閲覧する (P.62 )\n•\n•\n・安否確認メールを送る (P.14)\n非常呼集メールを送る...",
+          "title": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）.pdf",
+          "page": 39,
+          "score": 0.4574,
+          "type": "text",
+          "preview": "SQ11111 確認太郎\nrsq001\n吉永美\nSq017平尾博之\nS11111 確認太郎\n自動起動\n自動起動\n(全21件) 前へ 1 2 次へ\nまとめ集計一覧更新\nマイページへ\n株式会社安否\n案件履歴一覧\n案件No.\n案件発生日時\n送信者\n送信先\n00044\n| 2016/07/14 11:07\nSQ001 吉永美優\n任意指定\n集計状況画面\n部署集計データ\n役職\n部署\n居住地\nすべて\nすべて\n拠...",
+          "title": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）",
+          "category": "legal_compliance",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        }
+      ],
+      "citations": [
+        {
+          "file": "【法務】契約書の製本方法.pdf",
+          "page": 2,
+          "title": "【法務】契約書の製本方法"
+        },
+        {
+          "file": "【法務】契約書の製本方法.pdf",
+          "page": 4,
+          "title": "【法務】契約書の製本方法"
+        },
+        {
+          "file": "【法務】捺印管理システム＿トップページ.pdf",
+          "page": 1,
+          "title": "【法務】捺印管理システム＿トップページ"
+        },
+        {
+          "file": "【法務】契約書の製本方法.pdf",
+          "page": 3,
+          "title": "【法務】契約書の製本方法"
+        },
+        {
+          "file": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）.pdf",
+          "page": 3,
+          "title": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）"
+        },
+        {
+          "file": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）.pdf",
+          "page": 39,
+          "title": "【法務】3rdWATCH_管理者マニュアル（起動・集計機能）"
+        }
+      ],
+      "metadata": {
+        "source": "generated_from_current_rag",
+        "generated_at": "2026-07-09"
+      }
+    },
+    {
+      "id": "accounting-01",
+      "research_topic": "accounting",
+      "question": "Cách sử dụng Rakuraku Seisan trên điện thoại?",
+      "question_vi": "Cách sử dụng Rakuraku Seisan trên điện thoại?",
+      "question_ja": "楽楽精算をスマートフォンで使う方法は？",
+      "aliases_vi": [],
+      "aliases_ja": [],
+      "answer_vi": "Cách sử dụng Rakuraku Seisan trên điện thoại như sau:\n\n1. Tải ứng dụng \"楽楽精算\" từ App Store (iPhone) hoặc Google Play (Android).\n2. Mở ứng dụng và nhập URL của Rakuraku Seisan, cùng với ID và mật khẩu đăng nhập đã được cung cấp.\n3. Nhấn nút \"ログイン\" để đăng nhập.\n\nNgoài ra, bạn cũng có thể truy cập Rakuraku Seisan trên trình duyệt di động bằng cách mở URL dành cho phiên bản di động (thay đuôi \"a/\" bằng \"m/\").",
+      "answer_ja": "楽楽精算をスマートフォンで使う方法は以下の通りです。\n\n1. スマートフォンブラウザ（Safari、Google Chrome）を使用する。\n2. iPhoneアプリ「楽楽精算」をインストールして使用する（iOS 11以上が必要）。\n3. Androidアプリ「楽楽精算」をインストールして使用する（Android 5以上が必要）。\n\nまた、ログインする際は、楽楽精算のURL、ログインID、パスワードを入力します。",
+      "sources": [
+        {
+          "file": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル.pdf",
+          "page": 6,
+          "score": 0.5372,
+          "type": "text",
+          "preview": "-->\nMeiko Electronics Co., Ltd.\n5/5\n5\n1-2. スマホアプリでのログイン方法\n•\n以下のURLからスマートフォンアプリをダウンロードします。\niPhoneの場合（iOS11以上）\nhttps://apps.apple.com/us/app/%E6%A5%BD%E6\n%A5%BD%E7%B2%BE%E7%AE%97/id1352852886?l=ja&ls=1\n...",
+          "title": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル.pdf",
+          "page": 4,
+          "score": 0.5305,
+          "type": "text",
+          "preview": "-->\nMeiko Electronics Co., Ltd.\nご利用時の注意事項\n• 動作保証環境\n• PC版との機能差異\nスマートフォン版の機能は、基本的な申請・承認のみに制限されています。\n4\n利用方法\n対応ブラウザ・端末\nスマホブラウザ\niOS\n：Safari\nAndroid\n：Google Chrome\niPhoneアプリの「楽楽精算」\niOS 11 以上\nAndroidアプリの「楽楽精...",
+          "title": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル.pdf",
+          "page": 5,
+          "score": 0.5017,
+          "type": "text",
+          "preview": "-->\nMeiko Electronics Co., Ltd.\nログイン\n・スマホブラウザからのログイン\nブラウザでスマートフォン版楽楽精算URL（※）を開き、\nご自身のログインID・パスワードでログインしてください。\n（※）スマートフォン版とPC版のURLは異なります。\nPC版のURL末尾「a/」を「m/」に変更するとスマートフォン版URLとなります。\n【スマートフォン版ブラウザURL】\n本社\n...",
+          "title": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル.pdf",
+          "page": 3,
+          "score": 0.4997,
+          "type": "text",
+          "preview": "-->\nMeiko Electronics Co., Ltd.\nはじめに\n• スマートフォンから楽楽精算にアクセスし、申請および承認を\n行えます。\n• スマートフォン版の楽楽精算には3つのアクセス方法がありま\nす。\n・スマホブラウザ（Safari、Google Chrome）\n・iPhoneアプリの「楽楽精算」\n・Androidアプリの「楽楽精算」\n3",
+          "title": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル.pdf",
+          "page": 5,
+          "score": 0.4963,
+          "type": "text",
+          "preview": "-->\nMeiko Electronics Co., Ltd.\n4/5\n4\n1-1. PC / スマホブラウザでのログイン方法\n•\n楽楽精算には、以下のURLからログインします。\nPC版URL\nスマートフォン版ブラウザURL\n本社\n \nhttps://rschime.rakurakuseisan.jp/iDcp_TdjpCa/\nhttps://rschime.rakurakuseisan.jp/i...",
+          "title": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル.pdf",
+          "page": 6,
+          "score": 0.496,
+          "type": "text",
+          "preview": "-->\nMeiko Electronics Co., Ltd.\nログイン\n・iPhone/Androidアプリの「楽楽精算」からのログイン\n１．アプリをスマートフォンにインストール\n２．ログイン画面に、\n楽楽精算URL（※）、ご自身のログインID・パスワードを入力しログイン\n（※）PC版、スマートフォン版のどちらのURLでもログイン可能です。\n6\n<iPhoneアプリの画像>",
+          "title": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        }
+      ],
+      "citations": [
+        {
+          "file": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル.pdf",
+          "page": 6,
+          "title": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル"
+        },
+        {
+          "file": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル.pdf",
+          "page": 4,
+          "title": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル"
+        },
+        {
+          "file": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル.pdf",
+          "page": 5,
+          "title": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル"
+        },
+        {
+          "file": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル.pdf",
+          "page": 3,
+          "title": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル"
+        },
+        {
+          "file": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル.pdf",
+          "page": 5,
+          "title": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル"
+        },
+        {
+          "file": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル.pdf",
+          "page": 6,
+          "title": "【経理】000_001_20260122_楽楽精算　スマートフォン版利用マニュアル"
+        }
+      ],
+      "metadata": {
+        "source": "generated_from_current_rag",
+        "generated_at": "2026-07-09"
+      }
+    },
+    {
+      "id": "accounting-02",
+      "research_topic": "accounting",
+      "question": "Quy trình nộp thanh toán chi phí như thế nào?",
+      "question_vi": "Quy trình nộp thanh toán chi phí như thế nào?",
+      "question_ja": "経費精算の申請手順を教えてください。",
+      "aliases_vi": [],
+      "aliases_ja": [],
+      "answer_vi": "Quy trình nộp thanh toán chi phí được thực hiện như sau:\n\n1. Đăng nhập vào hệ thống 楽楽精算.\n2. Chọn mục phù hợp (ví dụ: 経費申請, 交際費申請, 交通費精算, v.v.).\n3. Nhập thông tin chi tiết về chi phí (gồm nội dung, số tiền, ngày phát sinh, v.v.).\n4. Nếu cần thanh toán tạm ứng, chọn ô \"希望する\" trong mục 仮払金.\n5. Thêm các mục chi tiết nếu cần (bằng cách nhấn \"明細追加\").\n6. Xác nhận thông tin đã nhập và nhấn \"確定\".\n7. Sau khi hoàn tất, nhấn \"申請\" để gửi yêu cầu thanh toán.\n8. Yêu cầu sẽ được xử lý qua các bước: 上長承認 → 経理承認.\n9. Sau khi được phê duyệt, tiền sẽ được thanh toán theo lịch trình quy định (10, 20, 25, hoặc ngày cuối tháng).",
+      "answer_ja": "①個人で立て替え予定の 物品概要 などを入力  \n②仮払を希望する場合は、仮払金 欄の「希望する」にチェックをしてください（任意入力）  \n③明細追加 をクリックし、明細を入力する画面が表示されます  \n④明細の概要などを入力（詳細は立替精算の入力参照）  \n⑤確定 をクリック  \n⑥入力が完了後、申請 をクリックしてください  \n\n明細が複数ある場合は、③～⑤の作業を繰り返してください。",
+      "sources": [
+        {
+          "file": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル.pdf",
+          "page": 39,
+          "score": 0.6285,
+          "type": "text",
+          "preview": "-->\nMeiko Electronics Co., Ltd.\n38/5\n※交際費・会議費精算を行う場合は、\n 事前申請が必要です\n①交際費・会議費の概要 などを入力\n※1 必須項目\n②仮払を希望する場合は、\n  仮払金 欄の「希望する」に\n  チェックをしてください。\n--------------以下は任意入力--------------\n②で仮払金を希望した場合は入力必須です。\n入力した明細内...",
+          "title": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル.pdf",
+          "page": 37,
+          "score": 0.6279,
+          "type": "text",
+          "preview": "-->\nMeiko Electronics Co., Ltd.\n36/5\n36\n4-1. 経費申請の入力\n※仮払金が不要な場合の事前申請は任意です\n①個人で立て替え予定の 物品概要 などを入力\n②仮払を希望する場合は、\n  仮払金 欄の「希望する」に\n  チェックをしてください。\n--------------以下は任意入力--------------\n②で仮払金を希望した場合は入力必須です。\n入力...",
+          "title": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル.pdf",
+          "page": 33,
+          "score": 0.6221,
+          "type": "text",
+          "preview": "-->\nMeiko Electronics Co., Ltd.\n32/5\n32\n3-13. 仮払金申請\n※経費申請の仮払の処理も以下と同様の手順となります\n① 仮払金を希望する場合はまず、出張申請 ・ 経費申請 画面で\n  仮払金 欄の「希望する」にチェックをしてください。\n  ※1 緊急時を除いて、支払希望日は1週間後を指定してください。\n②  日当 および明細行(概算金額可) に金額を追加\n※...",
+          "title": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル.pdf",
+          "page": 40,
+          "score": 0.6135,
+          "type": "text",
+          "preview": "-->\nMeiko Electronics Co., Ltd.\n39/5\n39\n4-4. 交際費精算の入力\n※交際費・会議費申請の承認を得てから\n 精算を行ってください\n①申請No. から伝票を紐づけします。\n  データ入力後に紐づけを行うと入力データが\nリセットされるので最初に紐づけを行ってください。\n②  交際費･会議費精算の概要 などを入力\n③申請区分 を選択\n  交際費キャンセル を選択し...",
+          "title": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【経理】000_001_20260629_楽楽精算QA.pdf",
+          "page": 11,
+          "score": 0.6099,
+          "type": "text",
+          "preview": "-->\n◇支払依頼\nQ1.\n支払先(取引先)登録の有無を確認したい。\nA1.\n支払依頼の支払先から検索をしてください。\n↓\nQ2.\n支払先(取引先)の登録がない。\nA2.\n楽々ドキュメントから【取引先登録申請】を行ってください。\nマニュアル：全社ポータル-経理部からのお知らせ-【楽楽精算】－04 取引先登録申請 P2.〈取引先登録申請〉よりご確認ください。\nQ3.\n支払先(取引先)の社名を変更した...",
+          "title": "【経理】000_001_20260629_楽楽精算QA",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【経理】000_001_20260629_楽楽精算QA.pdf",
+          "page": 8,
+          "score": 0.6074,
+          "type": "text",
+          "preview": "-->\n◇立替精算\nQ1.\n事務用品費と日用品代の違いについて\nA1.\n事務用品費は、鉛筆･はさみ･ファイル･付箋･コピー用紙など、事務作業に使用するものが該当します。\n日用品代は福利厚生費です。ゴミ袋やアルコール消毒液、食器用洗剤などが該当します。\nQ2.\n負担部門を自部門以外に設定したいが、どのようにしたらよいか。\nA2.\n明細内の【負担部門】から設定いただけます。※必要に応じて承認者の追加を...",
+          "title": "【経理】000_001_20260629_楽楽精算QA",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        }
+      ],
+      "citations": [
+        {
+          "file": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル.pdf",
+          "page": 39,
+          "title": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル"
+        },
+        {
+          "file": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル.pdf",
+          "page": 37,
+          "title": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル"
+        },
+        {
+          "file": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル.pdf",
+          "page": 33,
+          "title": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル"
+        },
+        {
+          "file": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル.pdf",
+          "page": 40,
+          "title": "【経理】000_001_20250324_(改)楽楽精算　操作マニュアル"
+        },
+        {
+          "file": "【経理】000_001_20260629_楽楽精算QA.pdf",
+          "page": 11,
+          "title": "【経理】000_001_20260629_楽楽精算QA"
+        },
+        {
+          "file": "【経理】000_001_20260629_楽楽精算QA.pdf",
+          "page": 8,
+          "title": "【経理】000_001_20260629_楽楽精算QA"
+        }
+      ],
+      "metadata": {
+        "source": "generated_from_current_rag",
+        "generated_at": "2026-07-09"
+      }
+    },
+    {
+      "id": "accounting-03",
+      "research_topic": "accounting",
+      "question": "Có những câu hỏi thường gặp nào về Rakuraku Seisan?",
+      "question_vi": "Có những câu hỏi thường gặp nào về Rakuraku Seisan?",
+      "question_ja": "楽楽精算のよくある質問をまとめてください。",
+      "aliases_vi": [],
+      "aliases_ja": [],
+      "answer_vi": "Dưới đây là một số câu hỏi thường gặp về Rakuraku Seisan:\n\n- **Cách nhập ngày cho hóa đơn mua hàng?**  \n  Nhập ngày mua hàng hoặc ngày đặt hàng trên hóa đơn.\n\n- **Làm sao khi chi phí lưu trú vượt quá quy định?**  \n  Cần sự phê duyệt của cấp trên và chọn mục \"Tiền lưu trú trong nước (vượt quy định)\" hoặc \"Tiền lưu trú ngoài nước (vượt quy định)\", đồng thời ghi lý do vượt quy định trong phần ghi chú.\n\n- **Làm sao khi không thể nhập trực tiếp địa điểm xuất phát/đến nơi trong chi phí giao thông?**  \n  Phải tìm kiếm thông tin qua \"乗換案内\" (Hướng dẫn chuyển tuyến).\n\n- **Làm sao khi không thể tìm thấy số tiền đã thanh toán thực tế qua 乗換案内?**  \n  Ghi rõ lý do không sử dụng 乗換案内 trong phần ghi chú và nhập thủ công số tiền và khoảng cách.\n\n- **Làm sao khi cần thay đổi thông tin của đối tác thanh toán?**  \n  Thực hiện qua \"楽楽ドキュメント\" với thủ tục \"取引先登録申請\" (Đăng ký đối tác thanh toán).\n\n- **Làm sao khi muốn thay đổi ngày thanh toán dự kiến?**  \n  Ngày thanh toán dự kiến thường là ngày 10, 20, 25 (tạm thời) và ngày cuối tháng.\n\n- **Làm sao khi muốn thay đổi thông tin tài khoản nhận tiền?**  \n  Thực hiện qua \"楽楽ドキュメント\" với thủ tục \"改定\" (Sửa đổi).\n\n- **Làm sao khi hóa đơn không có số thuế MST?**  \n  Không thể thanh toán, cần yêu cầu bên cung cấp hóa đơn phát hành lại.\n\n- **Làm sao khi muốn thay đổi mật khẩu?**  \n  Thay đổi tại mục \"個人設定\" (Cài đặt cá nhân) trên trang chủ.\n\n- **Làm sao khi muốn đăng ký tài khoản mới?**  \n  Cần nộp \"〔(楽楽精算)経費精算･仮払金申請 振込依頼書〕\" cho bộ phận kế toán.",
+      "answer_ja": "- アカウントの作成方法：〔(楽楽精算)経費精算･仮払金申請 振込依頼書〕を経理部 宮谷まで提出してください。  \n- ログイン時に「ログイン情報に誤りがあります。」と表示される場合：アカウントが登録されていない可能性があります。各社経理担当者へお問い合わせください。  \n- パスワードを忘れた場合：パスワードの再設定が必要です。各社経理担当者へお問い合わせください。  \n- パスワードの変更方法：TOP画面＞個人設定＞パスワードより変更いただけます。  \n- 経費振込先口座の確認方法：TOP画面＞個人設定＞設定より確認いただけます。  \n- 社員番号・氏名・振込先口座の変更方法：〔経費請求及び仮払申請振込依頼書〕を経理部 宮谷まで提出してください。  \n- 定期区間の登録が必要な場合：通勤手当を支給されている方は必要です。定期区間登録により、対象区間の旅費を自動控除します。  \n- 代理申請者の設定方法：TOP画面＞個人設定＞設定-【代理申請者】より登録いただけます。ただし、証憑の代理アップロードはできません。  \n- 代理承認者の設定方法：経理担当者にて設定します。各社経理担当までご連絡ください。  \n- 承認者(承認ルート)の変更方法：経理担当者にて設定します。各社経理担当までご連絡ください。",
+      "sources": [
+        {
+          "file": "【経理】000_001_20260629_楽楽精算QA.pdf",
+          "page": 5,
+          "score": 0.4159,
+          "type": "text",
+          "preview": "A8.\n物品購入の場合は、領収書に記載の購入日もしくは注文日をご入力ください。※実際に使用する日ではありません。\n交通機関の利用の場合は、乗車日を入力してください。\nQ9.\n宿泊費が規定額を超過してしまった。\nA9.\n宿泊費が規定金額を超過する場合は、上⾧の承認を得た上で〈国内宿泊費(規定超過)・海外宿泊費(規定超過)〉を選択してください。\nまた、明細内の備考に、超過理由を入力してください。\nQ1...",
+          "title": "【経理】000_001_20260629_楽楽精算QA",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【経理】000_001_20260629_楽楽精算QA.pdf",
+          "page": 6,
+          "score": 0.4132,
+          "type": "text",
+          "preview": "-->\nQ11. 明細内で【国内宿泊費】を選択した際、宿泊先名はどこに入力すればよいか。\nA11. 明細内の【取引先】に入力してください。\nQ12. 宿泊費の領収書に『入湯税/宿泊税』が記載されている。宿泊費と金額を一纏めにしてよいか。\nA12. 入湯税および宿泊税は不課税のため、宿泊費とは消費税率が異なります。\n明細を分ける必要がありますので、領収書の登録時、宿泊費と入湯税/宿泊税で金額を分けて...",
+          "title": "【経理】000_001_20260629_楽楽精算QA",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【経理】000_001_20260629_楽楽精算QA.pdf",
+          "page": 11,
+          "score": 0.4128,
+          "type": "text",
+          "preview": "-->\n◇支払依頼\nQ1.\n支払先(取引先)登録の有無を確認したい。\nA1.\n支払依頼の支払先から検索をしてください。\n↓\nQ2.\n支払先(取引先)の登録がない。\nA2.\n楽々ドキュメントから【取引先登録申請】を行ってください。\nマニュアル：全社ポータル-経理部からのお知らせ-【楽楽精算】－04 取引先登録申請 P2.〈取引先登録申請〉よりご確認ください。\nQ3.\n支払先(取引先)の社名を変更した...",
+          "title": "【経理】000_001_20260629_楽楽精算QA",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【経理】000_001_20260629_楽楽精算QA.pdf",
+          "page": 12,
+          "score": 0.4095,
+          "type": "text",
+          "preview": "-->\nQ8.\n請求書/領収書を新規登録画面の〈取引日/受領日〉とは何か。\nA8.\n【取引日】は請求元との取引が発生した日を指します。\nもし1枚の請求書に複数の取引日の記載がある場合は、取引日の末日を入力してください。\n【受領日】は請求書もしくは領収書を受領した日付を入力してください。\nQ9.\n領収書/請求書のスキャンは白黒(モノクロ)でよいか。\nA9.\nカラーでスキャンをしてください。\n解像度(...",
+          "title": "【経理】000_001_20260629_楽楽精算QA",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【経理】000_001_20260629_楽楽精算QA.pdf",
+          "page": 2,
+          "score": 0.4072,
+          "type": "text",
+          "preview": "-->\n2. 楽楽精算アカウント関連・個人設定について\nQ1.\n楽楽精算のアカウントを作成したい。\nA1.\n〔(楽楽精算)経費精算･仮払金申請 振込依頼書〕を経理部 宮谷までご提出ください。\n保管場所：全社ポータル-経理部からのお知らせ-7.各種フォーマット-〔(楽楽精算)経費精算･仮払金申請 振込依頼書〕\nQ2. \nログイン画面でユーザ IDとパスワードを入力すると、「ログイン情報に誤りがありま...",
+          "title": "【経理】000_001_20260629_楽楽精算QA",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【経理】000_001_20260629_楽楽精算QA.pdf",
+          "page": 4,
+          "score": 0.406,
+          "type": "text",
+          "preview": "-->\nQ8.\n来月の海外出張申請をしたいが、外国通貨のレートが『0』と表示され円換算ができない。\nA8.\n経費精算における社内レートは、前月末の外国為替情報を基に算出しているため、次月以降のレートは楽楽精算上に設定されていません。\nそのため、次月以降の海外旅費を申請する場合は、外国通貨ではなく日本円（概算）で申請をしてください。\nQ9.\n初回の海外出張につき、支度金を申請したい。\nA9.\n【海外...",
+          "title": "【経理】000_001_20260629_楽楽精算QA",
+          "category": "accounting",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        }
+      ],
+      "citations": [
+        {
+          "file": "【経理】000_001_20260629_楽楽精算QA.pdf",
+          "page": 5,
+          "title": "【経理】000_001_20260629_楽楽精算QA"
+        },
+        {
+          "file": "【経理】000_001_20260629_楽楽精算QA.pdf",
+          "page": 6,
+          "title": "【経理】000_001_20260629_楽楽精算QA"
+        },
+        {
+          "file": "【経理】000_001_20260629_楽楽精算QA.pdf",
+          "page": 11,
+          "title": "【経理】000_001_20260629_楽楽精算QA"
+        },
+        {
+          "file": "【経理】000_001_20260629_楽楽精算QA.pdf",
+          "page": 12,
+          "title": "【経理】000_001_20260629_楽楽精算QA"
+        },
+        {
+          "file": "【経理】000_001_20260629_楽楽精算QA.pdf",
+          "page": 2,
+          "title": "【経理】000_001_20260629_楽楽精算QA"
+        },
+        {
+          "file": "【経理】000_001_20260629_楽楽精算QA.pdf",
+          "page": 4,
+          "title": "【経理】000_001_20260629_楽楽精算QA"
+        }
+      ],
+      "metadata": {
+        "source": "generated_from_current_rag",
+        "generated_at": "2026-07-09"
+      }
+    },
+    {
+      "id": "general_affairs-01",
+      "research_topic": "general_affairs",
+      "question": "Khi xảy ra tai nạn lao động cần báo cáo thế nào?",
+      "question_vi": "Khi xảy ra tai nạn lao động cần báo cáo thế nào?",
+      "question_ja": "労働災害が発生した場合の報告手順は？",
+      "aliases_vi": [],
+      "aliases_ja": [],
+      "answer_vi": "Khi xảy ra tai nạn lao động, cần điền thông tin vào \"Báo cáo tai nạn lao động\" theo các bước sau:\n\n1. Ghi rõ thông tin người bị tai nạn (tên, tuổi, giới tính, ngày nhập社, thời gian làm việc tại nơi làm việc).\n2. Ghi rõ thời gian, địa điểm xảy ra tai nạn.\n3. Mô tả tình trạng thương tích, tên bệnh viện (nếu có).\n4. Ghi rõ tình trạng nghỉ việc (nếu có), số ngày nghỉ, ngày dự kiến trở lại làm việc.\n5. Mô tả chi tiết sự việc (ở đâu, làm gì, xảy ra điều gì, nguyên nhân, loại tai nạn).\n6. Vẽ sơ đồ minh họa sự việc (nếu có).\n7. Ghi nhận xét từ người đứng đầu công ty, quản lý nhà máy, người phụ trách an toàn, trưởng phòng, trưởng bộ phận, người giám sát, người lập báo cáo.",
+      "answer_ja": "1. 発生後24時間以内に「速報版」を提出する。  \n2. 発生状況、被災者情報、傷病状況などを記入する。  \n3. 休業日数が「見込み」の場合、「確定(見込み)版」を提出し、復職後に「確定(最終)版」を提出する。  \n4. 発生原因、事故の型、起因物などを記入し、再発防止策を検討する。",
+      "sources": [
+        {
+          "file": "【総務】V5101 別紙1 労働災害発生報告書〈速報 ・ 確定(見込み／最終)〉Rev4.xlsx",
+          "page": 1,
+          "score": 0.6445,
+          "type": "text",
+          "preview": "# 【総務】V5101 別紙1 労働災害発生報告書〈速報 ・ 確定(見込み／最終)〉Rev4\n## 別紙１\n|  |  |  |  | 傷病の程度\n該当する□→☑or■ |  |  |  |  | □ | 不休労災 |  |  | □　通院不要 |  |  |  | □　　　　日通院 |  |  |  |  |  | □見込み |  |  | □ 確定 |  |  |  | □不休労災　　「不休」...",
+          "title": "【総務】V5101 別紙1 労働災害発生報告書〈速報 ・ 確定(見込み／最終)〉Rev4",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        },
+        {
+          "file": "【総務】V5101 別紙1 労働災害発生報告書Rev3_分析シート付.xlsx",
+          "page": 1,
+          "score": 0.6324,
+          "type": "text",
+          "preview": "|  | 労働災害発生報告書（速報・確定） |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |...",
+          "title": "【総務】V5101 別紙1 労働災害発生報告書Rev3_分析シート付",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        },
+        {
+          "file": "【総務】V5101 別紙1 労働災害発生報告書〈速報 ・ 確定(見込み／最終)〉Rev4.xlsx",
+          "page": 1,
+          "score": 0.6266,
+          "type": "text",
+          "preview": "|  | 労働災害発生報告書 〈速報 ・ 確定(見込み/最終)〉 |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | 記入上の注意事項 |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |\n| --- | --- | --- | --- |...",
+          "title": "【総務】V5101 別紙1 労働災害発生報告書〈速報 ・ 確定(見込み／最終)〉Rev4",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        },
+        {
+          "file": "【総務】V5101 別紙1 労働災害発生報告書Rev3_分析シート付.xlsx",
+          "page": 1,
+          "score": 0.6167,
+          "type": "text",
+          "preview": "|  | 労働災害発生報告書（速報・確定） |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |...",
+          "title": "【総務】V5101 別紙1 労働災害発生報告書Rev3_分析シート付",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        },
+        {
+          "file": "【総務】元データ‗様式16号の3‗通勤災害用（療養給付たる療養の給付請求書）.pdf",
+          "page": 2,
+          "score": 0.6159,
+          "type": "text",
+          "preview": "は記入しないでください。\n3\n⑩8 は、請求人が健康保険の日雇特例被保険者でない場合には記載する必要はありません。\n4 (ホ)は、災害時の通勤の種別がハの場合には、移動の終点たる就業の場所における就業開始の予定時刻を、ニの場合には、 後続するイの移動の終点たる\n就業の場所における就業開始の予定の年月日及び時刻を記載してください。\n5 (ト)は、 災害時の通勤の種別がハの場合には、移動の起点たる就業...",
+          "title": "【総務】元データ‗様式16号の3‗通勤災害用（療養給付たる療養の給付請求書）",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【総務】V5101 別紙1 労働災害発生報告書Rev3_分析シート付.xlsx",
+          "page": 1,
+          "score": 0.6153,
+          "type": "text",
+          "preview": "# 【総務】V5101 別紙1 労働災害発生報告書Rev3_分析シート付\n## 別紙１\n|  |  |  |  | 傷病の程度 |  |  |  | ・　不休（ 通院不要・　　　日通院見込 ）\n・　休業（　　　日間（ 内　　　日間入院 ）見込 ） |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |...",
+          "title": "【総務】V5101 別紙1 労働災害発生報告書Rev3_分析シート付",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        }
+      ],
+      "citations": [
+        {
+          "file": "【総務】V5101 別紙1 労働災害発生報告書〈速報 ・ 確定(見込み／最終)〉Rev4.xlsx",
+          "page": 1,
+          "title": "【総務】V5101 別紙1 労働災害発生報告書〈速報 ・ 確定(見込み／最終)〉Rev4"
+        },
+        {
+          "file": "【総務】V5101 別紙1 労働災害発生報告書Rev3_分析シート付.xlsx",
+          "page": 1,
+          "title": "【総務】V5101 別紙1 労働災害発生報告書Rev3_分析シート付"
+        },
+        {
+          "file": "【総務】V5101 別紙1 労働災害発生報告書〈速報 ・ 確定(見込み／最終)〉Rev4.xlsx",
+          "page": 1,
+          "title": "【総務】V5101 別紙1 労働災害発生報告書〈速報 ・ 確定(見込み／最終)〉Rev4"
+        },
+        {
+          "file": "【総務】V5101 別紙1 労働災害発生報告書Rev3_分析シート付.xlsx",
+          "page": 1,
+          "title": "【総務】V5101 別紙1 労働災害発生報告書Rev3_分析シート付"
+        },
+        {
+          "file": "【総務】元データ‗様式16号の3‗通勤災害用（療養給付たる療養の給付請求書）.pdf",
+          "page": 2,
+          "title": "【総務】元データ‗様式16号の3‗通勤災害用（療養給付たる療養の給付請求書）"
+        },
+        {
+          "file": "【総務】V5101 別紙1 労働災害発生報告書Rev3_分析シート付.xlsx",
+          "page": 1,
+          "title": "【総務】V5101 別紙1 労働災害発生報告書Rev3_分析シート付"
+        }
+      ],
+      "metadata": {
+        "source": "generated_from_current_rag",
+        "generated_at": "2026-07-09"
+      }
+    },
+    {
+      "id": "general_affairs-02",
+      "research_topic": "general_affairs",
+      "question": "Cách xin cấp phát đồng phục hoặc giày bảo hộ?",
+      "question_vi": "Cách xin cấp phát đồng phục hoặc giày bảo hộ?",
+      "question_ja": "作業服や作業靴の貸与依頼方法は？",
+      "aliases_vi": [],
+      "aliases_ja": [],
+      "answer_vi": "Để xin cấp phát đồng phục hoặc giày bảo hộ, cần điền vào các mẫu đơn sau:\n\n1. **【総務】作業服貸与依頼票_202601版.xlsx** – dùng để xin cấp phát đồng phục.\n   - Điền thông tin như: bộ phận, mã nhân viên, họ tên, lý do (ví dụ: hư hỏng, không phù hợp kích cỡ, chưa được cấp phát...).\n   - Chọn hình thức nhận (bản thân, người đại diện, qua nội bộ...).\n   - Điền thông tin về loại đồng phục, kích cỡ và số lượng cần cấp.\n\n2. **【総務】作業靴出庫依頼票.xls** – dùng để xin cấp phát giày bảo hộ.\n   - Điền thông tin như: bộ phận, mã nhân viên, họ tên.\n   - Chọn loại giày và kích cỡ cần cấp (ví dụ: P0321 – 静電ｻﾝﾀﾞﾙ PS-01S ｸﾞﾚｰ 23.5cm).\n   - Điền số lượng cần cấp.",
+      "answer_ja": "作業服の貸与依頼は「【総務】作業服貸与依頼票_202601版.xlsx」を使用し、部署CD、部署名、社員番号、氏名、受取り方法、理由、品名、サイズ、数量などを記入して総務本部総務課（メールルーム）に提出します。\n\n作業靴の出庫依頼は「【総務】作業靴出庫依頼票.xls」を使用し、コード、品名、サイズ、数量などを記入して提出します。",
+      "sources": [
+        {
+          "file": "【総務】作業服貸与依頼票_202601版.xlsx",
+          "page": 1,
+          "score": 0.592,
+          "type": "text",
+          "preview": "# 【総務】作業服貸与依頼票_202601版\n## 作業服貸与依頼票\n| 作業服貸与依頼票 |  |  |  |  |  |  |  |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| 総務本部総務課（メールルーム）　行き |  |  |  |  |  | 年　　　月　　　日 |  |\n| 部署CD： |  | 部署名： |  | 社員№ |...",
+          "title": "【総務】作業服貸与依頼票_202601版",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        },
+        {
+          "file": "【総務】作業服貸与依頼票_202601版.xlsx",
+          "page": 1,
+          "score": 0.5785,
+          "type": "text",
+          "preview": "| 作業服貸与依頼票 |  |  |  |  |  |  |  |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n|  | 帽子 | ﾌﾘｰｻｲｽﾞ |  |  | 帽子 | ﾌﾘｰｻｲｽﾞ |  |\n|  |  |  |  |  |  |  | 2009.03改版 |\n|  |  |  |  |  |  |  | 2026.01改版 |\n| ...",
+          "title": "【総務】作業服貸与依頼票_202601版",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        },
+        {
+          "file": "【総務】作業服貸与依頼票_202601版.xlsx",
+          "page": 1,
+          "score": 0.576,
+          "type": "text",
+          "preview": "| 作業服貸与依頼票 |  |  |  |  |  |  |  |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| 男　性 | 冬服 | S, M, L, XL,    XL |  | 女　性 | 冬服 | S, M, L, XL,    XL |  |\n|  | 夏服（半袖） | S, M, L, XL,    XL |  |  | 夏服（...",
+          "title": "【総務】作業服貸与依頼票_202601版",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        },
+        {
+          "file": "【総務】元データ‗様式16号の3‗通勤災害用（療養給付たる療養の給付請求書）.pdf",
+          "page": 1,
+          "score": 0.5292,
+          "type": "text",
+          "preview": "# 【総務】元データ‗様式16号の3‗通勤災害用（療養給付たる療養の給付請求書）\n -->\n様式第16号の3(表面) 労働者災害補償保険\n通勤災害用\n裏面に記載してある注意\n事項をよく読んだ上で、\n療養給付たる療養の給付請求書 記入してください。\n標 準 字 体0123456789\nアイウエオカキクケコサシスセソタチツテトナ\nネノハヒフ\nムメモヤユヨ\n\\\\ °\nルレロワン\n※ 帳票種別\n①管轄局署...",
+          "title": "【総務】元データ‗様式16号の3‗通勤災害用（療養給付たる療養の給付請求書）",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        },
+        {
+          "file": "【総務】作業靴出庫依頼票.xls",
+          "page": 1,
+          "score": 0.5277,
+          "type": "text",
+          "preview": "# 【総務】作業靴出庫依頼票\n## 材料マスター\n|  |  |  | 年 | 月 | 日 |\n| --- | --- | --- | --- | --- | --- |\n|  |  | 共通在庫品（作業靴）出庫依頼票 |  |  |  |\n|  | 部署： |  | ＣＤ： |  |  |\n|  | 名前： |  |  |  |  |\n|  | コード | 品名 |  | 数量 | 単位 |\n|...",
+          "title": "【総務】作業靴出庫依頼票",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        },
+        {
+          "file": "【総務】元データ‗様式16号の3‗通勤災害用（療養給付たる療養の給付請求書）.pdf",
+          "page": 2,
+          "score": 0.5226,
+          "type": "text",
+          "preview": "は記入しないでください。\n3\n⑩8 は、請求人が健康保険の日雇特例被保険者でない場合には記載する必要はありません。\n4 (ホ)は、災害時の通勤の種別がハの場合には、移動の終点たる就業の場所における就業開始の予定時刻を、ニの場合には、 後続するイの移動の終点たる\n就業の場所における就業開始の予定の年月日及び時刻を記載してください。\n5 (ト)は、 災害時の通勤の種別がハの場合には、移動の起点たる就業...",
+          "title": "【総務】元データ‗様式16号の3‗通勤災害用（療養給付たる療養の給付請求書）",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": true
+        }
+      ],
+      "citations": [
+        {
+          "file": "【総務】作業服貸与依頼票_202601版.xlsx",
+          "page": 1,
+          "title": "【総務】作業服貸与依頼票_202601版"
+        },
+        {
+          "file": "【総務】作業服貸与依頼票_202601版.xlsx",
+          "page": 1,
+          "title": "【総務】作業服貸与依頼票_202601版"
+        },
+        {
+          "file": "【総務】作業服貸与依頼票_202601版.xlsx",
+          "page": 1,
+          "title": "【総務】作業服貸与依頼票_202601版"
+        },
+        {
+          "file": "【総務】元データ‗様式16号の3‗通勤災害用（療養給付たる療養の給付請求書）.pdf",
+          "page": 1,
+          "title": "【総務】元データ‗様式16号の3‗通勤災害用（療養給付たる療養の給付請求書）"
+        },
+        {
+          "file": "【総務】作業靴出庫依頼票.xls",
+          "page": 1,
+          "title": "【総務】作業靴出庫依頼票"
+        },
+        {
+          "file": "【総務】元データ‗様式16号の3‗通勤災害用（療養給付たる療養の給付請求書）.pdf",
+          "page": 2,
+          "title": "【総務】元データ‗様式16号の3‗通勤災害用（療養給付たる療養の給付請求書）"
+        }
+      ],
+      "metadata": {
+        "source": "generated_from_current_rag",
+        "generated_at": "2026-07-09"
+      }
+    },
+    {
+      "id": "general_affairs-03",
+      "research_topic": "general_affairs",
+      "question": "Bảng thẩm quyền phê duyệt quy định những gì?",
+      "question_vi": "Bảng thẩm quyền phê duyệt quy định những gì?",
+      "question_ja": "決裁権限基準表の内容を説明してください。",
+      "aliases_vi": [],
+      "aliases_ja": [],
+      "answer_vi": "Bảng thẩm quyền phê duyệt quy định các quyền phê duyệt cho các hoạt động cụ thể trong công ty, bao gồm việc thiết lập, đăng ký, thay đổi, cập nhật thương hiệu, triệu tập và thông qua các nghị quyết Đại hội cổ đông, lựa chọn và miễn nhiệm giám đốc điều hành, các vấn đề liên quan đến cổ phiếu, và các vấn đề tổ chức khác.",
+      "answer_ja": "決裁権限基準表は、会社内で各業務の承認権限がどの職位にあるかを示した表です。この表では、人事総務部長、総務本部長、社長、副社長などの職位が、人事、給与、採用、退職、管理職の任免などの業務についてどのレベルまで承認権限を持つかが記載されています。また、各業務ごとに職級（例：６職級以上、５職級以下）によっても承認権限が異なります。",
+      "sources": [
+        {
+          "file": "【総務】●決裁権限基準表_結合_2025最新.xlsx",
+          "page": 1,
+          "score": 0.5221,
+          "type": "text",
+          "preview": "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ...",
+          "title": "【総務】●決裁権限基準表_結合_2025最新",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        },
+        {
+          "file": "【総務】●決裁権限基準表_結合_2025最新.xlsx",
+          "page": 1,
+          "score": 0.5193,
+          "type": "text",
+          "preview": "# 【総務】●決裁権限基準表_結合_2025最新\n## ✓本社29版\n| 別表「決裁権限基準表」 |  | 本社　(株)メイコー 適用 |  |  | 29版：2025年11月1日\n28版：2025年4月21日改定 |  |  |  |  | Ⅸ-3⑥～⑦ |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | ...",
+          "title": "【総務】●決裁権限基準表_結合_2025最新",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        },
+        {
+          "file": "【総務】●決裁権限基準表_結合_2025最新.xlsx",
+          "page": 1,
+          "score": 0.5037,
+          "type": "text",
+          "preview": "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ...",
+          "title": "【総務】●決裁権限基準表_結合_2025最新",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        },
+        {
+          "file": "【総務】●決裁権限基準表_結合_2025最新.xlsx",
+          "page": 1,
+          "score": 0.4962,
+          "type": "text",
+          "preview": "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ...",
+          "title": "【総務】●決裁権限基準表_結合_2025最新",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        },
+        {
+          "file": "【総務】●決裁権限基準表_結合_2025最新.xlsx",
+          "page": 1,
+          "score": 0.4913,
+          "type": "text",
+          "preview": "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ...",
+          "title": "【総務】●決裁権限基準表_結合_2025最新",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        },
+        {
+          "file": "【総務】●決裁権限基準表_結合_2025最新.xlsx",
+          "page": 1,
+          "score": 0.4844,
+          "type": "text",
+          "preview": "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ...",
+          "title": "【総務】●決裁権限基準表_結合_2025最新",
+          "category": "general_affairs",
+          "effective_date": null,
+          "url": null,
+          "has_page_preview": false
+        }
+      ],
+      "citations": [
+        {
+          "file": "【総務】●決裁権限基準表_結合_2025最新.xlsx",
+          "page": 1,
+          "title": "【総務】●決裁権限基準表_結合_2025最新"
+        },
+        {
+          "file": "【総務】●決裁権限基準表_結合_2025最新.xlsx",
+          "page": 1,
+          "title": "【総務】●決裁権限基準表_結合_2025最新"
+        },
+        {
+          "file": "【総務】●決裁権限基準表_結合_2025最新.xlsx",
+          "page": 1,
+          "title": "【総務】●決裁権限基準表_結合_2025最新"
+        },
+        {
+          "file": "【総務】●決裁権限基準表_結合_2025最新.xlsx",
+          "page": 1,
+          "title": "【総務】●決裁権限基準表_結合_2025最新"
+        },
+        {
+          "file": "【総務】●決裁権限基準表_結合_2025最新.xlsx",
+          "page": 1,
+          "title": "【総務】●決裁権限基準表_結合_2025最新"
+        },
+        {
+          "file": "【総務】●決裁権限基準表_結合_2025最新.xlsx",
+          "page": 1,
+          "title": "【総務】●決裁権限基準表_結合_2025最新"
+        }
+      ],
+      "metadata": {
+        "source": "generated_from_current_rag",
+        "generated_at": "2026-07-09"
+      }
+    }
+  ]
+}

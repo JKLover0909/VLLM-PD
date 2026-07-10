@@ -17,25 +17,20 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, AsyncGenerator
+from typing import AsyncGenerator
 
 from openai import AsyncOpenAI
 
 from src.integrations.mes_client import MesClient, MesLotError
 from src.integrations.mes_database import MesDatabase, MesDatabaseError, MesDatabaseResult
-from src.integrations.mes_sql_agent import MesSqlAgent, MesSqlAgentError, MesSqlQueryResult
+from src.integrations.mes_sql_agent import MesSqlAgent, MesSqlAgentError
 from src.integrations import mes_answer_format, mes_config, mes_intent, mes_prompts
 from src.integrations.mes_config import (
-    LOCAL_CHAT_MODEL_ALIASES,
     LOCAL_MODEL_ALIASES,
-    MODEL_ROUTES,
-    env_int,
 )
 from src.integrations.mes_prompts import (
-    MES_DATABASE_SYSTEM_PROMPT,
     MES_GENERAL_FALLBACK_ANSWER,
     MES_GENERAL_SYSTEM_PROMPT,
-    MES_SYSTEM_PROMPT,
     MES_UNSUPPORTED_ANSWER,
 )
 

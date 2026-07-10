@@ -1075,10 +1075,11 @@ function App() {
         setResearchDemo(researchDemoData);
         if (researchTopicsData) {
           setResearchTopics(researchTopicsData);
-          const validIds = new Set([
-            ...(researchTopicsData.topics || []).map((topic) => topic.id),
-            ...(researchTopicsData.allow_all ? ["all"] : []),
-          ]);
+          // UI demo chỉ cho chọn 4 nhóm chuyên đề. Backend vẫn có thể hỗ trợ
+          // topic "all" cho debug/admin, nhưng không giữ scope này trên web.
+          const validIds = new Set(
+            (researchTopicsData.topics || []).map((topic) => topic.id),
+          );
           setResearchTopicId((current) =>
             current && validIds.has(current) ? current : "",
           );
@@ -1241,7 +1242,13 @@ function App() {
 
   useEffect(() => {
     try {
-      setResearchTopicId(localStorage.getItem(researchTopicStorageKey(language)) || "");
+      const storedTopic = localStorage.getItem(researchTopicStorageKey(language)) || "";
+      if (storedTopic === "all") {
+        localStorage.removeItem(researchTopicStorageKey(language));
+        setResearchTopicId("");
+      } else {
+        setResearchTopicId(storedTopic);
+      }
     } catch {
       setResearchTopicId("");
     }
@@ -1375,20 +1382,6 @@ function App() {
 
   function selectedResearchTopic() {
     if (!researchTopicId) return null;
-    if (researchTopicId === "all") {
-      return {
-        id: "all",
-        label_vi: modeText("research").allTopics,
-        label_ja: modeText("research").allTopics,
-        ready: researchTopics.ready,
-        num_files: researchTopics.topics.reduce(
-          (total, topic) => total + (topic.num_files || 0),
-          0,
-        ),
-        quick_prompts_vi: [],
-        quick_prompts_ja: [],
-      };
-    }
     return (
       researchTopics.topics.find((topic) => topic.id === researchTopicId) ||
       null
@@ -1404,6 +1397,7 @@ function App() {
 
   function selectResearchTopic(topicId) {
     if (busy) return;
+    if (topicId === "all") return;
     setResearchTopicId(topicId);
     try {
       localStorage.setItem(researchTopicStorageKey(language), topicId);
@@ -1933,15 +1927,17 @@ function App() {
                   {sessionTitles[currentWorkspaceKey]}
                 </strong>
               </div>
-              <button
-                className="icon-button"
-                type="button"
-                title={t("common.newSession")}
-                onClick={() => resetSession("research")}
-                disabled={busy || uploading}
-              >
-                <RefreshCcw size={17} />
-              </button>
+              {!researchTopics.ready && (
+                <button
+                  className="icon-button"
+                  type="button"
+                  title={t("common.newSession")}
+                  onClick={() => resetSession("research")}
+                  disabled={busy || uploading}
+                >
+                  <RefreshCcw size={17} />
+                </button>
+              )}
             </div>
 
             <section className="sidebar-section">
@@ -1959,25 +1955,26 @@ function App() {
                   {researchTopicId ? (
                     <>
                       <div className="sidebar-topic-selected">
-                        <strong>
-                          {researchTopicLabel(selectedResearchTopic())}
-                        </strong>
+                        <div className="topic-info-col">
+                          <span className="topic-overline">
+                            {language === "ja" ? "選択中のカテゴリ" : "Nhóm tài liệu đang chọn"}
+                          </span>
+                          <strong title={researchTopicLabel(selectedResearchTopic())}>
+                            {researchTopicLabel(selectedResearchTopic())}
+                          </strong>
+                        </div>
                         <button
                           type="button"
-                          className="research-scope-change"
+                          className="icon-button subtle danger topic-clear-btn"
+                          title={modeText("research").changeTopic}
                           onClick={clearResearchTopic}
                           disabled={busy}
                         >
-                          {modeText("research").changeTopic}
+                          <X size={16} />
                         </button>
                       </div>
                       <div className="file-list">
-                        {(researchTopicId === "all"
-                          ? researchTopics.topics.flatMap(
-                              (topic) => topic.files || [],
-                            )
-                          : selectedResearchTopic()?.files || []
-                        ).map((filename) => (
+                        {(selectedResearchTopic()?.files || []).map((filename) => (
                           <div className="file-item readonly" key={filename}>
                             <FileText size={17} />
                             <span title={filename}>{filename}</span>
@@ -2199,15 +2196,6 @@ function App() {
               })}
             </div>
 
-            {mode === "research" && (
-              <div className="model-select locked accent-local" title={modeText("research").lockedModel}>
-                <Bot size={17} />
-                <span className="model-select-trigger">
-                  <span>{selectedModel?.name || modeText("research").lockedModel}</span>
-                </span>
-              </div>
-            )}
-
             <button
               className="icon-button header-tool theme-toggle"
               type="button"
@@ -2375,28 +2363,6 @@ function App() {
                             </span>
                           </button>
                         ))}
-                        {researchTopics.allow_all && researchTopics.ready && (
-                          <button
-                            type="button"
-                            className="research-topic-card accent-neutral all-topics"
-                            onClick={() => selectResearchTopic("all")}
-                          >
-                            <span className="research-topic-label">
-                              {modeText("research").allTopics}
-                            </span>
-                            <span className="research-topic-description">
-                              {modeText("research").allTopicsDescription}
-                            </span>
-                            <span className="research-topic-meta">
-                              {formatText(modeText("research").documentsCount, {
-                                count: researchTopics.topics.reduce(
-                                  (total, topic) => total + (topic.num_files || 0),
-                                  0,
-                                ),
-                              })}
-                            </span>
-                          </button>
-                        )}
                       </div>
                     )}
                     {mode === "research" && researchTopicId && (
@@ -2642,7 +2608,7 @@ function App() {
 
             {mkacAuthorized && (
               <form className="composer" onSubmit={onSubmit}>
-                {mode === "research" && (
+                {mode === "research" && !researchTopics.ready && (
                   <button
                     className="composer-attach icon-button"
                     type="button"

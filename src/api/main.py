@@ -80,6 +80,10 @@ from src.api.research_topics import (
     load_research_topic_config,
     validate_research_topic,
 )
+from src.api.research_cached_answers import (
+    research_cached_answer_metadata,
+    research_cached_query_response,
+)
 from src.api.schemas import (
     AgentRequest,
     AgentResponse,
@@ -1562,6 +1566,25 @@ async def query_documents(req: QueryRequest, request: Request):
     await enforce_rate_limit(request, "query", QUERY_RATE_LIMIT, 60)
     normalize_session_id(req.session_id)
     current_employee = await asyncio.to_thread(authorize_query, req)
+    research_cached_response = research_cached_query_response(req)
+    if research_cached_response is not None:
+        logger.info(
+            "Research cached answer hit topic=%s language=%s",
+            req.research_topic,
+            req.ui_language,
+        )
+        await record_query_metric(
+            mode=req.mode,
+            ui_language=req.ui_language,
+            answer_scope=research_cached_response.answer_scope,
+            cache_hit=True,
+            latency_ms=(time.monotonic() - request_started_at) * 1000,
+        )
+        await wait_for_min_query_latency(request_started_at)
+        return research_cached_response.model_copy(
+            update={"session_id": req.session_id}
+        )
+
     cache_key = build_query_cache_key(req)
     cached_response = await get_cached_query_response(cache_key)
     if cached_response is not None:
@@ -1710,14 +1733,65 @@ async def query_stream(req: QueryRequest, request: Request):
     await enforce_rate_limit(request, "query", QUERY_RATE_LIMIT, 60)
     normalize_session_id(req.session_id)
     current_employee = await asyncio.to_thread(authorize_query, req)
+    research_cached_response = research_cached_query_response(req)
+    if research_cached_response is not None:
+        logger.info(
+            "Streaming research cached answer hit topic=%s language=%s",
+            req.research_topic,
+            req.ui_language,
+        )
+
+        async def research_cached_event_generator():
+            response = research_cached_response.model_copy(
+                update={"session_id": req.session_id}
+            )
+            cached_metadata = research_cached_answer_metadata(req)
+            yield sse_status(req, "received")
+            yield sse_status(req, "research_cache")
+            await record_query_metric(
+                mode=req.mode,
+                ui_language=req.ui_language,
+                answer_scope=response.answer_scope,
+                cache_hit=True,
+                latency_ms=(time.monotonic() - request_started_at) * 1000,
+            )
+            await wait_for_min_query_latency(request_started_at)
+            yield sse_status(req, "finalizing")
+            yield sse_event({"type": "sources", "sources": response.sources})
+            yield sse_event(
+                {
+                    "type": "citations",
+                    "citations": cached_metadata.get("citations", []),
+                }
+            )
+            yield sse_event(
+                {
+                    "type": "meta",
+                    "model": response.model,
+                    "mode": response.mode,
+                    "answer_scope": response.answer_scope,
+                    "cache": "research_static",
+                    "cache_id": cached_metadata.get("id", ""),
+                }
+            )
+            yield sse_event({"type": "token", "content": response.answer})
+            yield sse_event({"type": "done"})
+
+        return StreamingResponse(
+            research_cached_event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     cache_key = build_query_cache_key(req)
     cached_response = await get_cached_query_response(cache_key)
     if cached_response is not None:
         logger.info("Streaming query response cache hit mode=%s language=%s", req.mode, req.ui_language)
 
         async def cached_event_generator():
-            import json
-
             response = cached_response.model_copy(update={"session_id": req.session_id})
             yield sse_status(req, "received")
             yield sse_status(req, "cache")
@@ -1748,8 +1822,6 @@ async def query_stream(req: QueryRequest, request: Request):
         logger.info("Streaming prepared query answer hit mode=%s language=%s", req.mode, req.ui_language)
 
         async def prepared_event_generator():
-            import json
-
             yield sse_status(req, "received")
             yield sse_status(req, "quick_answer")
             await set_cached_query_response(cache_key, prepared_response)
@@ -1803,8 +1875,6 @@ async def query_stream(req: QueryRequest, request: Request):
             )
 
             async def directory_event_generator():
-                import json
-
                 yield sse_status(req, "received")
                 yield sse_status(req, "hr_directory")
                 await set_cached_query_response(cache_key, directory_response)
@@ -1852,8 +1922,6 @@ async def query_stream(req: QueryRequest, request: Request):
             )
 
             async def localized_directory_event_generator():
-                import json
-
                 yield sse_status(req, "received")
                 yield sse_status(req, "hr_directory")
                 await set_cached_query_response(cache_key, directory_response)
@@ -1876,7 +1944,6 @@ async def query_stream(req: QueryRequest, request: Request):
         raise HTTPException(status_code=502, detail=str(e)) from e
 
     async def event_generator():
-        import json
         try:
             yield sse_status(req, "received")
             yield sse_status(req, "routing")

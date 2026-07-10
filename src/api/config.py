@@ -22,6 +22,9 @@ DOCJP_SESSION_ID = os.getenv("DOCJP_SESSION_ID", "docjp")
 RESEARCH_TOPICS_PATH = Path(
     os.getenv("RESEARCH_TOPICS_PATH", "config/research_topics.json")
 )
+RESEARCH_CACHED_ANSWERS_PATH = Path(
+    os.getenv("RESEARCH_CACHED_ANSWERS_PATH", "config/research_cached_answers.json")
+)
 RESEARCH_SCORE_THRESHOLD = float(os.getenv("RESEARCH_SCORE_THRESHOLD", "0.35"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LITELLM_URL = os.getenv("LITELLM_URL", "http://localhost:4000/v1")
