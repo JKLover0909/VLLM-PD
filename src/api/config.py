@@ -47,6 +47,13 @@ MES_QUERY_CACHE_TTL_SECONDS = max(
     0,
     int(os.getenv("MES_QUERY_CACHE_TTL_SECONDS", "86400")),
 )
+# Tài liệu Research (DocJP) gần như tĩnh, chỉ đổi khi chạy lại script reindex,
+# nên TTL dài hơn cache MKAC mặc định để tránh gọi lại LLM (15-20s) cho câu hỏi
+# đã hỏi trước đó trong cùng research_topic.
+RESEARCH_QUERY_CACHE_TTL_SECONDS = max(
+    0,
+    int(os.getenv("RESEARCH_QUERY_CACHE_TTL_SECONDS", "3600")),
+)
 MIN_QUERY_RESPONSE_SECONDS = max(
     0.0,
     float(os.getenv("MIN_QUERY_RESPONSE_SECONDS", "2.0")),

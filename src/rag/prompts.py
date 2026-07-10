@@ -7,12 +7,30 @@ Giữ nguyên hành vi so với bản gốc.
 
 import base64
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, List
 
 from src.rag.vector_store import SearchResult
 
 logger = logging.getLogger(__name__)
+
+# Chặn an toàn cho các chunk bất thường dài (vd. bảng Excel lớn được index
+# thành 1 chunk hàng triệu ký tự thay vì tuân theo CHUNK_SIZE=1400 văn bản
+# thường). Không cắt chunk bình thường — giá trị này chỉ chặn outlier.
+MAX_CHUNK_CHARS_IN_PROMPT = int(os.getenv("RAG_MAX_CHUNK_CHARS_IN_PROMPT", "4000"))
+
+
+def _truncate_chunk_text(text: str, *, limit: int = MAX_CHUNK_CHARS_IN_PROMPT) -> str:
+    stripped = text.strip()
+    if len(stripped) <= limit:
+        return stripped
+    logger.warning(
+        "Truncating oversized chunk from %s to %s characters before prompting.",
+        len(stripped),
+        limit,
+    )
+    return stripped[:limit] + "\n(... đã cắt bớt do đoạn trích quá dài ...)"
 
 MKAC_SYSTEM_PROMPT = """Bạn là trợ lý hỏi đáp nội bộ về Công ty MKAC.
 
@@ -161,7 +179,8 @@ def build_rag_prompt(
                     f"Tổng giám đốc: {leadership.get('general_director', '')}."
                 )
             context_parts.append(
-                f"--- Đoạn {i}{' ' + citation if citation else ''} ---{identity}\n{c.text.strip()}"
+                f"--- Đoạn {i}{' ' + citation if citation else ''} ---{identity}\n"
+                f"{_truncate_chunk_text(c.text)}"
             )
         context_text = "\n\n".join(context_parts)
 

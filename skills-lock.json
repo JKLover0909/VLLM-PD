@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "skills": {
+    "qdrant-clients-sdk": {
+      "source": "qdrant/skills",
+      "sourceType": "github",
+      "skillPath": "skills/qdrant-clients-sdk/SKILL.md",
+      "computedHash": "58df9c656977780dd62db051ab81d84639acf0ead3cce162e765456fb3167c91"
+    },
+    "qdrant-deployment-options": {
+      "source": "qdrant/skills",
+      "sourceType": "github",
+      "skillPath": "skills/qdrant-deployment-options/SKILL.md",
+      "computedHash": "85b923e1faba9bd4bf3f7593d122adc09a89012a5c11b2632cd0da6ee58a772b"
+    },
+    "qdrant-edge": {
+      "source": "qdrant/skills",
+      "sourceType": "github",
+      "skillPath": "skills/qdrant-edge/SKILL.md",
+      "computedHash": "50eb8f2c200d9a3c29433acd99190bcf2ef7da48fd7513d5c13571c7eec5d520"
+    },
+    "qdrant-model-migration": {
+      "source": "qdrant/skills",
+      "sourceType": "github",
+      "skillPath": "skills/qdrant-model-migration/SKILL.md",
+      "computedHash": "6a40dfbc656404be20db1bbc427f05a66d7e2a7d30ce18432a43d140843e426a"
+    },
+    "qdrant-monitoring": {
+      "source": "qdrant/skills",
+      "sourceType": "github",
+      "skillPath": "skills/qdrant-monitoring/SKILL.md",
+      "computedHash": "38afe0d8f006d7febb82390d244a3c5235156569c2671589c437511480e67a6b"
+    },
+    "qdrant-performance-optimization": {
+      "source": "qdrant/skills",
+      "sourceType": "github",
+      "skillPath": "skills/qdrant-performance-optimization/SKILL.md",
+      "computedHash": "29ed6a49e7346bde27042344254f75210cd92a48da06a0feb91f901775604c75"
+    },
+    "qdrant-scaling": {
+      "source": "qdrant/skills",
+      "sourceType": "github",
+      "skillPath": "skills/qdrant-scaling/SKILL.md",
+      "computedHash": "23b2147526a1fb566a7b765f6d0392062eba99307592f024661d3ca57d84c453"
+    },
+    "qdrant-search-quality": {
+      "source": "qdrant/skills",
+      "sourceType": "github",
+      "skillPath": "skills/qdrant-search-quality/SKILL.md",
+      "computedHash": "fc840f2df6e1eb9255b97eb6b1c0702850e6edf4cc829fd1f7e9fb6ba5fc9dbe"
+    },
+    "qdrant-version-upgrade": {
+      "source": "qdrant/skills",
+      "sourceType": "github",
+      "skillPath": "skills/qdrant-version-upgrade/SKILL.md",
+      "computedHash": "81d1f333551508663aa027ccc71693fb8ee3fbcc729f236c8bacdb26966842ed"
+    }
+  }
+}

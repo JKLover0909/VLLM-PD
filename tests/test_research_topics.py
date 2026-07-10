@@ -118,3 +118,15 @@ def test_query_request_accepts_research_topic():
 def test_query_request_research_topic_defaults_to_none():
     req = QueryRequest(session_id="s", question="q", mode="research")
     assert req.research_topic is None
+    assert req.research_scope is None
+
+
+def test_query_request_accepts_explicit_upload_scope():
+    req = QueryRequest(
+        session_id="s",
+        question="q",
+        mode="research",
+        research_scope="upload",
+    )
+    assert req.research_scope == "upload"
+    assert req.research_topic is None

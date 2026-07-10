@@ -457,7 +457,7 @@ Trạng thái kiểm tra gần nhất:
 | LiteLLM `coding-model` | OK |
 | LiteLLM `openai-model` | OK |
 | LiteLLM `grok-model` | OK |
-| Endpoint gốc Qwen chat IP tĩnh `192.84.106.72:11434` | đang `connection refused` |
+| Endpoint gốc Qwen chat IP tĩnh `192.168.10.124:11434` | route chính |
 | Endpoint gốc Qwen chat ngrok | OK |
 | Endpoint gốc Qwen small qua `host.docker.internal:11435` từ container | OK |
 | Endpoint gốc Qwen coder ngrok `/v1/chat/completions` | OK |
@@ -533,7 +533,7 @@ Các biến chính nằm trong `.env.example` hoặc `.env.docker`:
 LITELLM_URL=http://localhost:4000/v1
 LITELLM_MASTER_KEY=sk-local
 
-QWEN_CHAT_API_BASE=http://192.84.106.72:11434
+QWEN_CHAT_API_BASE=http://192.168.10.124:11434
 QWEN_CHAT_NGROK_API_BASE=https://carless-overarch-establish.ngrok-free.dev
 QWEN_CHAT_MODEL=qwen3:14b
 QWEN_SMALL_API_BASE=http://host.docker.internal:11435

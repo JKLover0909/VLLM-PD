@@ -49,6 +49,7 @@ def test_mkac_token_budget_is_dynamic(monkeypatch):
 
     for key in (
         "RESEARCH_MAX_TOKENS",
+        "RESEARCH_SIMPLE_MAX_TOKENS",
         "MKAC_GENERAL_MAX_TOKENS",
         "MKAC_SIMPLE_MAX_TOKENS",
         "MKAC_EXTENDED_MAX_TOKENS",
@@ -88,11 +89,34 @@ def test_mkac_token_budget_is_dynamic(monkeypatch):
         )
         == 768
     )
+    # Câu hỏi Research ngắn, không có marker liệt kê/tổng hợp -> budget thấp.
     assert (
         pipeline._rag_answer_max_tokens(
-            question="Tổng hợp tài liệu này",
+            question="3rdWATCH đăng nhập thế nào?",
             mode="research",
             search_results=[],
+            answer_scope="research",
+            has_images=False,
+        )
+        == 640
+    )
+    # Câu hỏi Research có marker liệt kê/tổng hợp -> budget cao (1800).
+    assert (
+        pipeline._rag_answer_max_tokens(
+            question="Hãy liệt kê tất cả các bước trong quy trình đăng ký",
+            mode="research",
+            search_results=[],
+            answer_scope="research",
+            has_images=False,
+        )
+        == 1800
+    )
+    # search_results dài (>=5 chunks) cũng coi là câu hỏi phức tạp dù câu hỏi ngắn.
+    assert (
+        pipeline._rag_answer_max_tokens(
+            question="Cách dùng?",
+            mode="research",
+            search_results=[None, None, None, None, None],
             answer_scope="research",
             has_images=False,
         )

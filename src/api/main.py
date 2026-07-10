@@ -360,12 +360,15 @@ async def set_cached_query_response(
 ) -> None:
     if not cache_key:
         return
-    # MES snapshot tĩnh → giữ cache lâu hơn; các mode khác dùng TTL mặc định.
-    ttl = (
-        MES_QUERY_CACHE_TTL_SECONDS
-        if response.mode == "mes"
-        else QUERY_RESPONSE_CACHE_TTL_SECONDS
-    )
+    # Shared static corpora can use a longer mode-specific TTL. Uploaded
+    # Research sessions never reach this function because their cache key is
+    # disabled in query_cache_key().
+    if response.mode == "mes":
+        ttl = MES_QUERY_CACHE_TTL_SECONDS
+    elif response.mode == "research":
+        ttl = config.RESEARCH_QUERY_CACHE_TTL_SECONDS
+    else:
+        ttl = QUERY_RESPONSE_CACHE_TTL_SECONDS
     async with query_response_cache_lock:
         query_response_cache[cache_key] = (time.monotonic() + ttl, response)
         query_response_cache.move_to_end(cache_key)
@@ -384,6 +387,25 @@ def build_query_cache_key(req: QueryRequest) -> Optional[str]:
         except Exception:  # pragma: no cover - phòng lỗi đọc metadata
             snapshot_version = ""
     return query_cache_key(req, snapshot_version=snapshot_version)
+
+
+def normalize_research_request(req: QueryRequest) -> QueryRequest:
+    """Resolve the Research corpus explicitly while preserving old clients."""
+    if req.mode != "research":
+        return req
+
+    validated_topic = validate_research_topic(req.research_topic)
+    scope = req.research_scope or ("topic" if validated_topic else "upload")
+    if scope == "topic":
+        if not validated_topic:
+            raise HTTPException(
+                status_code=400,
+                detail="A valid research_topic is required for topic research.",
+            )
+        return req.model_copy(
+            update={"research_scope": "topic", "research_topic": validated_topic}
+        )
+    return req.model_copy(update={"research_scope": "upload", "research_topic": None})
 
 
 def question_uses_employee_context_reference(question: str) -> bool:
@@ -840,6 +862,7 @@ async def route_query(
             current_user=current_user_context,
             conversation_context=req.conversation_context,
             research_topic=validate_research_topic(req.research_topic),
+            research_scope=req.research_scope,
         )
     raise HTTPException(status_code=400, detail=f"Unsupported query mode: {req.mode}")
 
@@ -868,6 +891,7 @@ async def route_query_stream(
             current_user=current_user_context,
             conversation_context=req.conversation_context,
             research_topic=validate_research_topic(req.research_topic),
+            research_scope=req.research_scope,
         )
     raise HTTPException(status_code=400, detail=f"Unsupported query mode: {req.mode}")
 
@@ -1206,6 +1230,7 @@ async def source_page_preview(
     file: str,
     page: int,
     language: Literal["vi", "ja"] = "vi",
+    source_scope: Optional[Literal["topic", "upload"]] = None,
 ):
     """Return a page image preview for an indexed citation."""
     def preview_error(status_code: int, vi_detail: str, ja_detail: str) -> None:
@@ -1223,6 +1248,9 @@ async def source_page_preview(
     if mode == "mkac":
         store = mkac_vector_store
         lookup_session_id = "mkac"
+    elif source_scope == "upload":
+        store = vector_store
+        lookup_session_id = normalize_session_id(session_id)
     else:
         store = docjp_vector_store
         lookup_session_id = DOCJP_SESSION_ID
@@ -1565,6 +1593,7 @@ async def query_documents(req: QueryRequest, request: Request):
     request_started_at = time.monotonic()
     await enforce_rate_limit(request, "query", QUERY_RATE_LIMIT, 60)
     normalize_session_id(req.session_id)
+    req = normalize_research_request(req)
     current_employee = await asyncio.to_thread(authorize_query, req)
     research_cached_response = research_cached_query_response(req)
     if research_cached_response is not None:
@@ -1686,7 +1715,10 @@ async def query_documents(req: QueryRequest, request: Request):
         )
         answer = await translate_answer_for_ui(answer, req)
         sources = await translate_sources_for_ui(
-            rag_pipeline.format_sources(results),
+            rag_pipeline.format_sources(
+                results,
+                research_scope=req.research_scope if req.mode == "research" else None,
+            ),
             req,
         )
         response = QueryResponse(
@@ -1732,6 +1764,7 @@ async def query_stream(req: QueryRequest, request: Request):
     request_started_at = time.monotonic()
     await enforce_rate_limit(request, "query", QUERY_RATE_LIMIT, 60)
     normalize_session_id(req.session_id)
+    req = normalize_research_request(req)
     current_employee = await asyncio.to_thread(authorize_query, req)
     research_cached_response = research_cached_query_response(req)
     if research_cached_response is not None:
@@ -1770,6 +1803,7 @@ async def query_stream(req: QueryRequest, request: Request):
                     "model": response.model,
                     "mode": response.mode,
                     "answer_scope": response.answer_scope,
+                    "research_scope": req.research_scope,
                     "cache": "research_static",
                     "cache_id": cached_metadata.get("id", ""),
                 }
@@ -1805,7 +1839,7 @@ async def query_stream(req: QueryRequest, request: Request):
             await wait_for_min_query_latency(request_started_at)
             yield sse_status(req, "finalizing")
             yield sse_event({"type": "sources", "sources": response.sources})
-            yield sse_event({"type": "meta", "model": response.model, "mode": response.mode, "answer_scope": response.answer_scope})
+            yield sse_event({"type": "meta", "model": response.model, "mode": response.mode, "answer_scope": response.answer_scope, "research_scope": req.research_scope})
             yield sse_event({"type": "token", "content": response.answer})
             yield sse_event({"type": "done"})
 
@@ -2019,11 +2053,14 @@ async def query_stream(req: QueryRequest, request: Request):
             )
             
             # Gửi nguồn trích dẫn (sources) trước
-            sources = rag_pipeline.format_sources(results)
+            sources = rag_pipeline.format_sources(
+                results,
+                research_scope=req.research_scope if req.mode == "research" else None,
+            )
             await wait_for_min_query_latency(request_started_at)
             yield sse_status(req, "finalizing")
             yield sse_event({"type": "sources", "sources": sources})
-            yield sse_event({"type": "meta", "model": routed_model, "mode": req.mode, "answer_scope": answer_scope})
+            yield sse_event({"type": "meta", "model": routed_model, "mode": req.mode, "answer_scope": answer_scope, "research_scope": req.research_scope})
 
             # Stream từng token câu trả lời. Generator phát tuple (kind, text):
             # 'token' = delta để hiển thị dần; 'replace' = bản đã hậu xử lý,

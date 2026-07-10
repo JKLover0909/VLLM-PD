@@ -97,7 +97,7 @@ OPENAI_API_KEY=...
 AZURE_OPENAI_API_KEY=...
 AZURE_OPENAI_ENDPOINT=...
 
-QWEN_CHAT_API_BASE=http://192.84.106.72:11434
+QWEN_CHAT_API_BASE=http://192.168.10.124:11434
 QWEN_CHAT_NGROK_API_BASE=https://carless-overarch-establish.ngrok-free.dev
 QWEN_SMALL_API_BASE=http://host.docker.internal:11435
 QWEN_CODER_API_BASE=https://d3d2-2405-4803-f16d-d2f0-b282-e2ff-fe05-dfe9.ngrok-free.app/v1
@@ -386,7 +386,7 @@ Endpoint gốc cần biết:
 
 | Endpoint | Vai trò |
 |---|---|
-| `http://192.84.106.72:11434` | Qwen3 IP tĩnh, route chính nếu sống |
+| `http://192.168.10.124:11434` | Qwen3 IP tĩnh, route chính nếu sống |
 | `https://carless-overarch-establish.ngrok-free.dev` | Qwen3 ngrok fallback |
 | `http://host.docker.internal:11435` | Qwen small qua host Ollama proxy |
 | `https://d3d2-...ngrok-free.app/v1` | Qwen Coder OpenAI-compatible |
@@ -582,10 +582,10 @@ Mở firewall cho cổng `8001` nếu cần.
 
 ### LiteLLM không gọi được Qwen3 IP tĩnh
 
-Nếu endpoint `192.84.106.72:11434` lỗi, kiểm tra trực tiếp:
+Nếu endpoint `192.168.10.124:11434` lỗi, kiểm tra trực tiếp:
 
 ```bash
-curl -fsS http://192.84.106.72:11434/api/tags | jq .
+curl -fsS http://192.168.10.124:11434/api/tags | jq .
 ```
 
 Nếu lỗi `connection refused`, hệ thống vẫn có thể chạy qua ngrok fallback. Tuy

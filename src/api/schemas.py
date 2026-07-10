@@ -23,6 +23,11 @@ class QueryRequest(BaseModel):
     ui_language: Literal["vi", "ja"] = "vi"
     employee_id: Optional[str] = None
     conversation_context: List[Dict[str, Any]] = Field(default_factory=list)
+    # Research corpus selector. ``topic`` queries the shared DocJP collection;
+    # ``upload`` queries documents isolated by the request session UUID.
+    # None preserves compatibility with older clients: a supplied topic means
+    # ``topic`` scope, otherwise the request uses the upload session.
+    research_scope: Optional[Literal["topic", "upload"]] = None
     # Research knowledge scope: one of the predefined topic ids in
     # config/research_topics.json, or "all" for the whole DocJP corpus.
     # None keeps the legacy per-session document behaviour.

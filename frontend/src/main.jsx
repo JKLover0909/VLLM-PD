@@ -17,6 +17,9 @@ import {
   ChevronDown,
   Copy,
   Database,
+  FileCode,
+  FileImage,
+  FileSpreadsheet,
   FileText,
   FileUp,
   FlaskConical,
@@ -28,6 +31,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Paperclip,
+  Presentation,
   RefreshCcw,
   Search,
   Send,
@@ -43,6 +47,30 @@ import {
   X,
 } from "lucide-react";
 import "./styles.css";
+
+// Icon theo loại file để người dùng phân biệt nhanh PDF/Word/Excel/ảnh trong
+// danh sách tài liệu (trước đây mọi file dùng chung một icon FileText).
+const FILE_TYPE_ICONS = {
+  pdf: { Icon: FileText, className: "ext-pdf" },
+  doc: { Icon: FileText, className: "ext-doc" },
+  docx: { Icon: FileText, className: "ext-doc" },
+  xls: { Icon: FileSpreadsheet, className: "ext-xls" },
+  xlsx: { Icon: FileSpreadsheet, className: "ext-xls" },
+  ppt: { Icon: Presentation, className: "ext-ppt" },
+  pptx: { Icon: Presentation, className: "ext-ppt" },
+  png: { Icon: FileImage, className: "ext-img" },
+  jpg: { Icon: FileImage, className: "ext-img" },
+  jpeg: { Icon: FileImage, className: "ext-img" },
+  html: { Icon: FileCode, className: "ext-html" },
+  htm: { Icon: FileCode, className: "ext-html" },
+};
+
+function FileTypeIcon({ filename, size = 17 }) {
+  const ext = (String(filename).split(".").pop() || "").toLowerCase();
+  const { Icon, className } =
+    FILE_TYPE_ICONS[ext] || { Icon: FileText, className: "ext-generic" };
+  return <Icon size={size} className={`file-type-icon ${className}`} aria-hidden="true" />;
+}
 
 const QUICK_PROMPTS = {
   vi: {
@@ -111,6 +139,7 @@ const LEGACY_MODE_SESSION_STORAGE_KEYS = {
 const SESSION_STORAGE_PREFIX = "meibook-session";
 const LEGACY_SESSION_STORAGE_KEY = "meibook-session";
 const RESEARCH_TOPIC_STORAGE_PREFIX = "meibook-research-topic";
+const RESEARCH_SCOPE_STORAGE_PREFIX = "meibook-research-scope";
 const LEGACY_RESEARCH_TOPIC_STORAGE_KEY = "meibook-research-topic";
 const SESSION_TITLE_STORAGE_KEY = "meibook-session-titles";
 const THEME_STORAGE_KEY = "meibook-theme";
@@ -154,7 +183,7 @@ const UI_TEXT = {
         shortLabel: "NC",
         title: "Nghiên cứu tài liệu nội bộ",
         emptyReady: "Sẵn sàng nghiên cứu trong nhóm tài liệu đã chọn.",
-        empty: "Chọn một nhóm tài liệu đã được index để bắt đầu. Kết quả sẽ chỉ dựa trên nhóm đã chọn.",
+        empty: "Chọn nhóm tài liệu bạn muốn tra cứu. Câu trả lời sẽ chỉ dựa trên các tài liệu trong nhóm đã chọn.",
         metric: "Tài liệu",
         inputLabel: "Câu hỏi nghiên cứu",
         placeholderReady: "Nhập câu hỏi nghiên cứu...",
@@ -165,8 +194,20 @@ const UI_TEXT = {
         scopeLabel: "Phạm vi: {topic}",
         allTopics: "Tất cả tài liệu",
         allTopicsDescription: "Tìm kiếm trên toàn bộ kho tài liệu DocJP, không giới hạn nhóm.",
-        topicNotReady: "Nhóm này chưa được index.",
+        topicNotReady: "Nhóm này chưa sẵn sàng để tra cứu.",
         documentsCount: "{count} tài liệu",
+        documentsSummary: "{count} tài liệu · {topics} nhóm",
+        allDocsNote: "Hệ thống sẽ tìm trong toàn bộ {count} tài liệu của nhóm này.",
+        browseDocuments: "Xem danh sách tài liệu",
+        searchFiles: "Tìm tài liệu theo tên...",
+        noMatchingFiles: "Không tìm thấy tài liệu phù hợp",
+        chooseTopicHint: "Chọn nhóm tài liệu ở màn hình chính để bắt đầu tra cứu.",
+        sourceTopic: "Kho tài liệu có sẵn",
+        sourceUpload: "Tài liệu tải lên",
+        sourceTopicDescription: "Tra cứu theo 4 nhóm tài liệu nội bộ đã sẵn sàng.",
+        sourceUploadDescription: "Tải tài liệu riêng và chỉ nghiên cứu trong phiên hiện tại.",
+        uploadEmpty: "Chọn và xử lý ít nhất một tài liệu để bắt đầu nghiên cứu.",
+        uploadReady: "Sẵn sàng nghiên cứu các tài liệu đã tải lên.",
       },
     },
     theme: {
@@ -200,12 +241,16 @@ const UI_TEXT = {
       files: "tệp",
       removeFile: "Bỏ {name}",
       deleteFile: "Xóa {name}",
-      indexDocument: "Index tài liệu",
-      indexing: "Đang index {done}/{total}",
+      deleteFileConfirmTitle: "Xóa tài liệu?",
+      deleteFileConfirmBody:
+        "Tài liệu \"{name}\" sẽ bị xóa khỏi phiên nghiên cứu này. Hành động này không thể hoàn tác.",
+      deleteFileConfirmAction: "Xóa tài liệu",
+      indexDocument: "Xử lý tài liệu",
+      indexing: "Đang xử lý {done}/{total}",
       processing: "Đang xử lý",
-      indexedSummary: "Đã index {files} tệp, {chunks} đoạn",
+      indexedSummary: "Đã xử lý {files} tệp, sẵn sàng hỏi đáp",
       noDocuments: "Chưa có tài liệu",
-      onlineMachine: "Máy 2 online",
+      onlineMachine: "Hệ thống đang hoạt động",
       checking: "Đang kiểm tra",
       qaModes: "Chế độ hỏi đáp",
       chooseModel: "Chọn mô hình",
@@ -261,7 +306,7 @@ const UI_TEXT = {
       closePreview: "Đóng preview",
       noPreviewImage: "Chưa có ảnh preview cho trang này.",
       snippet: "Đoạn trích",
-      demoNotIndexed: "Tài liệu mẫu chưa được index. Vui lòng chạy script index trước.",
+      demoNotIndexed: "Tài liệu mẫu chưa sẵn sàng. Vui lòng liên hệ quản trị viên.",
       stoppedResponse: "Đã dừng phản hồi.",
       requestFailed: "Không thể hoàn tất yêu cầu: {message}",
       loading: "Đang tải",
@@ -276,6 +321,7 @@ const UI_TEXT = {
       ready: "Sẵn sàng",
       notReady: "Chưa sẵn sàng",
       promptLabel: "Gợi ý để bắt đầu",
+      groundedBadge: "Trả lời dựa trên tài liệu",
     },
     answerScope: {
       web: "Tổng hợp từ nguồn web",
@@ -328,7 +374,7 @@ const UI_TEXT = {
         shortLabel: "調査",
         title: "社内資料調査",
         emptyReady: "選択した資料カテゴリ内で調査できます。",
-        empty: "インデックス済み資料カテゴリを選択してください。回答は選択したカテゴリ内の資料に基づきます。",
+        empty: "調べたい資料カテゴリを選択してください。回答は選択したカテゴリ内の資料のみに基づきます。",
         metric: "資料",
         inputLabel: "調査質問",
         placeholderReady: "調査質問を入力してください...",
@@ -339,8 +385,20 @@ const UI_TEXT = {
         scopeLabel: "調査範囲: {topic}",
         allTopics: "すべての資料",
         allTopicsDescription: "カテゴリを限定せず、DocJP資料全体から検索します。",
-        topicNotReady: "このカテゴリはまだインデックスされていません。",
+        topicNotReady: "このカテゴリはまだ利用できません。",
         documentsCount: "{count}件の資料",
+        documentsSummary: "{count}件の資料 · {topics}カテゴリ",
+        allDocsNote: "このカテゴリの{count}件の資料すべてから検索します。",
+        browseDocuments: "資料一覧を表示",
+        searchFiles: "資料名で検索...",
+        noMatchingFiles: "一致する資料がありません",
+        chooseTopicHint: "メイン画面で資料カテゴリを選択して調査を開始してください。",
+        sourceTopic: "登録済み資料",
+        sourceUpload: "アップロード資料",
+        sourceTopicDescription: "4つの社内資料カテゴリから検索します。",
+        sourceUploadDescription: "資料をアップロードし、現在のセッション内だけで調査します。",
+        uploadEmpty: "調査を開始するには、少なくとも1件の資料を選択して処理してください。",
+        uploadReady: "アップロードした資料を調査できます。",
       },
     },
     theme: {
@@ -374,12 +432,16 @@ const UI_TEXT = {
       files: "件のファイル",
       removeFile: "{name}を外す",
       deleteFile: "{name}を削除",
-      indexDocument: "資料をインデックス",
-      indexing: "インデックス中 {done}/{total}",
+      deleteFileConfirmTitle: "資料を削除しますか？",
+      deleteFileConfirmBody:
+        "資料「{name}」はこの調査セッションから削除されます。この操作は取り消せません。",
+      deleteFileConfirmAction: "資料を削除",
+      indexDocument: "資料を処理",
+      indexing: "処理中 {done}/{total}",
       processing: "処理中",
-      indexedSummary: "{files}ファイル、{chunks}チャンクをインデックスしました",
+      indexedSummary: "{files}ファイルの処理が完了しました",
       noDocuments: "資料はまだありません",
-      onlineMachine: "マシン2 オンライン",
+      onlineMachine: "システム稼働中",
       checking: "確認中",
       qaModes: "Q&Aモード",
       chooseModel: "モデルを選択",
@@ -435,7 +497,7 @@ const UI_TEXT = {
       closePreview: "プレビューを閉じる",
       noPreviewImage: "このページのプレビュー画像はありません。",
       snippet: "抜粋",
-      demoNotIndexed: "サンプル資料はまだインデックスされていません。先にインデックススクリプトを実行してください。",
+      demoNotIndexed: "サンプル資料はまだ準備できていません。管理者にお問い合わせください。",
       stoppedResponse: "応答を停止しました。",
       requestFailed: "リクエストを完了できません: {message}",
       loading: "読み込み中",
@@ -450,6 +512,7 @@ const UI_TEXT = {
       ready: "準備完了",
       notReady: "準備中",
       promptLabel: "質問の候補",
+      groundedBadge: "資料に基づいて回答",
     },
     answerScope: {
       web: "Webソースに基づく要約",
@@ -673,6 +736,10 @@ function researchTopicStorageKey(language = "vi") {
   return `${RESEARCH_TOPIC_STORAGE_PREFIX}-${language}`;
 }
 
+function researchScopeStorageKey(language = "vi") {
+  return `${RESEARCH_SCOPE_STORAGE_PREFIX}-${language}`;
+}
+
 function createLanguageScopedState(factory) {
   return ACTIVE_MODE_KEYS.reduce((state, workspaceMode) => {
     for (const item of LANGUAGE_OPTIONS) {
@@ -771,7 +838,7 @@ const ERROR_TRANSLATIONS_JA = [
   [/Invalid source page/i, "参照元ページ番号が正しくありません。"],
   [/Unsupported query mode/i, "未対応の質問モードです。"],
   [/Query failed:\s*/i, "質問処理に失敗しました: "],
-  [/Indexing failed:\s*/i, "インデックス処理に失敗しました: "],
+  [/Indexing failed:\s*/i, "資料の処理に失敗しました: "],
   [/File exceeds/i, "ファイルサイズがアップロード上限を超えています。"],
   [/Could not extract any content from the file/i, "ファイルから内容を抽出できませんでした。"],
 ];
@@ -840,6 +907,16 @@ function App() {
       return "";
     }
   });
+  const [researchScope, setResearchScope] = useState(() => {
+    try {
+      const stored = localStorage.getItem(
+        researchScopeStorageKey(storedLanguage()),
+      );
+      return stored === "upload" ? "upload" : "topic";
+    } catch {
+      return "topic";
+    }
+  });
   const [mesStatus, setMesStatus] = useState({
     available: false,
     lots: 0,
@@ -868,6 +945,8 @@ function App() {
   const [sourcePanelOpen, setSourcePanelOpen] = useState(false);
   const [sourcePreview, setSourcePreview] = useState(null);
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
+  const [confirmDeleteFile, setConfirmDeleteFile] = useState("");
+  const [fileSearch, setFileSearch] = useState("");
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [employee, setEmployee] = useState(storedEmployee);
   const [employeeCodeInput, setEmployeeCodeInput] = useState(
@@ -880,6 +959,7 @@ function App() {
   const modelSelectRef = useRef(null);
   const generationControllerRef = useRef(null);
   const endRef = useRef(null);
+  const conversationScrollRef = useRef(null);
 
   const text = UI_TEXT[language] || UI_TEXT.vi;
   const t = (path, values = {}) => {
@@ -915,8 +995,12 @@ function App() {
   const sessionId = sessionIds[currentWorkspaceKey] || "";
   const messages = messagesByMode[currentWorkspaceKey] || [];
   const sources = sourcesByMode[currentWorkspaceKey] || [];
+  const selectedTopic = selectedResearchTopic();
   const researchReady =
-    mode !== "research" || Boolean(researchTopicId && researchTopics.ready);
+    mode !== "research" ||
+    (researchScope === "upload"
+      ? files.length > 0
+      : Boolean(researchTopicId && selectedTopic?.ready));
   const mkacAuthorized = (mode !== "mkac" && mode !== "mes") || Boolean(employee?.id && employee?.name);
   const canAsk =
     Boolean(question.trim()) &&
@@ -1185,6 +1269,17 @@ function App() {
   }, [language]);
 
   useEffect(() => {
+    try {
+      const storedScope = localStorage.getItem(researchScopeStorageKey(language));
+      setResearchScope(storedScope === "upload" ? "upload" : "topic");
+    } catch {
+      setResearchScope("topic");
+    }
+    setPendingFiles([]);
+    setUploadSummary(null);
+  }, [language]);
+
+  useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
 
@@ -1192,7 +1287,7 @@ function App() {
     let cancelled = false;
 
     async function syncResearchFiles() {
-      if (mode !== "research" || !sessionId) return;
+      if (mode !== "research" || researchScope !== "upload" || !sessionId) return;
       try {
         const info = await getSessionInfo(sessionId);
         if (cancelled) return;
@@ -1207,7 +1302,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [mode, sessionId]);
+  }, [mode, researchScope, sessionId]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -1327,13 +1422,24 @@ function App() {
   }, [sourcePreview]);
 
   useEffect(() => {
-    if (!confirmClearOpen) return undefined;
+    if (mode !== "research") return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      conversationScrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [mode, researchScope, researchTopicId, language]);
+
+  useEffect(() => {
+    if (!confirmClearOpen && !confirmDeleteFile) return undefined;
     function closeConfirm(event) {
-      if (event.key === "Escape") setConfirmClearOpen(false);
+      if (event.key === "Escape") {
+        setConfirmClearOpen(false);
+        setConfirmDeleteFile("");
+      }
     }
     document.addEventListener("keydown", closeConfirm);
     return () => document.removeEventListener("keydown", closeConfirm);
-  }, [confirmClearOpen]);
+  }, [confirmClearOpen, confirmDeleteFile]);
 
   function setModeMessages(workspaceMode, updater, uiLanguage = language) {
     const scopedKey = workspaceKey(workspaceMode, uiLanguage);
@@ -1388,6 +1494,19 @@ function App() {
     );
   }
 
+  function researchTopicsTotalFiles() {
+    return researchTopics.topics.reduce(
+      (total, topic) => total + (topic.num_files || 0),
+      0,
+    );
+  }
+
+  function filterFileNames(names) {
+    const needle = fileSearch.trim().toLowerCase();
+    if (!needle) return names;
+    return names.filter((name) => name.toLowerCase().includes(needle));
+  }
+
   function researchTopicLabel(topic) {
     if (!topic) return "";
     return language === "ja"
@@ -1398,16 +1517,42 @@ function App() {
   function selectResearchTopic(topicId) {
     if (busy) return;
     if (topicId === "all") return;
+    setResearchScope("topic");
     setResearchTopicId(topicId);
     try {
+      localStorage.setItem(researchScopeStorageKey(language), "topic");
       localStorage.setItem(researchTopicStorageKey(language), topicId);
     } catch {
       // Topic selection still works in-memory when storage is unavailable.
     }
     setQuestion("");
     setError("");
+    setFileSearch("");
     setModeSources("research", [], language);
     setSourcePanelOpen(false);
+  }
+
+  function selectResearchScope(nextScope) {
+    if (busy || uploading || !["topic", "upload"].includes(nextScope)) return;
+    if (nextScope === researchScope) return;
+    setResearchScope(nextScope);
+    try {
+      localStorage.setItem(researchScopeStorageKey(language), nextScope);
+    } catch {
+      // Scope selection still works in-memory when storage is unavailable.
+    }
+    // The two corpora have different ownership and retrieval semantics. Start
+    // a clean conversation when switching to avoid leaking context between
+    // shared topic documents and private uploaded documents.
+    setModeMessages("research", [], language);
+    setModeSources("research", [], language);
+    setQuestion("");
+    setError("");
+    setPendingAssistantId("");
+    setSourcePanelOpen(false);
+    setSourcePreview(null);
+    setPendingFiles([]);
+    setUploadSummary(null);
   }
 
   function clearResearchTopic() {
@@ -1420,6 +1565,7 @@ function App() {
     }
     setQuestion("");
     setError("");
+    setFileSearch("");
   }
 
   function useResearchDemoSession() {
@@ -1475,6 +1621,9 @@ function App() {
     const params = new URLSearchParams({
       session_id: previewSessionId,
       mode: sourceMode,
+      source_scope:
+        source.source_scope ||
+        (sourceMode === "research" ? researchScope : "topic"),
       file: source.file || "",
       page: String(source.page || 1),
       language,
@@ -1663,6 +1812,7 @@ function App() {
             : requestMode === "mes"
               ? "mes_database"
               : "research",
+        researchScope: requestMode === "research" ? researchScope : undefined,
         sources: [],
       },
     ], requestLanguage);
@@ -1682,7 +1832,10 @@ function App() {
           employee_id: (requestMode === "mkac" || requestMode === "mes") ? employee?.id : undefined,
           conversation_context: conversationContext,
           research_topic:
-            requestMode === "research" ? researchTopicId || null : null,
+            requestMode === "research" && researchScope === "topic"
+              ? researchTopicId || null
+              : null,
+          research_scope: requestMode === "research" ? researchScope : null,
         },
         (event) => {
           if (event.type === "status") {
@@ -1721,6 +1874,7 @@ function App() {
                         model: event.model || item.model,
                         mode: event.mode || item.mode,
                         answerScope: event.answer_scope || item.answerScope,
+                        researchScope: event.research_scope || item.researchScope,
                       }
                     : item,
                 ),
@@ -1877,7 +2031,7 @@ function App() {
   }
 
   return (
-    <div className={`app-shell ${mode !== "research" ? "mkac-layout" : ""}`}>
+    <div className={`app-shell mode-${mode} ${mode !== "research" ? "mkac-layout" : ""}`}>
       {mode === "research" && (
         <>
           <button
@@ -1927,7 +2081,7 @@ function App() {
                   {sessionTitles[currentWorkspaceKey]}
                 </strong>
               </div>
-              {!researchTopics.ready && (
+              {researchScope === "upload" && (
                 <button
                   className="icon-button"
                   type="button"
@@ -1940,17 +2094,44 @@ function App() {
               )}
             </div>
 
+            <div className="research-source-tabs" role="tablist" aria-label={modeText("research").chooseTopic}>
+              <button
+                type="button"
+                className={researchScope === "topic" ? "active" : ""}
+                onClick={() => selectResearchScope("topic")}
+                disabled={busy || uploading}
+                role="tab"
+                aria-selected={researchScope === "topic"}
+              >
+                <Layers3 size={16} />
+                <span>{modeText("research").sourceTopic}</span>
+              </button>
+              <button
+                type="button"
+                className={researchScope === "upload" ? "active" : ""}
+                onClick={() => selectResearchScope("upload")}
+                disabled={busy || uploading}
+                role="tab"
+                aria-selected={researchScope === "upload"}
+              >
+                <FileUp size={16} />
+                <span>{modeText("research").sourceUpload}</span>
+              </button>
+            </div>
+
             <section className="sidebar-section">
               <div className="section-heading">
                 <span>{t("common.researchDocuments")}</span>
                 <span className="count-badge">
-                  {researchTopics.ready
-                    ? selectedResearchTopic()?.num_files ?? 0
+                  {researchScope === "topic"
+                    ? researchTopicId
+                      ? selectedResearchTopic()?.num_files ?? 0
+                      : researchTopicsTotalFiles()
                     : files.length}
                 </span>
               </div>
 
-              {researchTopics.ready && (
+              {researchScope === "topic" && researchTopics.ready && (
                 <div className="sidebar-topic-panel">
                   {researchTopicId ? (
                     <>
@@ -1973,30 +2154,57 @@ function App() {
                           <X size={16} />
                         </button>
                       </div>
-                      <div className="file-list">
-                        {(selectedResearchTopic()?.files || []).map((filename) => (
-                          <div className="file-item readonly" key={filename}>
-                            <FileText size={17} />
-                            <span title={filename}>{filename}</span>
+                      <p className="scope-note">
+                        {formatText(modeText("research").allDocsNote, {
+                          count: selectedResearchTopic()?.num_files ?? 0,
+                        })}
+                      </p>
+                      <details className="sidebar-file-browser" key={researchTopicId}>
+                        <summary>
+                          <span>
+                            <FileText size={15} aria-hidden="true" />
+                            {modeText("research").browseDocuments}
+                          </span>
+                          <span className="file-browser-count">
+                            {selectedResearchTopic()?.num_files ?? 0}
+                          </span>
+                          <ChevronDown className="file-browser-chevron" size={15} />
+                        </summary>
+                        <div className="file-browser-content">
+                          <div className="file-search">
+                            <Search size={14} aria-hidden="true" />
+                            <input
+                              type="search"
+                              value={fileSearch}
+                              onChange={(event) => setFileSearch(event.target.value)}
+                              placeholder={modeText("research").searchFiles}
+                              aria-label={modeText("research").searchFiles}
+                            />
                           </div>
-                        ))}
-                      </div>
+                          <div className="file-list">
+                            {filterFileNames(selectedResearchTopic()?.files || []).map(
+                              (filename) => (
+                                <div className="file-item readonly" key={filename}>
+                                  <FileTypeIcon filename={filename} />
+                                  <span title={filename}>{filename}</span>
+                                </div>
+                              ),
+                            )}
+                            {filterFileNames(selectedResearchTopic()?.files || [])
+                              .length === 0 && (
+                              <div className="empty-files">
+                                <Search size={20} />
+                                <span>{modeText("research").noMatchingFiles}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </details>
                     </>
                   ) : (
-                    <div className="sidebar-topic-list">
-                      {researchTopics.topics.map((topic) => (
-                        <button
-                          key={topic.id}
-                          type="button"
-                          className="sidebar-topic-item"
-                          onClick={() => selectResearchTopic(topic.id)}
-                          disabled={!topic.ready || busy}
-                        >
-                          <span>{researchTopicLabel(topic)}</span>
-                          <span className="count-badge">{topic.num_files}</span>
-                        </button>
-                      ))}
-                    </div>
+                    <p className="sidebar-topic-hint">
+                      {modeText("research").chooseTopicHint}
+                    </p>
                   )}
                 </div>
               )}
@@ -2006,12 +2214,12 @@ function App() {
                 className="hidden-input"
                 type="file"
                 multiple
-                accept=".pdf,.docx,.xlsx,.pptx,.html,.png,.jpg,.jpeg"
+                accept=".pdf,.docx,.xlsx,.pptx,.html,.htm,.png,.jpg,.jpeg"
                 aria-label={t("common.chooseDocument")}
                 onChange={(event) => addPendingFiles(event.target.files)}
               />
 
-              {!researchTopics.ready && (
+              {researchScope === "upload" && (
                 <button
                   className={`upload-zone ${dragActive ? "dragging" : ""}`}
                   type="button"
@@ -2095,17 +2303,17 @@ function App() {
                 </div>
               )}
 
-              {!researchTopics.ready && (
+              {researchScope === "upload" && (
                 <div className="file-list">
                   {files.map((filename) => (
                     <div className="file-item" key={filename}>
-                      <FileText size={17} />
+                      <FileTypeIcon filename={filename} />
                       <span title={filename}>{filename}</span>
                       <button
                         className="icon-button subtle danger"
                         type="button"
                         title={t("common.deleteFile", { name: filename })}
-                        onClick={() => removeFile(filename)}
+                        onClick={() => setConfirmDeleteFile(filename)}
                       >
                         <Trash2 size={15} />
                       </button>
@@ -2128,7 +2336,7 @@ function App() {
               </div>
               <span className="security-chip">
                 <ShieldCheck size={14} />
-                RAG
+                {t("common.groundedBadge")}
               </span>
             </div>
           </aside>
@@ -2158,7 +2366,9 @@ function App() {
                     ? mesStatus.available
                       ? `${mesStatus.lots || 0} Lot · ${mesStatus.error_events || 0} ${t("common.errorRecords")}`
                       : modeText("mes").unavailable
-                    : researchTopicId
+                    : researchScope === "upload"
+                      ? `${files.length} ${t("common.sessionDocuments")}`
+                      : researchTopicId
                       ? formatText(modeText("research").scopeLabel, {
                           topic: researchTopicLabel(selectedResearchTopic()),
                         })
@@ -2210,16 +2420,16 @@ function App() {
               className="language-toggle"
               type="button"
               title={t("common.languageTitle", {
-                language: language === "vi" ? "VN" : "JP",
+                language: language === "vi" ? "Tiếng Việt" : "日本語",
               })}
               aria-label={t("common.languageTitle", {
-                language: language === "vi" ? "VN" : "JP",
+                language: language === "vi" ? "Tiếng Việt" : "日本語",
               })}
               onClick={cycleLanguage}
               disabled={busy || uploading}
             >
-              <span className={language === "vi" ? "active" : ""}>VN</span>
-              <span className={language === "ja" ? "active" : ""}>JP</span>
+              <span className={language === "vi" ? "active" : ""}>VI</span>
+              <span className={language === "ja" ? "active" : ""}>日本語</span>
             </button>
 
             <button
@@ -2274,7 +2484,7 @@ function App() {
             aria-label={currentMode.title}
             aria-busy={busy}
           >
-            <div className="conversation-scroll">
+            <div className="conversation-scroll" ref={conversationScrollRef}>
               {(mode === "mkac" || mode === "mes") && !mkacAuthorized ? (
                 <div className="employee-gate">
                   <form className="employee-card" onSubmit={verifyEmployeeCode}>
@@ -2324,16 +2534,44 @@ function App() {
                         ? employeeGreetingFor(employee, language, t)
                         : currentMode.title}
                     </h1>
-                    <p>
-                      {mode === "mkac"
-                        ? modeText("mkac").empty
-                        : mode === "mes"
-                          ? modeText("mes").empty
-                          : researchTopicId
-                            ? modeText("research").emptyReady
-                            : modeText("research").empty}
-                    </p>
-                    {mode === "research" && !researchTopicId && (
+                    {mode === "research" && (
+                      <div className="research-source-choice" role="tablist">
+                        <button
+                          type="button"
+                          className={researchScope === "topic" ? "active" : ""}
+                          onClick={() => selectResearchScope("topic")}
+                          disabled={busy || uploading}
+                          role="tab"
+                          aria-selected={researchScope === "topic"}
+                        >
+                          <Layers3 size={17} />
+                          <span>{modeText("research").sourceTopic}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={researchScope === "upload" ? "active" : ""}
+                          onClick={() => selectResearchScope("upload")}
+                          disabled={busy || uploading}
+                          role="tab"
+                          aria-selected={researchScope === "upload"}
+                        >
+                          <FileUp size={17} />
+                          <span>{modeText("research").sourceUpload}</span>
+                        </button>
+                      </div>
+                    )}
+                    {(mode !== "research" || researchScope === "upload") && (
+                      <p>
+                        {mode === "mkac"
+                          ? modeText("mkac").empty
+                          : mode === "mes"
+                            ? modeText("mes").empty
+                            : files.length > 0
+                              ? modeText("research").uploadReady
+                              : modeText("research").uploadEmpty}
+                      </p>
+                    )}
+                    {mode === "research" && researchScope === "topic" && !researchTopicId && (
                       <div className="research-topic-grid">
                         {researchTopics.topics.map((topic) => (
                           <button
@@ -2365,7 +2603,7 @@ function App() {
                         ))}
                       </div>
                     )}
-                    {mode === "research" && researchTopicId && (
+                    {mode === "research" && researchScope === "topic" && researchTopicId && (
                       <div className="research-scope-bar">
                         <span className="research-scope-label">
                           {formatText(modeText("research").scopeLabel, {
@@ -2381,14 +2619,27 @@ function App() {
                         </button>
                       </div>
                     )}
+                    {mode === "research" && researchScope === "upload" && files.length === 0 && (
+                      <button
+                        type="button"
+                        className="research-upload-action"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={busy || uploading}
+                      >
+                        <UploadCloud size={18} />
+                        <span>{t("common.chooseToStart")}</span>
+                      </button>
+                    )}
                   </div>
 
-                  {mode !== "research" || researchTopicId ? (
+                  {mode !== "research" || researchScope === "upload" || researchTopicId ? (
                     <div className="prompt-section">
                       <p className="prompt-label">{t("common.promptLabel")}</p>
                       <div className="prompt-grid">
                         {(mode === "research"
-                          ? researchQuickPrompts()
+                          ? researchScope === "topic"
+                            ? researchQuickPrompts()
+                            : quickPromptsFor("research", language)
                           : quickPromptsFor(mode, language)
                         ).map((prompt) => (
                           <button
@@ -2418,9 +2669,19 @@ function App() {
                         ? `${mkacStatus.num_documents} ${modeText("mkac").metric}`
                         : mode === "mes"
                           ? `${mesStatus.lots || 0} ${modeText("mes").metric}`
-                          : `${
-                              selectedResearchTopic()?.num_files ?? 0
-                            } ${modeText("research").metric}`}
+                          : researchScope === "upload"
+                            ? `${files.length} ${modeText("research").metric}`
+                            : researchTopicId
+                              ? `${
+                                  selectedResearchTopic()?.num_files ?? 0
+                                } ${modeText("research").metric}`
+                              : formatText(
+                                  modeText("research").documentsSummary,
+                                  {
+                                    count: researchTopicsTotalFiles(),
+                                    topics: researchTopics.topics.length,
+                                  },
+                                )}
                     </span>
                   </div>
                 </div>
@@ -2608,7 +2869,7 @@ function App() {
 
             {mkacAuthorized && (
               <form className="composer" onSubmit={onSubmit}>
-                {mode === "research" && !researchTopics.ready && (
+                {mode === "research" && researchScope === "upload" && (
                   <button
                     className="composer-attach icon-button"
                     type="button"
@@ -2642,7 +2903,9 @@ function App() {
                     mode === "research"
                       ? researchReady
                         ? modeText("research").placeholderReady
-                        : modeText("research").placeholderEmpty
+                        : researchScope === "upload"
+                          ? modeText("research").uploadEmpty
+                          : modeText("research").placeholderEmpty
                       : mode === "mes"
                         ? modeText("mes").placeholder
                         : modeText("mkac").placeholder
@@ -2657,7 +2920,9 @@ function App() {
                     </span>
                   </div>
                   <div className="composer-actions">
-                    <span className="char-count">{question.length}/4000</span>
+                    {question.length > 0 && (
+                      <span className="char-count">{question.length}/4000</span>
+                    )}
                     <button
                       className={busy ? "send-button stopping" : "send-button"}
                       type={busy ? "button" : "submit"}
@@ -2842,6 +3107,50 @@ function App() {
                 onClick={clearConversation}
               >
                 {t("common.clearConfirmAction")}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {confirmDeleteFile && (
+        <div
+          className="confirm-backdrop"
+          role="presentation"
+          onClick={() => setConfirmDeleteFile("")}
+        >
+          <section
+            className="confirm-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="confirm-delete-file-title"
+            aria-describedby="confirm-delete-file-body"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="confirm-delete-file-title">
+              {t("common.deleteFileConfirmTitle")}
+            </h2>
+            <p id="confirm-delete-file-body">
+              {t("common.deleteFileConfirmBody", { name: confirmDeleteFile })}
+            </p>
+            <div className="confirm-actions">
+              <button
+                type="button"
+                className="confirm-cancel"
+                onClick={() => setConfirmDeleteFile("")}
+                autoFocus
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                className="confirm-danger"
+                onClick={() => {
+                  removeFile(confirmDeleteFile);
+                  setConfirmDeleteFile("");
+                }}
+              >
+                {t("common.deleteFileConfirmAction")}
               </button>
             </div>
           </section>

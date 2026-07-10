@@ -112,23 +112,34 @@ def normalize_query_cache_text(value: str) -> str:
 
 
 def query_cache_key(req: QueryRequest, *, snapshot_version: str = "") -> Optional[str]:
-    if config.QUERY_RESPONSE_CACHE_SIZE <= 0 or req.mode not in {"mkac", "mes"}:
+    if config.QUERY_RESPONSE_CACHE_SIZE <= 0 or req.mode not in {"mkac", "mes", "research"}:
         return None
     if try_parse_email_send_command(req.question) is not None:
+        return None
+    # Uploaded Research documents are private to a mutable session. Until the
+    # cache has corpus-version invalidation, disabling it is safer than risking
+    # stale results or cross-session answers/sources.
+    if req.mode == "research" and req.research_scope == "upload":
         return None
     # Câu follow-up ("phòng này", "còn X thì sao"...) có đáp án phụ thuộc
     # conversation_context — cache theo câu chữ sẽ trả nhầm ngữ cảnh người khác.
     if is_followup_question(req.question):
         return None
     # TTL áp dụng theo mode: MES dùng TTL dài riêng vì snapshot tĩnh.
-    ttl = (
-        config.MES_QUERY_CACHE_TTL_SECONDS
-        if req.mode == "mes"
-        else config.QUERY_RESPONSE_CACHE_TTL_SECONDS
-    )
+    # Research dùng TTL riêng vì tài liệu DocJP gần như tĩnh (chỉ đổi khi reindex).
+    if req.mode == "mes":
+        ttl = config.MES_QUERY_CACHE_TTL_SECONDS
+    elif req.mode == "research":
+        ttl = config.RESEARCH_QUERY_CACHE_TTL_SECONDS
+    else:
+        ttl = config.QUERY_RESPONSE_CACHE_TTL_SECONDS
     if ttl <= 0:
         return None
     employee_key = req.employee_id or ""
+    # research_topic phân biệt phạm vi tài liệu; câu hỏi giống nhau nhưng khác
+    # topic phải cho ra hai khóa cache khác nhau vì nguồn dữ liệu khác nhau.
+    research_scope_key = (req.research_scope or "") if req.mode == "research" else ""
+    research_topic_key = (req.research_topic or "") if req.mode == "research" else ""
     # snapshot_version gắn vào khóa cho MES: khi re-import (imported_at đổi),
     # mọi khóa cũ không còn khớp → cache tự vô hiệu, không lo trả dữ liệu cũ.
     return "|".join(
@@ -137,6 +148,8 @@ def query_cache_key(req: QueryRequest, *, snapshot_version: str = "") -> Optiona
             req.ui_language,
             req.model,
             employee_key,
+            research_scope_key,
+            research_topic_key,
             snapshot_version,
             normalize_query_cache_text(req.question),
         )

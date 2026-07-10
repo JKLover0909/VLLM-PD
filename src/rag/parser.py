@@ -66,6 +66,12 @@ class DocumentParser:
     # associated with its record instead of blending dozens of people together.
     BIG_TABLE_MIN_ROWS = 12
     TABLE_ROWS_PER_CHUNK = 15
+    # Size cap for one table chunk. Sparse Excel exports (merged cells) can
+    # produce rows of thousands of characters; packing a fixed 15 rows would
+    # still exceed the prompt/embedding budget, so rows are packed until this
+    # budget instead. Normal tables (short rows) keep the 15-row behaviour.
+    TABLE_CHUNK_CHAR_BUDGET = 3600
+    TABLE_SEPARATOR_CELL_RE = re.compile(r":?-{1,}:?")
 
     def __init__(self):
         self.max_pdf_pages = int(os.getenv("MAX_DOCUMENT_PAGES", "100"))
@@ -195,6 +201,45 @@ class DocumentParser:
         ]
         return len(rows) >= self.BIG_TABLE_MIN_ROWS
 
+    def _compact_table_row(
+        self,
+        row: str,
+        *,
+        header_cells: List[str] | None = None,
+    ) -> str:
+        """Drop empty cells from an oversized sparse table row.
+
+        Excel sheets with merged cells export rows that are thousands of
+        characters of ``|  |  |`` padding around a handful of values. Plain
+        positional compaction (just the surviving values, in order) throws
+        away which column each value came from — for a row like "1億円以上"
+        / "取締役会", the reader can no longer tell which is the threshold and
+        which is the approver. When ``header_cells`` is given, each surviving
+        value is prefixed with its column name ("基準: 1億円以上") so meaning
+        survives compaction, not just the raw text. Rows of normal width are
+        returned untouched.
+        """
+        if len(row) <= 300:
+            return row
+        cells = [cell.strip() for cell in row.strip().strip("|").split("|")]
+        if header_cells is not None:
+            labelled = [
+                f"{header_cells[i]}: {cell}"
+                if i < len(header_cells) and header_cells[i] and cell
+                else cell
+                for i, cell in enumerate(cells)
+            ]
+            filled = [cell for cell in labelled if cell.split(": ", 1)[-1]]
+        else:
+            filled = [cell for cell in cells if cell]
+        if not filled:
+            return ""
+        # Keep the sparse row intact when most cells are filled: alignment
+        # still matters for dense tables and compaction would corrupt it.
+        if len(filled) / len(cells) > 0.5:
+            return row
+        return "| " + " | ".join(filled) + " |"
+
     def _split_markdown_table(
         self,
         body: str,
@@ -204,29 +249,76 @@ class DocumentParser:
         start_index: int,
         metadata: Dict[str, Any],
     ) -> List[TextChunk]:
-        table_rows = [
-            line
-            for line in body.splitlines()
-            if self.MARKDOWN_TABLE_ROW.match(line)
+        lines = [line for line in body.splitlines() if line.strip()]
+        first_row_at = next(
+            (i for i, line in enumerate(lines) if self.MARKDOWN_TABLE_ROW.match(line)),
+            len(lines),
+        )
+        # Preamble text (title, notes) placed before the table. Lines that
+        # appear *between* table rows are cell continuations from sparse
+        # exports, not preamble — glueing them here once produced a single
+        # 800k-char chunk. They are compacted as data rows below instead.
+        preamble = "\n".join(lines[:first_row_at]).strip()[:600]
+        table_rows: List[str] = []
+        for line in lines[first_row_at:]:
+            if self.MARKDOWN_TABLE_ROW.match(line):
+                table_rows.append(line)
+            elif "|" in line:
+                table_rows.append(f"| {line.strip().strip('|').strip()} |")
+            elif table_rows:
+                # Plain continuation text: append to the previous row so the
+                # record keeps its trailing note without becoming "preamble".
+                table_rows[-1] = f"{table_rows[-1]} {line.strip()}"
+        header_row, separator_row = table_rows[0], table_rows[1]
+        if self._is_separator_row(header_row):
+            # Docling omits the header for some sheets, emitting the separator
+            # first; a giant |---|---| row is pure noise, keep a minimal one.
+            header_cells: List[str] = []
+            header_row, separator_row = "", "|---|---|---|"
+        else:
+            # Raw (uncompacted) header cells label data-row values below, so
+            # a compacted data row reads "決裁者: 取締役会" instead of a bare
+            # "取締役会" that lost which column it came from.
+            header_cells = [
+                cell.strip()
+                for cell in header_row.strip().strip("|").split("|")
+            ]
+            header_row = self._compact_table_row(header_row)
+            separator_row = "|" + "---|" * max(header_row.count("|") - 1, 2)
+        header = [row for row in (header_row, separator_row) if row]
+        data_rows = [
+            compacted
+            for row in table_rows[2:]
+            if not self._is_separator_row(row)
+            and (
+                compacted := self._compact_table_row(
+                    row, header_cells=header_cells
+                )
+            )
         ]
-        # Preamble text (title, notes) that is not part of the table itself.
-        preamble = "\n".join(
-            line
-            for line in body.splitlines()
-            if line.strip() and not self.MARKDOWN_TABLE_ROW.match(line)
-        ).strip()
-        header = table_rows[:2]  # column header + the |---| separator row
-        data_rows = table_rows[2:]
 
         chunks: List[TextChunk] = []
         chunk_index = start_index
-        for start in range(0, len(data_rows), self.TABLE_ROWS_PER_CHUNK):
-            block_rows = data_rows[start:start + self.TABLE_ROWS_PER_CHUNK]
-            parts = header + block_rows
+        header_size = sum(len(row) + 1 for row in header)
+        block_rows: List[str] = []
+        block_size = header_size
+        blocks: List[List[str]] = []
+        for row in data_rows:
+            over_budget = block_size + len(row) + 1 > self.TABLE_CHUNK_CHAR_BUDGET
+            if block_rows and (over_budget or len(block_rows) >= self.TABLE_ROWS_PER_CHUNK):
+                blocks.append(block_rows)
+                block_rows = []
+                block_size = header_size
+            block_rows.append(row)
+            block_size += len(row) + 1
+        if block_rows:
+            blocks.append(block_rows)
+
+        for position, rows in enumerate(blocks):
+            block = "\n".join(header + rows)
             # Repeat the preamble on the first chunk so document context (title
             # of the table) stays attached without bloating every chunk.
-            block = "\n".join(parts)
-            if start == 0 and preamble:
+            if position == 0 and preamble:
                 block = f"{preamble}\n{block}"
             if len(block.strip()) >= self.MIN_CHUNK_CHARS:
                 chunks.append(
@@ -240,6 +332,13 @@ class DocumentParser:
                 )
                 chunk_index += 1
         return chunks
+
+    def _is_separator_row(self, row: str) -> bool:
+        cells = [cell.strip() for cell in row.strip().strip("|").split("|")]
+        return all(
+            not cell or self.TABLE_SEPARATOR_CELL_RE.fullmatch(cell)
+            for cell in cells
+        )
 
     def _process_pdf_with_text_source(
         self,
@@ -435,7 +534,11 @@ class DocumentParser:
             raise
 
         metadata = {**document_metadata, "source": "docling"}
-        chunks = self._split_text(
+        # Office exports (xlsx/docx/pptx) can be one huge markdown table;
+        # _split_page_body routes those through row-wise table splitting
+        # instead of the size-based splitter, which cannot break a single
+        # oversized table row.
+        chunks = self._split_page_body(
             markdown,
             filename=path.name,
             page_number=1,
@@ -493,7 +596,16 @@ class DocumentParser:
         if len(cleaned) < self.MIN_CHUNK_CHARS:
             return []
 
-        lines = cleaned.splitlines()
+        # A single line longer than CHUNK_SIZE (minified export, one-line
+        # sheet dump) would otherwise pass through as one oversized chunk,
+        # blowing the embedding/prompt budget. Hard-split such lines.
+        lines: List[str] = []
+        for line in cleaned.splitlines():
+            if len(line) <= self.CHUNK_SIZE:
+                lines.append(line)
+                continue
+            for start in range(0, len(line), self.CHUNK_SIZE):
+                lines.append(line[start:start + self.CHUNK_SIZE])
         chunks: List[TextChunk] = []
         current: List[str] = []
         current_size = 0

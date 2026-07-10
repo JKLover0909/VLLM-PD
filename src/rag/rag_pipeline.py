@@ -130,6 +130,7 @@ class RAGPipeline:
         current_user: Dict[str, Any] | None = None,
         conversation_context: List[Dict[str, Any]] | None = None,
         research_topic: str | None = None,
+        research_scope: str | None = None,
     ) -> Tuple[str, List[SearchResult], str, str]:
         """
         Non-streaming RAG query.
@@ -188,6 +189,7 @@ class RAGPipeline:
             question,
             mode,
             research_topic,
+            research_scope,
         )
         if mode == "mkac" and current_user:
             if self._is_current_company_question(question):
@@ -268,6 +270,7 @@ class RAGPipeline:
         current_user: Dict[str, Any] | None = None,
         conversation_context: List[Dict[str, Any]] | None = None,
         research_topic: str | None = None,
+        research_scope: str | None = None,
     ) -> Tuple[AsyncGenerator[Tuple[str, str], None], List[SearchResult], str, str]:
         """
         Streaming RAG query.
@@ -358,6 +361,7 @@ class RAGPipeline:
             question,
             mode,
             research_topic,
+            research_scope,
         )
         if mode == "mkac" and current_user:
             if self._is_current_company_question(question):
@@ -985,8 +989,12 @@ class RAGPipeline:
         question: str,
         mode: str,
         research_topic: str | None = None,
+        research_scope: str | None = None,
     ) -> Tuple[List[SearchResult], List[Path], str]:
-        if mode == "research" and research_topic:
+        resolved_research_scope = research_scope or (
+            "topic" if research_topic else "upload"
+        )
+        if mode == "research" and resolved_research_scope == "topic" and research_topic:
             return self._prepare_research_query_context(
                 session_id=session_id,
                 question=question,
@@ -1362,7 +1370,11 @@ class RAGPipeline:
         has_images: bool,
     ) -> int:
         if mode == "research":
-            return env_int("RESEARCH_MAX_TOKENS", 1800, minimum=384, maximum=2048)
+            if self._needs_extended_research_answer(question, search_results):
+                return env_int("RESEARCH_MAX_TOKENS", 1800, minimum=384, maximum=2048)
+            return env_int(
+                "RESEARCH_SIMPLE_MAX_TOKENS", 640, minimum=256, maximum=1024
+            )
         if mode != "mkac":
             return self.max_tokens
         if answer_scope == "general":
@@ -1397,6 +1409,55 @@ class RAGPipeline:
             "nhung gi",
         )
         return any(marker in normalized for marker in extended_markers)
+
+    @staticmethod
+    def _needs_extended_research_answer(
+        question: str,
+        search_results: List[SearchResult],
+    ) -> bool:
+        """Câu hỏi Research dài/liệt kê/nhiều bước mới cần budget token cao.
+
+        Khác MKAC, Research nhận nhiều câu hỏi tiếng Nhật nên không thể chuẩn
+        hóa dấu tiếng Việt (``_normalize_question_text`` bỏ dấu qua NFD chỉ hợp
+        với chữ Latin) — so khớp trực tiếp trên bản gốc (lowercase cho phần
+        Latin) và không phân biệt hoa/thường với ký tự Latin.
+        """
+        text = (question or "").strip()
+        if len(text) >= 60 or len(search_results) >= 5:
+            return True
+        normalized = text.lower()
+        extended_markers_vi = (
+            "quy trinh",
+            "quy trình",
+            "cac buoc",
+            "các bước",
+            "danh sach",
+            "danh sách",
+            "liet ke",
+            "liệt kê",
+            "so sanh",
+            "so sánh",
+            "phan tich",
+            "phân tích",
+            "tat ca",
+            "tất cả",
+            "bao gom",
+            "bao gồm",
+            "huong dan",
+            "hướng dẫn chi tiết",
+        )
+        # Tiếng Nhật không có khái niệm "dấu" nên so khớp trực tiếp nguyên văn.
+        extended_markers_ja = (
+            "手順",  # quy trình/các bước
+            "一覧",  # danh sách
+            "すべて",  # tất cả
+            "比較",  # so sánh
+            "詳しく",  # chi tiết hơn
+            "違い",  # sự khác biệt
+        )
+        if any(marker in normalized for marker in extended_markers_vi):
+            return True
+        return any(marker in text for marker in extended_markers_ja)
 
     @staticmethod
     def _normalize_question_text(question: str) -> str:
@@ -1563,7 +1624,12 @@ class RAGPipeline:
                     return True
         return False
 
-    def format_sources(self, results: List[SearchResult]) -> List[Dict[str, Any]]:
+    def format_sources(
+        self,
+        results: List[SearchResult],
+        *,
+        research_scope: str | None = None,
+    ) -> List[Dict[str, Any]]:
         """
         Định dạng nguồn trích dẫn trả về API.
         """
@@ -1591,6 +1657,7 @@ class RAGPipeline:
                     "has_page_preview": bool(
                         image_path and Path(image_path).is_file()
                     ),
+                    "source_scope": research_scope,
                 }
             )
         return sources

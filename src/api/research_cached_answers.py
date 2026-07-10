@@ -88,6 +88,8 @@ def research_cached_query_response(req: QueryRequest) -> Optional[QueryResponse]
     """Return a cached Research quick-prompt answer if available."""
     if req.mode != "research":
         return None
+    if req.research_scope == "upload":
+        return None
 
     topic = validate_research_topic(req.research_topic)
     if not topic:
@@ -106,6 +108,9 @@ def research_cached_query_response(req: QueryRequest) -> Optional[QueryResponse]
     sources = item.get("sources") or []
     if not isinstance(sources, list):
         sources = []
+    sources = [dict(source) for source in sources]
+    for source in sources:
+        source.setdefault("source_scope", "topic")
 
     return QueryResponse(
         answer=answer,
@@ -119,6 +124,8 @@ def research_cached_query_response(req: QueryRequest) -> Optional[QueryResponse]
 
 def research_cached_answer_metadata(req: QueryRequest) -> Dict[str, Any]:
     """Optional metadata for diagnostic endpoints/tests."""
+    if req.research_scope == "upload":
+        return {}
     topic = validate_research_topic(req.research_topic)
     if not topic:
         return {}
