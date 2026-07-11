@@ -275,6 +275,10 @@ const UI_TEXT = {
       continue: "Tiếp tục",
       verifying: "Đang kiểm tra",
       chooseToStart: "Chọn tài liệu để bắt đầu",
+      uploadRecommendationTitle: "Lưu ý trước khi tải tài liệu",
+      uploadRecommendation:
+        "Để model nội bộ phản hồi ổn định, nên tải tối đa 3 tài liệu mỗi phiên và ưu tiên mỗi tài liệu dưới 10 trang.",
+      uploadRecommendationAction: "Tiếp tục chọn tài liệu",
       tryDemo: "Thử nghiệm với tài liệu mẫu",
       model: "Model",
       status: "Trạng thái",
@@ -466,6 +470,10 @@ const UI_TEXT = {
       continue: "続行",
       verifying: "確認中",
       chooseToStart: "資料を選択して開始",
+      uploadRecommendationTitle: "資料アップロード前の注意",
+      uploadRecommendation:
+        "ローカルモデルで安定した回答を得るため、1セッションにつき資料は3件まで、1件10ページ未満を目安にしてください。",
+      uploadRecommendationAction: "資料を選択する",
       tryDemo: "サンプル資料で試す",
       model: "モデル",
       status: "状態",
@@ -946,6 +954,8 @@ function App() {
   const [sourcePreview, setSourcePreview] = useState(null);
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const [confirmDeleteFile, setConfirmDeleteFile] = useState("");
+  const [confirmResearchUploadOpen, setConfirmResearchUploadOpen] = useState(false);
+  const [researchUploadNoticeAccepted, setResearchUploadNoticeAccepted] = useState(false);
   const [fileSearch, setFileSearch] = useState("");
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [employee, setEmployee] = useState(storedEmployee);
@@ -1430,16 +1440,17 @@ function App() {
   }, [mode, researchScope, researchTopicId, language]);
 
   useEffect(() => {
-    if (!confirmClearOpen && !confirmDeleteFile) return undefined;
+    if (!confirmClearOpen && !confirmDeleteFile && !confirmResearchUploadOpen) return undefined;
     function closeConfirm(event) {
       if (event.key === "Escape") {
         setConfirmClearOpen(false);
         setConfirmDeleteFile("");
+        setConfirmResearchUploadOpen(false);
       }
     }
     document.addEventListener("keydown", closeConfirm);
     return () => document.removeEventListener("keydown", closeConfirm);
-  }, [confirmClearOpen, confirmDeleteFile]);
+  }, [confirmClearOpen, confirmDeleteFile, confirmResearchUploadOpen]);
 
   function setModeMessages(workspaceMode, updater, uiLanguage = language) {
     const scopedKey = workspaceKey(workspaceMode, uiLanguage);
@@ -1706,6 +1717,20 @@ function App() {
     setPendingFiles((current) => mergeFiles(current, incoming));
     setUploadSummary(null);
     setSidebarOpen(true);
+  }
+
+  function requestResearchUploadPicker() {
+    if (researchUploadNoticeAccepted) {
+      fileInputRef.current?.click();
+      return;
+    }
+    setConfirmResearchUploadOpen(true);
+  }
+
+  function confirmResearchUpload() {
+    setResearchUploadNoticeAccepted(true);
+    setConfirmResearchUploadOpen(false);
+    fileInputRef.current?.click();
   }
 
   function removePendingFile(indexToRemove) {
@@ -2223,7 +2248,7 @@ function App() {
                 <button
                   className={`upload-zone ${dragActive ? "dragging" : ""}`}
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={requestResearchUploadPicker}
                   onDragEnter={(event) => {
                     event.preventDefault();
                     setDragActive(true);
@@ -2560,16 +2585,8 @@ function App() {
                         </button>
                       </div>
                     )}
-                    {(mode !== "research" || researchScope === "upload") && (
-                      <p>
-                        {mode === "mkac"
-                          ? modeText("mkac").empty
-                          : mode === "mes"
-                            ? modeText("mes").empty
-                            : files.length > 0
-                              ? modeText("research").uploadReady
-                              : modeText("research").uploadEmpty}
-                      </p>
+                    {mode !== "research" && (
+                      <p>{modeText(mode).empty}</p>
                     )}
                     {mode === "research" && researchScope === "topic" && !researchTopicId && (
                       <div className="research-topic-grid">
@@ -2620,15 +2637,17 @@ function App() {
                       </div>
                     )}
                     {mode === "research" && researchScope === "upload" && files.length === 0 && (
-                      <button
-                        type="button"
-                        className="research-upload-action"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={busy || uploading}
-                      >
-                        <UploadCloud size={18} />
-                        <span>{t("common.chooseToStart")}</span>
-                      </button>
+                      <div className="research-upload-empty-action">
+                        <button
+                          type="button"
+                          className="research-upload-action"
+                          onClick={requestResearchUploadPicker}
+                          disabled={busy || uploading}
+                        >
+                          <UploadCloud size={18} />
+                          <span>{t("common.chooseToStart")}</span>
+                        </button>
+                      </div>
                     )}
                   </div>
 
@@ -2874,7 +2893,7 @@ function App() {
                     className="composer-attach icon-button"
                     type="button"
                     title={t("common.addResearchDocument")}
-                    onClick={() => fileInputRef.current?.click()}
+                    onClick={requestResearchUploadPicker}
                     disabled={busy || uploading}
                   >
                     <Paperclip size={18} />
@@ -3071,6 +3090,41 @@ function App() {
             <div className="source-preview-text">
               <strong>{t("common.snippet")}</strong>
               <p>{sourcePreview.source.preview}</p>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {confirmResearchUploadOpen && (
+        <div
+          className="confirm-backdrop"
+          role="presentation"
+          onClick={() => setConfirmResearchUploadOpen(false)}
+        >
+          <section
+            className="confirm-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="research-upload-notice-title"
+            aria-describedby="research-upload-notice-body"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="research-upload-notice-title">
+              {t("common.uploadRecommendationTitle")}
+            </h2>
+            <p id="research-upload-notice-body">{t("common.uploadRecommendation")}</p>
+            <div className="confirm-actions">
+              <button
+                type="button"
+                className="confirm-cancel"
+                onClick={() => setConfirmResearchUploadOpen(false)}
+                autoFocus
+              >
+                {t("common.cancel")}
+              </button>
+              <button type="button" className="confirm-primary" onClick={confirmResearchUpload}>
+                {t("common.uploadRecommendationAction")}
+              </button>
             </div>
           </section>
         </div>

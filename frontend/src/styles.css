@@ -2004,6 +2004,16 @@ summary:focus-visible {
   background: #e2e8ed;
 }
 
+.confirm-primary {
+  color: #ffffff;
+  background: #0d7f73;
+  border-color: #0d7f73;
+}
+
+.confirm-primary:hover {
+  background: #0a6f65;
+}
+
 .confirm-danger {
   color: #ffffff;
   background: #c0392b;
@@ -3228,6 +3238,16 @@ html[data-theme="dark"] .confirm-cancel:hover {
   background: #333d48;
 }
 
+html[data-theme="dark"] .confirm-primary {
+  color: #062622;
+  background: #69d8ca;
+  border-color: #69d8ca;
+}
+
+html[data-theme="dark"] .confirm-primary:hover {
+  background: #83e5d9;
+}
+
 html[data-theme="dark"] .confirm-danger {
   color: #1a0f0d;
   background: #e0685c;
@@ -3298,6 +3318,12 @@ html[data-theme="dark"] .confirm-danger:hover {
 
 .research-upload-action:hover:not(:disabled) {
   background: #0a6f65;
+}
+
+.research-upload-empty-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .research-topic-card {
