@@ -9,6 +9,7 @@ def test_guest_employee_profile_does_not_require_database(tmp_path):
     assert guest is not None
     assert guest["id"] == GUEST_EMPLOYEE_ID
     assert guest["name"] == "Guest"
+    assert guest["company_email"] == ""
     assert guest["greeting"] == "Chào mừng đến với hệ thống Meibook,"
 
 

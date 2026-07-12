@@ -65,9 +65,11 @@ services:
       - ./logs:/app/logs
       - ./mkac_processed:/app/mkac_processed
       - ./docjp_processed:/app/docjp_processed
-      # Bind mount toàn bộ code để không bao giờ phải rebuild Docker image
+      # Bind mount code read-only; credentials/token Calendar chỉ nằm trong ./data.
       - ./src:/app/src:ro
       - ./scripts:/app/scripts:ro
+      - ./data/gmail_credentials.json:/app/src/agent/node_modules/mcp-server-google-calendar/credentials.json:ro
+      - ./data/calendar_token.json:/app/src/agent/node_modules/mcp-server-google-calendar/token.json:ro
       - ./frontend/dist:/app/frontend/dist:ro
       - hf_cache:/root/.cache/huggingface
       - torch_cache:/root/.cache/torch
@@ -95,7 +97,6 @@ services:
       - ${MEIBOOK_ENV_FILE:-.env.docker}
     environment:
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
-      OLLAMA_API_BASE: https://carless-overarch-establish.ngrok-free.dev
       QWEN_CHAT_API_BASE: http://192.168.10.124:11434
       QWEN_CHAT_NGROK_API_BASE: https://carless-overarch-establish.ngrok-free.dev
       QWEN_SMALL_API_BASE: http://host.docker.internal:11435

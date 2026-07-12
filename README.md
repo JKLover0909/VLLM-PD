@@ -421,7 +421,6 @@ LiteLLM aliases trong `litellm_config.yaml`:
 | `coding-model` | Qwen2.5 Coder 14B | LangGraph Coding Agent |
 | `openai-model` | OpenAI-compatible cloud fallback | Dự phòng kỹ thuật |
 | `grok-model` | Azure/OpenAI-compatible Grok route | Vision/dự phòng cũ |
-| `local-gemma` | Ollama Gemma4 | Route cũ/dự phòng |
 
 Fallback hiện tại:
 

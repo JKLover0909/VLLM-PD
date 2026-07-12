@@ -11,8 +11,11 @@ import logging
 import os
 import re
 import unicodedata
+from datetime import datetime
 from pathlib import Path
 from typing import AsyncGenerator, Tuple, List, Dict, Any
+from zoneinfo import ZoneInfo
+
 from openai import AsyncOpenAI
 
 from src.rag.embedder import Embedder
@@ -30,6 +33,8 @@ from src.integrations.mes_sql_agent import (
     MesSqlQueryResult,
 )
 from src.integrations.mes_query_service import MesQueryService
+from langchain_core.utils.function_calling import convert_to_openai_tool
+from src.agent.mcp_client import get_mcp_tools
 from src.rag.prompts import (
     GENERAL_SYSTEM_PROMPT,
     MES_DATABASE_SYSTEM_PROMPT,
@@ -61,7 +66,7 @@ MODEL_ROUTES = {
     "grok": "grok-model",
 }
 
-LOCAL_CHAT_MODEL_ALIASES = {"auto-model", "local-gemma", "local-qwen-chat"}
+LOCAL_CHAT_MODEL_ALIASES = {"auto-model", "local-qwen-chat"}
 LOCAL_MODEL_ALIASES = LOCAL_CHAT_MODEL_ALIASES | {"local-qwen-coder", "coding-model"}
 PRIMARY_CHAT_MODELS = {"auto-model", "local-qwen-chat"}
 OPENAI_FALLBACK_MODEL = os.getenv("OPENAI_FALLBACK_MODEL", "openai-model").strip() or "openai-model"
@@ -120,6 +125,41 @@ class RAGPipeline:
             api_key=os.getenv("LITELLM_MASTER_KEY", "sk-local"),
             base_url=proxy_url
         )
+
+        self.calendar_tools = []
+        self.calendar_tool_map = {}
+        self.openai_calendar_tools = []
+        try:
+            mcp_tools = get_mcp_tools()
+            all_calendar_tools = [
+                tool
+                for tool in mcp_tools
+                if tool.name
+                in {
+                    "get-events",
+                    "list-calendars",
+                    "check-availability",
+                    "create-event",
+                }
+            ]
+            self.calendar_tool_map = {
+                tool.name: tool for tool in all_calendar_tools
+            }
+            self.calendar_tools = [
+                tool
+                for tool in all_calendar_tools
+                if tool.name in {"get-events", "list-calendars", "check-availability"}
+            ]
+            self.openai_calendar_tools = [
+                convert_to_openai_tool(tool) for tool in self.calendar_tools
+            ]
+            if self.openai_calendar_tools:
+                logger.info(
+                    "Loaded %s read-only Google Calendar tools into RAG pipeline.",
+                    len(self.openai_calendar_tools),
+                )
+        except Exception as exc:
+            logger.warning("Failed to load Google Calendar MCP tools: %s", exc)
 
     async def query(
         self,
@@ -182,6 +222,23 @@ class RAGPipeline:
                 self._resolve_model(model, mode=mode),
                 "mes_database",
             )
+
+        if mode == "mkac" and self._is_calendar_read_question(question):
+            routed_model = self._resolve_model(model, mode=mode)
+            answer = await self._run_calendar_read(
+                messages=self._calendar_messages(
+                    question,
+                    conversation_context=conversation_context,
+                ),
+                routed_model=routed_model,
+                max_tokens=env_int(
+                    "CALENDAR_ANSWER_MAX_TOKENS",
+                    512,
+                    minimum=256,
+                    maximum=768,
+                ),
+            )
+            return answer, [], routed_model, "calendar"
 
         search_results, image_paths, answer_scope = await asyncio.to_thread(
             self._prepare_query_context,
@@ -355,6 +412,27 @@ class RAGPipeline:
                 "mes_database",
             )
 
+        if mode == "mkac" and self._is_calendar_read_question(question):
+            routed_model = self._resolve_model(model, mode=mode)
+            answer = await self._run_calendar_read(
+                messages=self._calendar_messages(
+                    question,
+                    conversation_context=conversation_context,
+                ),
+                routed_model=routed_model,
+                max_tokens=env_int(
+                    "CALENDAR_ANSWER_MAX_TOKENS",
+                    512,
+                    minimum=256,
+                    maximum=768,
+                ),
+            )
+
+            async def calendar_token_generator():
+                yield ("token", answer)
+
+            return calendar_token_generator(), [], routed_model, "calendar"
+
         search_results, image_paths, answer_scope = await asyncio.to_thread(
             self._prepare_query_context,
             session_id,
@@ -405,6 +483,7 @@ class RAGPipeline:
                 answer_scope=answer_scope,
                 has_images=bool(image_paths),
             )
+
             response = await self.openai_client.chat.completions.create(
                 model=routed_model,
                 messages=messages,
@@ -455,6 +534,209 @@ class RAGPipeline:
         except Exception as e:
             logger.error(f"Error in streaming RAG generation: {e}")
             raise e
+
+    async def run_calendar_tool(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+    ) -> Any:
+        tool = self.calendar_tool_map.get(tool_name)
+        if tool is None:
+            raise RuntimeError(f"Calendar tool is unavailable: {tool_name}")
+        return await tool.ainvoke(arguments)
+
+    async def plan_calendar_event(
+        self,
+        question: str,
+        now: datetime,
+    ) -> Dict[str, Any]:
+        room_names = [
+            "room-1 = (MKAC) Meeting Room 1_Booking",
+            "room-3 = (MKAC) Meeting Room 3_Booking",
+        ]
+        response = await self.openai_client.chat.completions.create(
+            model=self._resolve_model("auto", mode="mkac"),
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Bạn phân tích yêu cầu tạo Google Calendar event. Chỉ trả JSON "
+                        "thuần với title, start, end, room. start/end phải là RFC3339 "
+                        "Asia/Ho_Chi_Minh. Nếu người dùng chỉ nêu thời lượng, tự tính end. "
+                        "Nếu không nêu thời lượng/end, dùng 60 phút. room chỉ được là "
+                        "room-1, room-3 hoặc null. Không thêm người tham gia, Google Meet "
+                        "hay location. Không suy đoán ngày nếu câu không đủ rõ. "
+                        f"Hiện tại: {now.isoformat()}. Phòng: {'; '.join(room_names)}."
+                    ),
+                },
+                {"role": "user", "content": question},
+            ],
+            temperature=0,
+            max_tokens=384,
+            response_format={"type": "json_object"},
+            **self._provider_options(self._resolve_model("auto", mode="mkac")),
+        )
+        content = response.choices[0].message.content or "{}"
+        payload = json.loads(content)
+        if not isinstance(payload, dict):
+            raise ValueError("Calendar planner returned a non-object payload.")
+        return payload
+
+    async def _run_calendar_read(
+        self,
+        *,
+        messages: List[Dict[str, Any]],
+        routed_model: str,
+        max_tokens: int,
+    ) -> str:
+        if not self.openai_calendar_tools:
+            return (
+                "Google Calendar chưa sẵn sàng. Vui lòng kiểm tra kết nối MCP "
+                "và token OAuth Calendar."
+            )
+
+        planner_response = await self.openai_client.chat.completions.create(
+            model=routed_model,
+            messages=messages,
+            temperature=0,
+            max_tokens=min(max_tokens, 512),
+            tools=self.openai_calendar_tools,
+            tool_choice="required",
+            **self._provider_options(routed_model),
+        )
+        planner_message = planner_response.choices[0].message
+        tool_calls = planner_message.tool_calls or []
+        if not tool_calls:
+            logger.warning("Calendar planner returned no tool call.")
+            return "Không thể xác định thao tác đọc Google Calendar phù hợp."
+
+        tool_map = {tool.name: tool for tool in self.calendar_tools}
+        tool_messages: List[Dict[str, Any]] = [*messages, planner_message]
+        tool_failed = False
+        for tool_call in tool_calls:
+            tool_name = tool_call.function.name
+            tool = tool_map.get(tool_name)
+            if tool is None:
+                logger.warning("Rejected unavailable Calendar tool call: %s", tool_name)
+                result = "Công cụ Calendar này không được phép sử dụng."
+                tool_failed = True
+            else:
+                try:
+                    arguments = json.loads(tool_call.function.arguments or "{}")
+                    logger.info("Executing read-only Calendar tool: %s", tool_name)
+                    result = await tool.ainvoke(arguments)
+                except Exception as exc:
+                    logger.warning("Calendar tool %s failed: %s", tool_name, exc)
+                    result = f"Không thể đọc Google Calendar: {exc}"
+                    tool_failed = True
+            tool_messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "name": tool_name,
+                    "content": self._serialize_tool_result(result),
+                }
+            )
+
+        if tool_failed:
+            return (
+                "Không thể đọc Google Calendar lúc này. Vui lòng kiểm tra kết nối mạng "
+                "của container và token OAuth Calendar rồi thử lại."
+            )
+
+        answer_response = await self.openai_client.chat.completions.create(
+            model=routed_model,
+            messages=tool_messages,
+            temperature=0.1,
+            max_tokens=max_tokens,
+            **self._provider_options(routed_model),
+        )
+        answer = self._clean_model_answer(
+            answer_response.choices[0].message.content or ""
+        )
+        return answer or "Không thể tổng hợp kết quả Google Calendar."
+
+    @staticmethod
+    def _serialize_tool_result(result: Any) -> str:
+        if isinstance(result, str):
+            return result
+        try:
+            return json.dumps(result, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            return str(result)
+
+    @classmethod
+    def _is_calendar_read_question(cls, question: str) -> bool:
+        normalized = cls._normalize_question_text(question)
+        original = question or ""
+        calendar_context = bool(
+            re.search(
+                r"\b(lich|calendar|su kien|event|cuoc hop|phong hop|meeting|"
+                r"ranh|free|busy)\b",
+                normalized,
+            )
+            or "lịch" in original.lower()
+            or any(marker in original for marker in ("カレンダー", "予定", "会議", "空き時間"))
+        )
+        read_intent = any(
+            marker in normalized
+            for marker in (
+                "kiem tra",
+                "xem",
+                "doc",
+                "liet ke",
+                "danh sach",
+                "co lich",
+                "lich gi",
+                "lich nao",
+                "con trong",
+                "tim phong",
+                "phong hop con",
+                "ranh",
+                "availability",
+                "available",
+                "check",
+                "show",
+                "list",
+                "get",
+            )
+        ) or bool(
+            re.search(r"\bban\b", normalized)
+            or any(marker in original for marker in ("確認", "教えて", "一覧", "見せて", "空いて"))
+        )
+        return calendar_context and read_intent
+
+    @staticmethod
+    def _calendar_messages(
+        question: str,
+        *,
+        conversation_context: List[Dict[str, Any]] | None = None,
+    ) -> List[Dict[str, Any]]:
+        timezone = ZoneInfo(os.getenv("CALENDAR_TIMEZONE", "Asia/Ho_Chi_Minh"))
+        now = datetime.now(timezone).isoformat(timespec="seconds")
+        messages: List[Dict[str, Any]] = [
+            {
+                "role": "system",
+                "content": (
+                    "Bạn là trợ lý Google Calendar chỉ đọc của Meibook. "
+                    "Chỉ được dùng get-events, list-calendars và check-availability; "
+                    "không được tạo, sửa hoặc xóa sự kiện. Luôn dùng calendarId='primary' "
+                    "nếu người dùng không chỉ rõ lịch. Chuyển khoảng thời gian sang RFC3339 "
+                    "với múi giờ Asia/Ho_Chi_Minh. Nếu người dùng hỏi lịch theo ngày/tuần, "
+                    "hãy gọi get-events với timeMin và timeMax tương ứng. Trả lời ngắn gọn, "
+                    "nêu rõ thời gian, tiêu đề và trạng thái rảnh/bận từ kết quả công cụ. "
+                    "Nếu công cụ lỗi, nói rõ không đọc được Calendar và không suy đoán. "
+                    f"Thời điểm hiện tại là {now}."
+                ),
+            }
+        ]
+        for item in (conversation_context or [])[-4:]:
+            role = item.get("role")
+            content = item.get("content")
+            if role in {"user", "assistant"} and isinstance(content, str):
+                messages.append({"role": role, "content": content[:2000]})
+        messages.append({"role": "user", "content": question})
+        return messages
 
     async def _get_mes_lots(
         self,
@@ -1507,7 +1789,7 @@ class RAGPipeline:
     def _provider_options(routed_model: str) -> Dict[str, Any]:
         """Provider-specific safeguards for LiteLLM upstream models."""
         if routed_model in LOCAL_CHAT_MODEL_ALIASES:
-            # Gemma4 on Ollama may spend the whole generation budget in
+            # Some Ollama chat models may spend the generation budget in
             # message.thinking, leaving message.content empty or truncated.
             num_ctx = int(os.getenv("LOCAL_CHAT_NUM_CTX", "16384"))
             return {"extra_body": {"think": False, "num_ctx": num_ctx}}

@@ -1,0 +1,17 @@
+{
+  "timezone": "Asia/Ho_Chi_Minh",
+  "rooms": [
+    {
+      "id": "room-1",
+      "name": "(MKAC) Meeting Room 1_Booking",
+      "calendar_id": "meiko.vn_18807gio2vmmigs6j37uuje5ivic8@resource.calendar.google.com",
+      "aliases": ["phòng 1", "phòng họp 1", "room 1", "meeting room 1"]
+    },
+    {
+      "id": "room-3",
+      "name": "(MKAC) Meeting Room 3_Booking",
+      "calendar_id": "c_1882m9v826s3miuekpdngfvkrsdee@resource.calendar.google.com",
+      "aliases": ["phòng 3", "phòng họp 3", "room 3", "meeting room 3"]
+    }
+  ]
+}

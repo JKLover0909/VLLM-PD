@@ -1456,6 +1456,9 @@ class MesDatabase:
     @staticmethod
     def _is_count_lots_with_errors_question(normalized: str) -> bool:
         has_lot = bool(re.search(r"\b(lot|lots|lo)\b", normalized))
+        is_average = bool(re.search(r"\b(trung binh|average)\b", normalized))
+        if is_average:
+            return False
         return (
             MesDatabase._asks_count(normalized)
             and has_lot

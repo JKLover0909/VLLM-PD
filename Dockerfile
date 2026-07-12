@@ -22,6 +22,8 @@ RUN apt-get update \
         libgl1 \
         libglib2.0-0 \
         libgomp1 \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
@@ -33,6 +35,7 @@ RUN pip install \
         "google-auth-oauthlib>=1.3.0,<2.0.0"
 
 COPY src ./src
+RUN cd src/agent && npm ci --omit=dev
 COPY config ./config
 COPY documents ./documents
 COPY scripts ./scripts

@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException, Request
 
+from src.actions.report_intent import is_report_request
 from src.api import config
 from src.api.schemas import QueryRequest
 from src.integrations.gmail_sender import try_parse_email_send_command
@@ -115,6 +116,10 @@ def query_cache_key(req: QueryRequest, *, snapshot_version: str = "") -> Optiona
     if config.QUERY_RESPONSE_CACHE_SIZE <= 0 or req.mode not in {"mkac", "mes", "research"}:
         return None
     if try_parse_email_send_command(req.question) is not None:
+        return None
+    # Mọi yêu cầu tạo report đều bỏ cache: report được hỗ trợ tạo artifact mới,
+    # còn report ngoài capability phải đi qua refusal mới thay vì lấy fallback cũ.
+    if req.mode == "mes" and is_report_request(req.question):
         return None
     # Uploaded Research documents are private to a mutable session. Until the
     # cache has corpus-version invalidation, disabling it is safer than risking

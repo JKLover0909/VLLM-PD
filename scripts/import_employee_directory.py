@@ -8,6 +8,7 @@ import os
 import re
 import sqlite3
 import sys
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -52,6 +53,83 @@ FIXED_LEADERSHIP = {
     "deputy_general_director": "Nguyễn Văn Thuận",
     "general_director": "YUICHIRO NAYA",
 }
+COMPANY_EMAIL_DOMAIN = "meiko.vn"
+# Email đã được HR/người dùng xác nhận cho các trường hợp không thể suy ra duy
+# nhất từ họ tên. Override được áp dụng trước bước phát hiện collision.
+COMPANY_EMAIL_OVERRIDES: dict[str, str] = {
+    "000209": "hung.nguyenvan1@meiko.vn",
+}
+
+
+def _email_name_token(value: str) -> str:
+    normalized = value.replace("Đ", "D").replace("đ", "d")
+    normalized = unicodedata.normalize("NFD", normalized)
+    ascii_text = "".join(
+        char for char in normalized if unicodedata.category(char) != "Mn"
+    )
+    return re.sub(r"[^a-z0-9]+", "", ascii_text.lower())
+
+
+def build_company_email(employee_id: str, full_name: str) -> str | None:
+    """Return the candidate ``given.familymiddle@meiko.vn`` address.
+
+    Example: Nguyễn Đình Sơn -> son.nguyendinh@meiko.vn. ``employee_id`` is
+    accepted for a stable public signature; collision ownership is resolved in
+    :func:`resolve_company_emails` across the full import batch.
+    """
+    del employee_id
+    parts = [
+        token
+        for raw_part in re.split(r"\s+", (full_name or "").strip())
+        if (token := _email_name_token(raw_part))
+    ]
+    if not parts:
+        return None
+    local_part = (
+        f"{parts[-1]}.{''.join(parts[:-1])}"
+        if len(parts) > 1
+        else parts[0]
+    )
+    return f"{local_part}@{COMPANY_EMAIL_DOMAIN}"
+
+
+def resolve_company_emails(employees: list[dict]) -> dict[str, str | None]:
+    """Resolve unique company emails for a complete import batch.
+
+    When multiple employees normalize to the same candidate, the lowest
+    employee ID keeps it and higher IDs remain NULL until HR provides verified
+    addresses. This matches the confirmed 000107/000209 collision and avoids
+    silently inviting the wrong person in future Calendar integrations.
+    """
+    by_email: dict[str, list[str]] = {}
+    candidates: dict[str, str | None] = {}
+    for item in employees:
+        employee_id = item["employee_id"]
+        email = COMPANY_EMAIL_OVERRIDES.get(employee_id) or build_company_email(
+            employee_id,
+            item["full_name"],
+        )
+        candidates[employee_id] = email
+        if email:
+            by_email.setdefault(email, []).append(employee_id)
+    for email, employee_ids in by_email.items():
+        if len(employee_ids) <= 1:
+            continue
+        # A verified override must never be silently nulled. When an override
+        # collides, fail import so HR can correct the authoritative address.
+        overridden = [
+            employee_id
+            for employee_id in employee_ids
+            if employee_id in COMPANY_EMAIL_OVERRIDES
+        ]
+        if overridden:
+            raise ValueError(
+                f"Verified company email collision for employee IDs: "
+                f"{', '.join(sorted(employee_ids))}"
+            )
+        for employee_id in sorted(employee_ids)[1:]:
+            candidates[employee_id] = None
+    return candidates
 
 
 def parse_args():
@@ -268,6 +346,7 @@ def write_summary(summary_path: Path, employees: list[dict], source_pattern: str
 def write_database(db_path: Path, employees: list[dict]) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     imported_at = datetime.now(timezone.utc).isoformat()
+    company_emails = resolve_company_emails(employees)
 
     with sqlite3.connect(db_path) as connection:
         connection.execute("DROP TABLE IF EXISTS employees")
@@ -276,6 +355,7 @@ def write_database(db_path: Path, employees: list[dict]) -> None:
             CREATE TABLE IF NOT EXISTS employees (
                 employee_id TEXT PRIMARY KEY,
                 full_name TEXT NOT NULL,
+                company_email TEXT UNIQUE,
                 gender TEXT,
                 position TEXT,
                 department TEXT,
@@ -302,6 +382,7 @@ def write_database(db_path: Path, employees: list[dict]) -> None:
             INSERT INTO employees (
                 employee_id,
                 full_name,
+                company_email,
                 gender,
                 position,
                 department,
@@ -312,9 +393,10 @@ def write_database(db_path: Path, employees: list[dict]) -> None:
                 source_page,
                 imported_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(employee_id) DO UPDATE SET
                 full_name = excluded.full_name,
+                company_email = excluded.company_email,
                 gender = excluded.gender,
                 position = excluded.position,
                 department = excluded.department,
@@ -329,6 +411,7 @@ def write_database(db_path: Path, employees: list[dict]) -> None:
                 (
                     item["employee_id"],
                     item["full_name"],
+                    company_emails[item["employee_id"]],
                     item.get("gender", ""),
                     item.get("position", ""),
                     item.get("department", ""),

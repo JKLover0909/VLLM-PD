@@ -37,7 +37,6 @@ class TranslationService:
         "auto-model",
         "local-qwen-chat",
         "local-qwen-small",
-        "local-gemma",
     }
     DEFAULT_MODEL = "local-qwen-small"
     GLOSSARY = (

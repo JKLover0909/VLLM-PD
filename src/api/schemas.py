@@ -95,6 +95,7 @@ class EmployeeAuthRequest(BaseModel):
 class EmployeeResponse(BaseModel):
     id: str
     name: str
+    company_email: str = ""
     gender: str = ""
     position: str = ""
     department: str = ""

@@ -25,6 +25,7 @@ GUEST_EMPLOYEE_ID = "000000"
 class EmployeeRecord(TypedDict):
     id: str
     name: str
+    company_email: str
     gender: str
     position: str
     department: str
@@ -50,6 +51,7 @@ class EmployeeDirectory:
             return {
                 "id": GUEST_EMPLOYEE_ID,
                 "name": "Guest",
+                "company_email": "",
                 "gender": "",
                 "position": "",
                 "department": "",
@@ -66,8 +68,8 @@ class EmployeeDirectory:
         with sqlite3.connect(self.db_path) as connection:
             row = connection.execute(
                 """
-                SELECT employee_id, full_name, gender, position, department,
-                       birth_date, marital_status, greeting
+                SELECT employee_id, full_name, company_email, gender, position,
+                       department, birth_date, marital_status, greeting
                 FROM employees
                 WHERE employee_id = ?
                 """,
@@ -79,12 +81,13 @@ class EmployeeDirectory:
         return {
             "id": row[0],
             "name": row[1],
-            "gender": row[2] or "",
-            "position": row[3] or "",
-            "department": row[4] or "",
-            "birth_date": row[5] or "",
-            "marital_status": row[6] or "",
-            "greeting": row[7] or "",
+            "company_email": row[2] or "",
+            "gender": row[3] or "",
+            "position": row[4] or "",
+            "department": row[5] or "",
+            "birth_date": row[6] or "",
+            "marital_status": row[7] or "",
+            "greeting": row[8] or "",
             "department_size": 0,
             "department_heads": [],
             "department_deputies": [],

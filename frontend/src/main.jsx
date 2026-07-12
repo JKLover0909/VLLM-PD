@@ -17,6 +17,7 @@ import {
   ChevronDown,
   Copy,
   Database,
+  Download,
   FileCode,
   FileImage,
   FileSpreadsheet,
@@ -38,6 +39,7 @@ import {
   Server,
   ShieldCheck,
   Sparkles,
+  TableProperties,
   Square,
   Sun,
   Moon,
@@ -65,6 +67,157 @@ const FILE_TYPE_ICONS = {
   htm: { Icon: FileCode, className: "ext-html" },
 };
 
+function AgentTimeline({ timeline, language }) {
+  if (!timeline?.steps?.length) return null;
+  const complete = timeline.status === "done";
+  const labels = language === "ja"
+    ? { title: "Agentの実行手順", completed: "完了", running: "実行中", queued: "待機中" }
+    : { title: "Các bước Report Agent", completed: "Hoàn tất", running: "Đang chạy", queued: "Chờ thực hiện" };
+
+  return (
+    <details className="agent-timeline" open={!complete}>
+      <summary>
+        <span className="agent-timeline-heading">
+          <Sparkles size={15} aria-hidden="true" />
+          {labels.title}
+        </span>
+        <span className={`agent-timeline-state ${complete ? "done" : "running"}`}>
+          {complete ? labels.completed : labels.running}
+        </span>
+      </summary>
+      <ol>
+        {timeline.steps.map((step) => {
+          const state = step.status || "queued";
+          return (
+            <li className={`agent-step ${state}`} key={step.id}>
+              <span className="agent-step-icon" aria-hidden="true">
+                {state === "running" ? (
+                  <Loader2 className="spin" size={14} />
+                ) : state === "done" ? (
+                  <Check size={14} />
+                ) : state === "error" ? (
+                  <AlertCircle size={14} />
+                ) : (
+                  <span className="agent-step-dot" />
+                )}
+              </span>
+              <span className="agent-step-copy">
+                <strong>{step.title}</strong>
+                {step.summary && <small>{step.summary}</small>}
+              </span>
+              <span className="sr-only">
+                {state === "done" ? labels.completed : state === "running" ? labels.running : labels.queued}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </details>
+  );
+}
+
+function formatReportValue(value, language) {
+  if (typeof value === "number") {
+    return new Intl.NumberFormat(language === "ja" ? "ja-JP" : "vi-VN", {
+      maximumFractionDigits: 2,
+    }).format(value);
+  }
+  return value ?? "—";
+}
+
+function ReportArtifactCard({ artifact, language }) {
+  if (!artifact) return null;
+  const labels = language === "ja"
+    ? {
+        badge: "MESレポート",
+        observations: "数値からの所見",
+        limitations: "データの制限",
+        details: "データ表を表示",
+        download: "HTMLをダウンロード",
+      }
+    : {
+        badge: "Báo cáo MES",
+        observations: "Nhận xét từ số liệu",
+        limitations: "Giới hạn dữ liệu",
+        details: "Xem các bảng số liệu",
+        download: "Tải báo cáo HTML",
+      };
+
+  return (
+    <section className="report-artifact" aria-labelledby={`report-title-${artifact.id}`}>
+      <header className="report-artifact-header">
+        <span className="report-artifact-icon" aria-hidden="true">
+          <TableProperties size={18} />
+        </span>
+        <div>
+          <span className="report-artifact-badge">{labels.badge}</span>
+          <h3 id={`report-title-${artifact.id}`}>{artifact.title}</h3>
+          <p>{artifact.generated_at} · {artifact.period_label}</p>
+        </div>
+      </header>
+
+      {artifact.kpis?.length > 0 && (
+        <div className="report-kpis" aria-label={labels.badge}>
+          {artifact.kpis.map((item) => (
+            <div className="report-kpi" key={item.key}>
+              <strong>{formatReportValue(item.value, language)}</strong>
+              <span>{item.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {artifact.observations?.length > 0 && (
+        <div className="report-insights">
+          <strong>{labels.observations}</strong>
+          <ul>{artifact.observations.map((note, index) => <li key={index}>{note}</li>)}</ul>
+        </div>
+      )}
+
+      {artifact.sections?.some((section) => section.rows?.length > 0) && (
+        <details className="report-tables">
+          <summary>{labels.details}</summary>
+          {artifact.sections.map((section) => section.rows?.length > 0 && (
+            <div className="report-table-block" key={section.id}>
+              <h4>{section.title}</h4>
+              <div className="report-table-scroll">
+                <table>
+                  <thead>
+                    <tr>{section.columns.map((column) => <th key={column}>{column}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {section.rows.map((row, rowIndex) => (
+                      <tr key={rowIndex}>
+                        {section.columns.map((column) => (
+                          <td key={column}>{formatReportValue(row[column], language)}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </details>
+      )}
+
+      {artifact.limitations?.length > 0 && (
+        <details className="report-limitations">
+          <summary>{labels.limitations}</summary>
+          <ul>{artifact.limitations.map((note, index) => <li key={index}>{note}</li>)}</ul>
+        </details>
+      )}
+
+      {artifact.download_url && (
+        <a className="report-download" href={artifact.download_url} download>
+          <Download size={16} aria-hidden="true" />
+          {labels.download}
+        </a>
+      )}
+    </section>
+  );
+}
+
 function FileTypeIcon({ filename, size = 17 }) {
   const ext = (String(filename).split(".").pop() || "").toLowerCase();
   const { Icon, className } =
@@ -75,7 +228,7 @@ function FileTypeIcon({ filename, size = 17 }) {
 const QUICK_PROMPTS = {
   vi: {
     mkac: [
-      "Meiko Automation có bao nhiêu phòng ban, gồm các phòng ban nào?",
+      "Meiko Automation có bao nhiêu phòng ban và gồm những phòng nào?",
       "Quy định làm thêm giờ ở MKAC như thế nào?",
       "Các sản phẩm chính của MKAC là gì?",
     ],
@@ -287,6 +440,8 @@ const UI_TEXT = {
       webSearch: "Tìm kiếm web",
       mesData: "Dữ liệu MES",
       mesSnapshot: "MES snapshot",
+      mesReport: "Report Agent",
+      mesReportUnsupported: "Ngoài mẫu Report Agent",
       research: "Nghiên cứu",
       mkacSource: "Nguồn MKAC",
       aiInfo: "Thông tin phản hồi AI",
@@ -331,6 +486,8 @@ const UI_TEXT = {
       web: "Tổng hợp từ nguồn web",
       mes: "Dựa trên dữ liệu MES trực tiếp",
       mes_database: "Dựa trên MES snapshot cục bộ",
+      mes_report: "Báo cáo được tổng hợp từ MES snapshot",
+      mes_report_unsupported: "Yêu cầu chưa thuộc các mẫu báo cáo đã được kiểm chứng",
       research: "Dựa trên tài liệu nghiên cứu",
       mkac: "Dựa trên kho MKAC",
       fallback: "Không có nguồn đối chiếu",
@@ -482,6 +639,8 @@ const UI_TEXT = {
       webSearch: "Web検索",
       mesData: "MESデータ",
       mesSnapshot: "MESスナップショット",
+      mesReport: "Report Agent",
+      mesReportUnsupported: "Report Agent対象外",
       research: "調査",
       mkacSource: "MKACソース",
       aiInfo: "AI応答情報",
@@ -526,6 +685,8 @@ const UI_TEXT = {
       web: "Webソースに基づく要約",
       mes: "MESリアルタイムデータに基づく",
       mes_database: "ローカルMESスナップショットに基づく",
+      mes_report: "MESスナップショットから作成したレポート",
+      mes_report_unsupported: "検証済みのレポート形式には含まれていないリクエスト",
       research: "調査資料に基づく",
       mkac: "MKACナレッジベースに基づく",
       fallback: "照合できる参照元はありません",
@@ -1839,6 +2000,8 @@ function App() {
               : "research",
         researchScope: requestMode === "research" ? researchScope : undefined,
         sources: [],
+        agentTimeline: null,
+        artifact: null,
       },
     ], requestLanguage);
     setWaitingMessageIndex(0);
@@ -1870,6 +2033,107 @@ function App() {
                 current.map((item) =>
                   item.id === assistantId
                     ? { ...item, status: event.message || item.status }
+                    : item,
+                ),
+              requestLanguage,
+            );
+          }
+          if (event.type === "agent_plan") {
+            setModeMessages(
+              requestMode,
+              (current) =>
+                current.map((item) =>
+                  item.id === assistantId
+                    ? {
+                        ...item,
+                        status: "",
+                        agentTimeline: {
+                          title: event.title || "Report Agent",
+                          status: "running",
+                          steps: (event.steps || []).map((step) => ({
+                            ...step,
+                            status: "queued",
+                            summary: "",
+                          })),
+                        },
+                      }
+                    : item,
+                ),
+              requestLanguage,
+            );
+          }
+          if (event.type === "tool_start") {
+            setModeMessages(
+              requestMode,
+              (current) =>
+                current.map((item) =>
+                  item.id === assistantId
+                    ? {
+                        ...item,
+                        agentTimeline: item.agentTimeline
+                          ? {
+                              ...item.agentTimeline,
+                              steps: item.agentTimeline.steps.map((step) =>
+                                step.id === event.step_id
+                                  ? { ...step, status: "running" }
+                                  : step,
+                              ),
+                            }
+                          : item.agentTimeline,
+                      }
+                    : item,
+                ),
+              requestLanguage,
+            );
+          }
+          if (event.type === "tool_result") {
+            setModeMessages(
+              requestMode,
+              (current) =>
+                current.map((item) =>
+                  item.id === assistantId
+                    ? {
+                        ...item,
+                        agentTimeline: item.agentTimeline
+                          ? {
+                              ...item.agentTimeline,
+                              steps: item.agentTimeline.steps.map((step) =>
+                                step.id === event.step_id
+                                  ? {
+                                      ...step,
+                                      status: event.status === "error" ? "error" : "done",
+                                      summary: event.summary || "",
+                                    }
+                                  : step,
+                              ),
+                            }
+                          : item.agentTimeline,
+                      }
+                    : item,
+                ),
+              requestLanguage,
+            );
+          }
+          if (event.type === "artifact" && event.artifact_type === "mes_report") {
+            setModeMessages(
+              requestMode,
+              (current) =>
+                current.map((item) =>
+                  item.id === assistantId ? { ...item, artifact: event.artifact } : item,
+                ),
+              requestLanguage,
+            );
+          }
+          if (event.type === "agent_done") {
+            setModeMessages(
+              requestMode,
+              (current) =>
+                current.map((item) =>
+                  item.id === assistantId && item.agentTimeline
+                    ? {
+                        ...item,
+                        agentTimeline: { ...item.agentTimeline, status: "done" },
+                      }
                     : item,
                 ),
               requestLanguage,
@@ -2653,7 +2917,6 @@ function App() {
 
                   {mode !== "research" || researchScope === "upload" || researchTopicId ? (
                     <div className="prompt-section">
-                      <p className="prompt-label">{t("common.promptLabel")}</p>
                       <div className="prompt-grid">
                         {(mode === "research"
                           ? researchScope === "topic"
@@ -2730,11 +2993,21 @@ function App() {
                                   ? t("common.mesData")
                                 : message.answerScope === "mes_database"
                                   ? t("common.mesSnapshot")
+                                : message.answerScope === "mes_report"
+                                  ? t("common.mesReport")
+                                : message.answerScope === "mes_report_unsupported"
+                                  ? t("common.mesReportUnsupported")
                                 : message.mode === "research"
                                   ? t("common.research")
                                   : t("common.mkacSource")}
                             </span>
                           </div>
+                        )}
+                        {message.role === "assistant" && message.agentTimeline && (
+                          <AgentTimeline
+                            timeline={message.agentTimeline}
+                            language={language}
+                          />
                         )}
                         {message.content ? (
                           <div className="message-body">
@@ -2772,6 +3045,9 @@ function App() {
                             </div>
                           </div>
                         ) : null}
+                        {message.role === "assistant" && message.artifact && (
+                          <ReportArtifactCard artifact={message.artifact} language={language} />
+                        )}
                         {message.role === "assistant" && message.content && (
                           <div className="message-actions">
                             <details className="ai-disclosure">
@@ -2788,6 +3064,10 @@ function App() {
                                       ? t("answerScope.mes")
                                     : message.answerScope === "mes_database"
                                       ? t("answerScope.mes_database")
+                                    : message.answerScope === "mes_report"
+                                      ? t("answerScope.mes_report")
+                                    : message.answerScope === "mes_report_unsupported"
+                                      ? t("answerScope.mes_report_unsupported")
                                     : message.answerScope === "research"
                                       ? t("answerScope.research")
                                       : message.answerScope === "mkac"

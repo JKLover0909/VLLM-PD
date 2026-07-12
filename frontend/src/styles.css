@@ -915,17 +915,8 @@ summary:focus-visible {
 
 .prompt-section {
   width: 100%;
-  max-width: 664px;
+  max-width: 720px;
   margin-top: 28px;
-}
-
-.prompt-label {
-  margin: 0 0 12px;
-  color: #66707d;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .prompt-section .prompt-grid {
@@ -1052,7 +1043,7 @@ summary:focus-visible {
 
 .prompt-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 210px));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   margin-top: 24px;
 }
@@ -2892,7 +2883,6 @@ html[data-theme="dark"] .prompt-grid button:disabled {
   border-color: #2a3139;
 }
 
-html[data-theme="dark"] .prompt-label,
 html[data-theme="dark"] .empty-status {
   color: #8a94a1;
 }
@@ -3782,4 +3772,409 @@ html[data-theme="dark"] .file-search input::placeholder {
 
 html[data-theme="dark"] .file-search:focus-within {
   border-color: #4a8f87;
+}
+
+
+/* ── Report Agent: execution timeline + report artifact ─────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.agent-timeline,
+.report-artifact {
+  --report-surface: #ffffff;
+  --report-surface-soft: #f6f8fa;
+  --report-border: #dce2e8;
+  --report-text: #23272f;
+  --report-muted: #68717d;
+  --report-accent: #2f6f4f;
+  margin: 0 0 14px;
+  border: 1px solid var(--report-border);
+  border-radius: 12px;
+  background: var(--report-surface);
+  color: var(--report-text);
+  box-shadow: 0 2px 10px rgba(24, 31, 39, 0.05);
+}
+
+.agent-timeline summary,
+.report-tables > summary,
+.report-limitations > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.agent-timeline summary::-webkit-details-marker,
+.report-tables > summary::-webkit-details-marker,
+.report-limitations > summary::-webkit-details-marker {
+  display: none;
+}
+
+.agent-timeline > summary {
+  min-height: 44px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-timeline-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+
+.agent-timeline-heading svg {
+  color: var(--report-accent);
+}
+
+.agent-timeline-state {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #edf3ef;
+  color: #285e43;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.agent-timeline-state.running {
+  background: #fff6df;
+  color: #815c11;
+}
+
+.agent-timeline ol {
+  margin: 0;
+  padding: 0 12px 12px;
+  list-style: none;
+  border-top: 1px solid var(--report-border);
+}
+
+.agent-step {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 2px 0;
+  color: var(--report-muted);
+}
+
+.agent-step-icon {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--report-border);
+  background: var(--report-surface-soft);
+}
+
+.agent-step.done .agent-step-icon {
+  border-color: #80ae95;
+  background: #e8f3ec;
+  color: #286444;
+}
+
+.agent-step.running .agent-step-icon {
+  border-color: #e2bd62;
+  background: #fff7df;
+  color: #8a620d;
+}
+
+.agent-step.error .agent-step-icon {
+  border-color: #dba1a1;
+  background: #fff0f0;
+  color: #a73b3b;
+}
+
+.agent-step-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #aeb6bf;
+}
+
+.agent-step-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: 2px;
+}
+
+.agent-step-copy strong {
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: inherit;
+}
+
+.agent-step.done .agent-step-copy strong,
+.agent-step.running .agent-step-copy strong {
+  color: var(--report-text);
+}
+
+.agent-step-copy small {
+  margin-top: 2px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.report-artifact {
+  overflow: hidden;
+}
+
+.report-artifact-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--report-border);
+}
+
+.report-artifact-icon {
+  flex: 0 0 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #e8f3ec;
+  color: var(--report-accent);
+}
+
+.report-artifact-header > div {
+  min-width: 0;
+}
+
+.report-artifact-badge {
+  display: block;
+  color: var(--report-accent);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.report-artifact h3 {
+  margin: 3px 0 1px;
+  font-size: 0.98rem;
+  line-height: 1.35;
+}
+
+.report-artifact-header p {
+  margin: 0;
+  color: var(--report-muted);
+  font-size: 0.74rem;
+}
+
+.report-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--report-surface-soft);
+  border-bottom: 1px solid var(--report-border);
+}
+
+.report-kpi {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--report-border);
+  border-radius: 8px;
+  background: var(--report-surface);
+}
+
+.report-kpi strong {
+  display: block;
+  color: var(--report-accent);
+  font-size: 1.08rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-kpi span {
+  display: block;
+  margin-top: 2px;
+  color: var(--report-muted);
+  font-size: 0.68rem;
+  line-height: 1.25;
+}
+
+.report-insights {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--report-border);
+}
+
+.report-insights > strong {
+  font-size: 0.8rem;
+}
+
+.report-insights ul,
+.report-limitations ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.report-insights li,
+.report-limitations li {
+  margin: 3px 0;
+  color: var(--report-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.report-tables,
+.report-limitations {
+  border-bottom: 1px solid var(--report-border);
+}
+
+.report-tables > summary,
+.report-limitations > summary {
+  min-height: 44px;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  color: var(--report-text);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.report-tables > summary::after,
+.report-limitations > summary::after {
+  content: "+";
+  margin-left: auto;
+  color: var(--report-muted);
+  font-size: 1rem;
+}
+
+.report-tables[open] > summary::after,
+.report-limitations[open] > summary::after {
+  content: "−";
+}
+
+.report-table-block {
+  padding: 0 16px 14px;
+}
+
+.report-table-block h4 {
+  margin: 4px 0 7px;
+  font-size: 0.78rem;
+}
+
+.report-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--report-border);
+  border-radius: 8px;
+}
+
+.report-table-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.73rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-table-scroll th,
+.report-table-scroll td {
+  padding: 7px 9px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--report-border);
+}
+
+.report-table-scroll th {
+  background: var(--report-surface-soft);
+  color: var(--report-muted);
+  font-weight: 700;
+}
+
+.report-table-scroll tr:last-child td {
+  border-bottom: 0;
+}
+
+.report-download {
+  min-height: 44px;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: var(--report-accent);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background-color 180ms ease;
+}
+
+.report-download:hover {
+  background: var(--report-surface-soft);
+}
+
+.report-download:focus-visible {
+  outline: 3px solid rgba(47, 111, 79, 0.25);
+  outline-offset: -3px;
+}
+
+html[data-theme="dark"] .agent-timeline,
+html[data-theme="dark"] .report-artifact {
+  --report-surface: #20242c;
+  --report-surface-soft: #282d36;
+  --report-border: #3a414d;
+  --report-text: #edf1f5;
+  --report-muted: #b5bdc8;
+  --report-accent: #83c59f;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .agent-timeline-state {
+  background: #263f32;
+  color: #a8ddbc;
+}
+
+html[data-theme="dark"] .agent-timeline-state.running {
+  background: #483d22;
+  color: #f1d486;
+}
+
+html[data-theme="dark"] .report-artifact-icon,
+html[data-theme="dark"] .agent-step.done .agent-step-icon {
+  background: #263f32;
+  color: #a8ddbc;
+}
+
+html[data-theme="dark"] .agent-step.running .agent-step-icon {
+  background: #483d22;
+  color: #f1d486;
+}
+
+@media (max-width: 680px) {
+  .report-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .report-artifact-header,
+  .report-kpis,
+  .report-insights,
+  .report-tables > summary,
+  .report-limitations > summary,
+  .report-table-block {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .report-download {
+    transition: none;
+  }
 }

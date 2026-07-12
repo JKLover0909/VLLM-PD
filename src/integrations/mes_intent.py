@@ -49,6 +49,10 @@ def is_highest_lot_error_question(question: str) -> bool:
             "san pham loi",
         )
     )
+    is_average = bool(re.search(r"\b(trung binh|average)\b", normalized))
+    if is_average:
+        return False
+
     has_maximum = bool(
         re.search(r"\b(nhieu|cao|lon)\b(?:\s+\w+){0,3}\s+nhat\b", normalized)
         or re.search(
@@ -402,10 +406,15 @@ def extract_month(question: str) -> str:
         year, month = match.groups()
         return f"{year}-{int(month):02d}"
     normalized = normalized_text(question)
-    match = re.search(r"\bthang\s+(\d{1,2})\s+nam\s+(20\d{2})\b", normalized)
+    match = re.search(r"\bthang\s+(\d{1,2})\s*(?:/|nam\s+)?(20\d{2})\b", normalized)
     if match:
         month, year = match.groups()
         return f"{year}-{int(month):02d}"
+    match = re.search(r"\b(\d{1,2})/(20\d{2})\b", original)
+    if match:
+        month, year = match.groups()
+        if 1 <= int(month) <= 12:
+            return f"{year}-{int(month):02d}"
     match = re.search(r"\b(20\d{2})\s+nam\s+thang\s+(\d{1,2})\b", normalized)
     if match:
         year, month = match.groups()

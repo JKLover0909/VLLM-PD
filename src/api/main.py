@@ -21,13 +21,20 @@ from typing import Any, Deque, Dict, List, Literal, Optional
 
 from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 # Load biến môi trường từ .env
 load_dotenv()
 
+from src.actions.artifact_store import ArtifactStore, StoredArtifact
+from src.actions.calendar_action import (
+    CalendarActionError,
+    CalendarActionService,
+)
+from src.actions.report_agent import MesReportAgent, render_html
+from src.actions.report_intent import ReportCapability, report_capability
 from src.rag.parser import (
     DocumentLimitError,
     DocumentParser,
@@ -140,6 +147,9 @@ docjp_vector_store: Optional[VectorStore] = None
 doc_parser: Optional[DocumentParser] = None
 rag_pipeline: Optional[RAGPipeline] = None
 mes_query_service: Optional[MesQueryService] = None
+mes_report_agent: Optional[MesReportAgent] = None
+calendar_action_service: Optional[CalendarActionService] = None
+artifact_store = ArtifactStore()
 web_searcher: Optional[WebSearcher] = None
 employee_directory = EmployeeDirectory(EMPLOYEE_DIRECTORY_DB_PATH)
 mes_database = MesDatabase.from_env()
@@ -272,7 +282,7 @@ async def lifespan(app: FastAPI):
     """
     global embedder, vector_store, mkac_vector_store, docjp_vector_store
     global doc_parser, rag_pipeline
-    global mes_query_service
+    global mes_query_service, mes_report_agent, calendar_action_service
     global web_searcher
 
     logger.info("🚀 Starting Meibook API Gateway on Machine 2...")
@@ -309,6 +319,11 @@ async def lifespan(app: FastAPI):
     mes_query_service = MesQueryService(
         mes_database=mes_database,
         mes_sql_agent=rag_pipeline.mes_sql_agent,
+    )
+    mes_report_agent = MesReportAgent(rag_pipeline.mes_sql_agent)
+    calendar_action_service = CalendarActionService(
+        tool_runner=rag_pipeline.run_calendar_tool,
+        planner=rag_pipeline.plan_calendar_event,
     )
 
     logger.info("✅ Meibook API Gateway is fully operational.")
@@ -378,6 +393,8 @@ async def set_cached_query_response(
 
 def build_query_cache_key(req: QueryRequest) -> Optional[str]:
     """query_cache_key có gắn phiên bản snapshot MES để re-import tự vô hiệu."""
+    if calendar_action_service and calendar_action_service.is_action_request(req.question):
+        return None
     if question_uses_employee_context_reference(req.question):
         return None
     snapshot_version = ""
@@ -671,6 +688,7 @@ def verify_mkac_employee(employee_id: Optional[str]) -> EmployeeResponse:
     return EmployeeResponse(
         id=employee["id"],
         name=employee["name"],
+        company_email=employee.get("company_email", ""),
         gender=employee.get("gender", ""),
         position=employee.get("position", ""),
         department=employee.get("department", ""),
@@ -896,6 +914,125 @@ async def route_query_stream(
     raise HTTPException(status_code=400, detail=f"Unsupported query mode: {req.mode}")
 
 
+async def store_report_artifact(report: Dict[str, Any]) -> None:
+    """Render + lưu HTML artifact; payload SSE chỉ mang metadata và bảng nhỏ."""
+    report_id = str(report["id"])
+    await artifact_store.put(
+        StoredArtifact(
+            id=report_id,
+            kind="report_html",
+            content=render_html(report),
+            media_type="text/html; charset=utf-8",
+            filename=f"mes-report-{report_id[:8]}.html",
+            meta={
+                "title": report["title"],
+                "period_label": report["period_label"],
+            },
+        )
+    )
+
+
+async def handle_calendar_action_query(
+    req: QueryRequest,
+    current_employee: Optional[EmployeeResponse],
+) -> Optional[QueryResponse]:
+    if req.mode != "mkac" or calendar_action_service is None:
+        return None
+    if not calendar_action_service.is_action_request(req.question):
+        return None
+    if current_employee is None:
+        raise CalendarActionError("Cần đăng nhập nhân viên để sử dụng Calendar.")
+    try:
+        result = await calendar_action_service.handle(
+            session_id=req.session_id,
+            question=req.question,
+            employee=current_employee,
+        )
+    except CalendarActionError as exc:
+        return QueryResponse(
+            answer=str(exc),
+            sources=[],
+            session_id=req.session_id,
+            model="calendar-agent",
+            mode=req.mode,
+            answer_scope="calendar_error",
+        )
+    if result is None:
+        return None
+    return QueryResponse(
+        answer=result.answer,
+        sources=[],
+        session_id=req.session_id,
+        model="calendar-agent",
+        mode=req.mode,
+        answer_scope=(
+            "calendar_event"
+            if result.kind == "created"
+            else "calendar"
+            if result.kind == "availability"
+            else "calendar_error"
+            if result.kind in {"conflict", "missing"}
+            else "calendar_draft"
+        ),
+    )
+
+
+def report_refusal_response(
+    req: QueryRequest,
+    capability: ReportCapability,
+) -> QueryResponse:
+    """Từ chối report ngoài capability như một câu trả lời có chủ đích."""
+    if req.ui_language == "ja":
+        answer = (
+            "現在のReport Agentでは、この形式のレポートを正確に作成できません。"
+            "対応しているのは、1期間のMESエラー標準集計レポート、またはTop Nエラー種類"
+            "レポートのみです。誤ったレポートを返さないため、標準テンプレートへの置き換えは"
+            "行いません。"
+        )
+    else:
+        answer = (
+            "Report Agent hiện chưa thể tạo chính xác dạng báo cáo này. Hệ thống tạm "
+            "thời chỉ hỗ trợ báo cáo tổng hợp lỗi MES chuẩn hoặc báo cáo Top N loại lỗi "
+            "trong một kỳ. Tôi không tự đổi yêu cầu sang mẫu mặc định để tránh trả sai."
+        )
+    if capability.reason and req.ui_language != "ja":
+        answer += f"\n\nLý do: {capability.reason}"
+    return QueryResponse(
+        answer=answer,
+        sources=[],
+        session_id=req.session_id,
+        model="report-agent",
+        mode=req.mode,
+        answer_scope="mes_report_unsupported",
+    )
+
+
+async def handle_report_query(req: QueryRequest) -> Optional[QueryResponse]:
+    """Non-streaming report path với capability gate fail-closed."""
+    if req.mode != "mes":
+        return None
+    capability = report_capability(req.question)
+    if not capability.is_report:
+        return None
+    if not capability.supported:
+        return report_refusal_response(req, capability)
+    if mes_report_agent is None or not mes_report_agent.available:
+        raise HTTPException(
+            status_code=503,
+            detail="Report Agent chưa sẵn sàng vì MES snapshot/SQL Agent chưa khả dụng.",
+        )
+    report, summary = await mes_report_agent.build_report(req.question)
+    await store_report_artifact(report)
+    return QueryResponse(
+        answer=f"{summary}\n\n{report['markdown']}",
+        sources=[],
+        session_id=req.session_id,
+        model="report-agent",
+        mode=req.mode,
+        answer_scope="mes_report",
+    )
+
+
 async def handle_email_send_query(
     req: QueryRequest,
     current_user_context: Optional[Dict[str, Any]],
@@ -1041,6 +1178,31 @@ async def handle_email_send_query(
         model=routed_model,
         mode=req.mode,
         answer_scope="email_action",
+    )
+
+
+# ──────────────────────────────────────────────
+# Report Agent artifacts
+# ──────────────────────────────────────────────
+
+@app.get("/reports/{report_id}")
+async def download_report(report_id: str):
+    """Tải artifact HTML của Report Agent; artifact hết hạn sau vài giờ/restart."""
+    try:
+        normalized_id = str(uuid.UUID(report_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid report ID.") from exc
+    artifact = await artifact_store.get(normalized_id)
+    if artifact is None or artifact.kind != "report_html":
+        raise HTTPException(status_code=404, detail="Report not found or expired.")
+    return Response(
+        content=artifact.content,
+        media_type=artifact.media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{artifact.filename}"',
+            "Cache-Control": "private, max-age=300",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -1688,6 +1850,36 @@ async def query_documents(req: QueryRequest, request: Request):
             await wait_for_min_query_latency(request_started_at)
             return directory_response
 
+        calendar_response = await handle_calendar_action_query(
+            localized_req,
+            current_employee,
+        )
+        if calendar_response is not None:
+            translated_calendar_answer = await translate_answer_for_ui(
+                calendar_response.answer,
+                req,
+            )
+            await wait_for_min_query_latency(request_started_at)
+            return calendar_response.model_copy(
+                update={"answer": translated_calendar_answer}
+            )
+
+        report_response = await handle_report_query(localized_req)
+        if report_response is not None:
+            # Report deterministic có thể hoàn thành gần như tức thì. Giữ cùng
+            # minimum latency với quick answer/cache để UI có thời gian hiển thị
+            # trạng thái đang lập báo cáo; không cộng thêm nếu xử lý đã đủ lâu.
+            await wait_for_min_query_latency(request_started_at)
+            translated_report_answer = await translate_answer_for_ui(
+                report_response.answer,
+                req,
+            )
+            if translated_report_answer != report_response.answer:
+                return report_response.model_copy(
+                    update={"answer": translated_report_answer}
+                )
+            return report_response
+
         email_response = await handle_email_send_query(localized_req, current_user_context)
         if email_response is not None:
             translated_email_answer = await translate_answer_for_ui(
@@ -1981,6 +2173,144 @@ async def query_stream(req: QueryRequest, request: Request):
         try:
             yield sse_status(req, "received")
             yield sse_status(req, "routing")
+            calendar_response = await handle_calendar_action_query(
+                localized_req,
+                current_employee,
+            )
+            if calendar_response is not None:
+                yield sse_status(req, "calendar")
+                translated_calendar_answer = await translate_answer_for_ui(
+                    calendar_response.answer,
+                    req,
+                )
+                await wait_for_min_query_latency(request_started_at)
+                yield sse_status(req, "finalizing")
+                yield sse_event({"type": "sources", "sources": []})
+                yield sse_event(
+                    {
+                        "type": "meta",
+                        "model": calendar_response.model,
+                        "mode": calendar_response.mode,
+                        "answer_scope": calendar_response.answer_scope,
+                    }
+                )
+                yield sse_event(
+                    {"type": "token", "content": translated_calendar_answer}
+                )
+                yield sse_event({"type": "done"})
+                await record_query_metric(
+                    mode=req.mode,
+                    ui_language=req.ui_language,
+                    answer_scope=calendar_response.answer_scope,
+                    cache_hit=False,
+                    latency_ms=(time.monotonic() - request_started_at) * 1000,
+                )
+                return
+
+            report_capability_result = (
+                report_capability(localized_req.question)
+                if localized_req.mode == "mes"
+                else ReportCapability(status="not_report")
+            )
+            if report_capability_result.is_report:
+                if not report_capability_result.supported:
+                    refusal = report_refusal_response(
+                        localized_req,
+                        report_capability_result,
+                    )
+                    yield sse_event({"type": "sources", "sources": []})
+                    yield sse_event(
+                        {
+                            "type": "meta",
+                            "model": refusal.model,
+                            "mode": refusal.mode,
+                            "answer_scope": refusal.answer_scope,
+                        }
+                    )
+                    yield sse_event({"type": "token", "content": refusal.answer})
+                    yield sse_event({"type": "done"})
+                    return
+                if mes_report_agent is None or not mes_report_agent.available:
+                    raise RuntimeError(
+                        "Report Agent chưa sẵn sàng vì MES snapshot/SQL Agent "
+                        "chưa khả dụng."
+                    )
+                yield sse_status(req, "report")
+                async for agent_event in mes_report_agent.run(localized_req.question):
+                    event_kind = agent_event["event"]
+                    if event_kind == "plan":
+                        yield sse_event(
+                            {
+                                "type": "agent_plan",
+                                "title": agent_event["title"],
+                                "period_label": agent_event["period_label"],
+                                "steps": agent_event["steps"],
+                            }
+                        )
+                    elif event_kind == "step_start":
+                        yield sse_event(
+                            {
+                                "type": "tool_start",
+                                "step_id": agent_event["step_id"],
+                                "tool": "query_mes",
+                                "title": agent_event["title"],
+                            }
+                        )
+                    elif event_kind == "step_result":
+                        yield sse_event(
+                            {
+                                "type": "tool_result",
+                                "step_id": agent_event["step_id"],
+                                "status": agent_event["status"],
+                                "summary": agent_event["summary"],
+                            }
+                        )
+                    elif event_kind == "report":
+                        report = agent_event["report"]
+                        await store_report_artifact(report)
+                        # Đừng để báo cáo deterministic chớp lên tức thì: chờ
+                        # tới ngưỡng latency chung (~2s), nhưng chỉ phần thời gian
+                        # còn thiếu nên truy vấn chậm không bị cộng thêm delay.
+                        await wait_for_min_query_latency(request_started_at)
+                        artifact_payload = {
+                            key: value
+                            for key, value in report.items()
+                            if key != "markdown"
+                        }
+                        artifact_payload["download_url"] = f"/reports/{report['id']}"
+                        yield sse_event(
+                            {
+                                "type": "artifact",
+                                "artifact_type": "mes_report",
+                                "artifact": artifact_payload,
+                            }
+                        )
+                        translated_summary = await translate_answer_for_ui(
+                            agent_event["summary_text"],
+                            req,
+                        )
+                        yield sse_event(
+                            {
+                                "type": "meta",
+                                "model": "report-agent",
+                                "mode": req.mode,
+                                "answer_scope": "mes_report",
+                            }
+                        )
+                        yield sse_event(
+                            {"type": "token", "content": translated_summary}
+                        )
+                yield sse_event({"type": "agent_done"})
+                yield sse_event({"type": "done"})
+                await record_query_metric(
+                    mode=req.mode,
+                    ui_language=req.ui_language,
+                    answer_scope="mes_report",
+                    cache_hit=False,
+                    latency_ms=(time.monotonic() - request_started_at) * 1000,
+                )
+                return
+
             if (
                 localized_req.mode != "research"
                 and try_parse_email_send_command(localized_req.question) is not None

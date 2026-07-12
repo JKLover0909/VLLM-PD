@@ -5,6 +5,7 @@ import pytest
 
 from src.auth.employee_directory import EmployeeDirectory
 from src.integrations.mes_query_service import MesQueryService
+from src.rag.rag_pipeline import RAGPipeline
 
 
 @pytest.fixture
@@ -16,6 +17,7 @@ def employee_directory(tmp_path: Path) -> EmployeeDirectory:
             CREATE TABLE employees (
                 employee_id TEXT PRIMARY KEY,
                 full_name TEXT,
+                company_email TEXT,
                 gender TEXT,
                 position TEXT,
                 department TEXT,
@@ -28,16 +30,16 @@ def employee_directory(tmp_path: Path) -> EmployeeDirectory:
         connection.executemany(
             """
             INSERT INTO employees (
-                employee_id, full_name, gender, position, department,
-                birth_date, marital_status, greeting
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                employee_id, full_name, company_email, gender, position,
+                department, birth_date, marital_status, greeting
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                ("000001", "Nguyễn Minh Tiến", "Nam", "Trưởng phòng", "AGV", "03/06/1989", "", ""),
-                ("000002", "Trần Đức Hải", "Nam", "Phó phòng", "AGV", "03/02/1993", "", ""),
-                ("000003", "Vũ Minh Hoàng", "Nam", "Kỹ sư", "AI", "12/06/2002", "", ""),
-                ("000004", "Vũ Minh Đức", "Nam", "Trưởng phòng", "R&D S", "30/09/1993", "", ""),
-                ("000005", "Nguyễn Thị Thu Hương", "Nữ", "Nhân viên", "Kho", "03/12/1992", "Đã kết hôn", ""),
+                ("000001", "Nguyễn Minh Tiến", "tien.nguyenminh@meiko.vn", "Nam", "Trưởng phòng", "AGV", "03/06/1989", "", ""),
+                ("000002", "Trần Đức Hải", "hai.tranduc@meiko.vn", "Nam", "Phó phòng", "AGV", "03/02/1993", "", ""),
+                ("000003", "Vũ Minh Hoàng", "hoang.vuminh@meiko.vn", "Nam", "Kỹ sư", "AI", "12/06/2002", "", ""),
+                ("000004", "Vũ Minh Đức", "duc.vuminh@meiko.vn", "Nam", "Trưởng phòng", "R&D S", "30/09/1993", "", ""),
+                ("000005", "Nguyễn Thị Thu Hương", "huong.nguyenthithu@meiko.vn", "Nữ", "Nhân viên", "Kho", "03/12/1992", "Đã kết hôn", ""),
             ],
         )
     return EmployeeDirectory(db_path)
@@ -140,3 +142,31 @@ def test_mes_data_questions_can_use_sql_agent(question):
 )
 def test_mes_general_questions_skip_sql_agent(question):
     assert MesQueryService.should_use_sql_agent(question) is False
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Kiểm tra lịch họp tuần này",
+        "Xem tôi có lịch sinh nhật nào không?",
+        "Kiểm tra xem tôi có rảnh từ 9 giờ đến 10 giờ sáng mai không.",
+        "Tìm phòng họp còn trống từ 14 giờ đến 16 giờ chiều mai cho 8 người.",
+        "Check my calendar events today",
+        "来週の会議予定を確認してください。",
+    ],
+)
+def test_calendar_read_questions_route_to_calendar(question):
+    assert RAGPipeline._is_calendar_read_question(question) is True
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Quy định đăng ký lịch làm việc trong tháng là gì?",
+        "Tôi muốn đặt lịch họp ngày mai",
+        "Tạo sự kiện Calendar lúc 9 giờ",
+        "Cuộc họp được quy định trong nội quy thế nào?",
+    ],
+)
+def test_non_read_calendar_questions_stay_out_of_calendar_tools(question):
+    assert RAGPipeline._is_calendar_read_question(question) is False

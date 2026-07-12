@@ -74,6 +74,14 @@ async def _load_mcp_tools(
             ],
             "env": env,
         },
+        "google-calendar": {
+            "transport": "stdio",
+            "command": "node",
+            "args": [
+                str(Path(__file__).parent / "run_calendar_mcp.js"),
+            ],
+            "env": env,
+        },
     }
 
     tools: List[BaseTool] = []
