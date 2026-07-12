@@ -1,3 +1,7 @@
 [[sources]]
-id = "hr_mkac_db"
-dsn = "sqlite:///home/jkl/Code/VLLM-PD/database/raw_mkac/hr_mkac.db"
+id = "hr_db"
+dsn = "sqlite:///home/jkl/Code/VLLM-PD/data/employee_directory.sqlite"
+
+[[sources]]
+id = "mes_db"
+dsn = "sqlite:///home/jkl/Code/VLLM-PD/data/mes.sqlite"
