@@ -14,6 +14,7 @@ from datetime import date
 
 from src.integrations.mes_intent import (
     extract_date,
+    extract_date_range,
     extract_month,
     extract_top_limit,
     normalized_text,
@@ -337,7 +338,16 @@ def _has_normalized_marker(normalized: str, markers: tuple[str, ...]) -> bool:
 def _has_multiple_periods(question: str) -> bool:
     original = question or ""
     normalized = normalized_text(question)
-    month_matches = set(re.findall(r"\b20\d{2}[-/]\d{1,2}\b", original))
+    date_matches = re.findall(r"\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}\b", original)
+    # Hai ngày là một range được hỗ trợ, kể cả khi range đi qua hai tháng.
+    if len(date_matches) == 2:
+        return False
+    if len(date_matches) > 2:
+        return True
+
+    month_matches = set(
+        re.findall(r"\b20\d{2}[-/]\d{1,2}(?![-/]\d)", original)
+    )
     month_matches.update(
         f"{year}-{int(month):02d}"
         for month, year in re.findall(
@@ -349,11 +359,7 @@ def _has_multiple_periods(question: str) -> bool:
         f"{year}-{int(month):02d}"
         for year, month in re.findall(r"(20\d{2})年\s*(\d{1,2})月", original)
     )
-    if len(month_matches) > 1:
-        return True
-    date_matches = re.findall(r"\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}\b", original)
-    # Hai ngày là một range được hỗ trợ; ba mốc trở lên là yêu cầu đa kỳ.
-    return len(date_matches) > 2
+    return len(month_matches) > 1
 
 
 def _has_invalid_explicit_date(question: str) -> bool:
@@ -364,6 +370,28 @@ def _has_invalid_explicit_date(question: str) -> bool:
         except ValueError:
             return True
     return False
+
+
+def _has_invalid_explicit_month(question: str) -> bool:
+    original = question or ""
+    normalized = normalized_text(question)
+    values = re.findall(
+        r"\b(20\d{2})[-/](\d{1,2})(?!\d|[-/]\d)",
+        original,
+    )
+    values.extend(
+        (year, month)
+        for month, year in re.findall(
+            r"\bthang\s+(\d{1,2})\s*(?:/|nam\s+)?(20\d{2})\b",
+            normalized,
+        )
+    )
+    values.extend(
+        (year, month)
+        for month, year in re.findall(r"\b(\d{1,2})/(20\d{2})\b", original)
+    )
+    values.extend(re.findall(r"(20\d{2})年\s*(\d{1,2})月", original))
+    return any(not 1 <= int(month) <= 12 for _, month in values)
 
 
 def report_capability(question: str) -> ReportCapability:
@@ -393,6 +421,11 @@ def report_capability(question: str) -> ReportCapability:
         return ReportCapability(
             status="unsupported",
             reason="Ngày trong yêu cầu báo cáo không hợp lệ.",
+        )
+    if _has_invalid_explicit_month(question):
+        return ReportCapability(
+            status="unsupported",
+            reason="Tháng trong yêu cầu báo cáo không hợp lệ.",
         )
     if _has_normalized_marker(normalized, _UNSUPPORTED_PERIOD_MARKERS) or any(
         marker in original for marker in _UNSUPPORTED_PERIOD_MARKERS_JA
@@ -434,19 +467,9 @@ def _extract_extended_month(question: str) -> str:
     return ""
 
 
-def _extract_date_range(question: str) -> tuple[str, str]:
-    """Trả (start, end) nếu câu nêu hai ngày tường minh, ngược lại ("", "")."""
-    dates = re.findall(r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b", question or "")
-    if len(dates) < 2:
-        return "", ""
-    normalized = [f"{y}-{int(m):02d}-{int(d):02d}" for y, m, d in dates[:2]]
-    start, end = sorted(normalized)
-    return start, end
-
-
 def report_period_for_question(question: str) -> ReportPeriod:
     """Resolve kỳ báo cáo từ câu hỏi; mặc định là toàn bộ snapshot."""
-    range_start, range_end = _extract_date_range(question)
+    range_start, range_end = extract_date_range(question)
     if range_start and range_end and range_start != range_end:
         return ReportPeriod(
             kind="range",

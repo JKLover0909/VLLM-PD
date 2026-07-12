@@ -116,6 +116,9 @@ def test_report_capability_fails_closed(question, status, shape):
         "Tạo báo cáo các Lot có trên 100 lỗi; với mỗi Lot lấy top 2 lỗi",
         "Lập báo cáo sản lượng sản xuất theo ca",
         "Lập báo cáo lỗi ngày 2026-02-30",
+        "Lập báo cáo lỗi tháng 13/2026",
+        "Lập báo cáo lỗi 2026-13",
+        "2026年13月の生産エラーレポートを作成してください。",
     ],
 )
 def test_report_plan_rejects_unsupported_requests(question):
@@ -237,6 +240,25 @@ def test_report_period_defaults_and_reverses_explicit_range():
     )
     assert reversed_range.start == "2026-06-01"
     assert "2026-06-15" in reversed_range.end_exclusive_sql
+
+    cross_month_range = report_period_for_question(
+        "Lập báo cáo lỗi từ 2026-05-31 đến 2026-06-01"
+    )
+    assert cross_month_range.kind == "range"
+    assert cross_month_range.start == "2026-05-31"
+    assert "2026-06-01" in cross_month_range.end_exclusive_sql
+
+
+def test_report_capability_rejects_invalid_explicit_months():
+    for question in (
+        "Lập báo cáo lỗi tháng 13/2026",
+        "Lập báo cáo lỗi tháng 0/2026",
+        "Lập báo cáo lỗi 2026-13",
+        "2026年13月の生産エラーレポートを作成してください。",
+    ):
+        capability = report_capability(question)
+        assert capability.status == "unsupported"
+        assert "Tháng" in capability.reason
 
 
 def test_report_top_limit_defaults_and_caps_at_twenty():

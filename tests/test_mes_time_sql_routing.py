@@ -43,3 +43,33 @@ def test_time_sql_routes_raw_japanese_monthly_top_lots():
     assert "2025-07-01" in sql
     assert "GROUP BY lot_id, product_id" in sql
     assert "LIMIT 5" in sql
+
+
+def test_time_sql_routes_inclusive_date_range_top_lots():
+    sql = MesQueryService.time_sql_for_question(
+        "Từ ngày 2026-06-01 đến 2026-06-15, Top 3 Lot nào có tổng lỗi cao nhất?"
+    )
+
+    assert "v_error_details" in sql
+    assert "error_time >= '2026-06-01'" in sql
+    assert "date('2026-06-15', '+1 day')" in sql
+    assert "GROUP BY lot_id, product_id" in sql
+    assert "LIMIT 3" in sql
+
+
+def test_time_sql_orders_reversed_date_range():
+    sql = MesQueryService.time_sql_for_question(
+        "Từ ngày 2026-06-15 đến 2026-06-01, Top 3 Lot nào có tổng lỗi cao nhất?"
+    )
+
+    assert "error_time >= '2026-06-01'" in sql
+    assert "date('2026-06-15', '+1 day')" in sql
+
+
+def test_time_sql_does_not_generate_sql_for_invalid_month():
+    assert (
+        MesQueryService.time_sql_for_question(
+            "Top 3 Lot có lỗi nhiều nhất tháng 13/2026"
+        )
+        == ""
+    )

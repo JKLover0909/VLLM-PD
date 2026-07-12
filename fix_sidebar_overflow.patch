@@ -1,0 +1,22 @@
+--- frontend/src/styles.css
++++ frontend/src/styles.css
+@@ -2160,8 +2160,10 @@
+     display: block;
+   }
+ 
+   .document-sidebar {
+     position: fixed;
+     left: 0;
+     transform: translateX(-100%);
++    visibility: hidden;
+     width: min(320px, 88vw);
+-    transition: transform 180ms ease;
++    transition: transform 180ms ease, visibility 180ms;
+   }
+ 
+   .document-sidebar.open {
+     transform: translateX(0);
++    visibility: visible;
+   }
+ 
+   .close-sidebar {

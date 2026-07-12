@@ -1,0 +1,108 @@
+--- frontend/src/styles.css
++++ frontend/src/styles.css
+@@ -151,8 +151,8 @@
+ .icon-button {
+   display: inline-grid;
+   place-items: center;
+-  width: 34px;
+-  height: 34px;
++  width: 44px;
++  height: 44px;
+   padding: 0;
+   color: inherit;
+   background: transparent;
+@@ -627,7 +627,7 @@
+   align-items: center;
+   justify-content: center;
+   gap: 7px;
+-  min-height: 34px;
++  min-height: 44px;
+   padding: 0 12px;
+   color: #626b76;
+   font-size: 13px;
+@@ -2309,8 +2309,8 @@
+ 
+   /* Bấm bằng ngón tay là chính trên mobile: nâng vùng chạm lên tối thiểu 44px. */
+   .icon-button {
+-    width: 44px;
+-    height: 44px;
++    width: 48px;
++    height: 48px;
+   }
+ 
+   .send-button {
+@@ -2319,7 +2319,7 @@
+   }
+ 
+   .mode-tabs button {
+-    min-height: 44px;
++    min-height: 48px;
+   }
+ 
+   .composer-attach {
+@@ -2378,7 +2378,7 @@
+ 
+   .mode-tabs button {
+     flex: 1;
+-    min-height: 38px;
++    min-height: 44px;
+     padding: 0 8px;
+     font-size: 12px;
+   }
+@@ -2400,14 +2400,14 @@
+ 
+   .header-tool {
+     flex: 0 0 auto;
+-    min-width: 34px;
+-    height: 30px;
++    min-width: 44px;
++    height: 44px;
+     font-size: 12px;
+   }
+ 
+   .header-tool.icon-button {
+-    width: 38px;
+-    height: 38px;
++    width: 44px;
++    height: 44px;
+   }
+ 
+   .model-select {
+@@ -2579,7 +2579,7 @@
+   }
+ 
+   .mode-tabs button {
+-    min-height: 34px;
++    min-height: 44px;
+     padding: 0 6px;
+     font-size: 11px;
+   }
+@@ -2593,7 +2593,7 @@
+   }
+ 
+   .mode-research .mode-tabs button {
+-    min-width: 36px;
++    min-width: 44px;
+     padding: 0 5px;
+   }
+ 
+@@ -2602,7 +2602,7 @@
+   }
+ 
+   .language-toggle {
+-    height: 36px;
++    height: 44px;
+   }
+ 
+   .mode-research .language-toggle {
+@@ -2617,8 +2617,8 @@
+   }
+ 
+   .header-tool.icon-button {
+-    width: 36px;
+-    height: 36px;
++    width: 44px;
++    height: 44px;
+   }
+ 
+   .message-list {

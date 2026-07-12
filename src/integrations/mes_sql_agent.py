@@ -44,6 +44,41 @@ class MesSqlQueryResult:
             "truncated": self.truncated,
         }
 
+    def is_effectively_empty(self) -> bool:
+        """True khi SQL aggregate trả một dòng ``NULL`` trên tập rỗng."""
+        if not self.rows:
+            return True
+        if len(self.rows) != 1:
+            return False
+
+        row = self.rows[0]
+        aggregate_keys = [
+            key
+            for key in row
+            if any(
+                marker in key.lower()
+                for marker in ("total", "sum", "qty", "quantity", "count")
+            )
+        ]
+        null_sum_keys = [
+            key
+            for key in aggregate_keys
+            if any(
+                marker in key.lower()
+                for marker in ("total", "sum", "qty", "quantity")
+            )
+            and row.get(key) is None
+        ]
+        if not null_sum_keys:
+            return False
+
+        non_aggregate_values = [
+            value for key, value in row.items() if key not in aggregate_keys
+        ]
+        if any(value not in (None, "") for value in non_aggregate_values):
+            return False
+        return all(row.get(key) in (None, 0) for key in aggregate_keys)
+
 
 class MesSqlAgent:
     """Generate prompts, validate SQL AST and execute read-only MES queries."""
@@ -354,7 +389,7 @@ class MesSqlAgent:
 
     @staticmethod
     def fallback_answer(result: MesSqlQueryResult) -> str:
-        if not result.rows:
+        if result.is_effectively_empty():
             return "MES snapshot không có dữ liệu phù hợp với câu hỏi này."
         first_row = result.rows[0]
         error_quantity_column = next(
@@ -462,7 +497,7 @@ class MesSqlAgent:
         Điều kiện dưới đây phải bám sát các nhánh trong ``fallback_answer``:
         nếu chỉnh sửa nhánh ở đó, phải cập nhật hàm này tương ứng.
         """
-        if not result.rows:
+        if result.is_effectively_empty():
             return False
         first_row = result.rows[0]
         has_error_qty = any(

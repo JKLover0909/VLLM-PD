@@ -165,6 +165,7 @@ def test_handle_report_query_rejects_unavailable_agent(monkeypatch):
         "Tạo báo cáo các Lot có trên 100 lỗi",
         "Lập báo cáo sản lượng sản xuất theo ca",
         "Lập báo cáo công tác nhân sự quý 2",
+        "Lập báo cáo lỗi tháng 13/2026",
     ],
 )
 def test_handle_report_query_refuses_unsupported_without_running_agent(

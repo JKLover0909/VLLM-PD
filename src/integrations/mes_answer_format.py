@@ -114,6 +114,10 @@ def normalize_sql_answer(answer: str) -> str:
 
 
 def sql_answer_matches_result(answer: str, result: "MesSqlQueryResult") -> bool:
+    if result.is_effectively_empty():
+        normalized = answer.lower()
+        return "không có dữ liệu" in normalized or "không tìm thấy" in normalized
+
     normalized = answer.lower()
     normalized_numbers = answer.replace(".", "").replace(",", "")
     for row in result.rows[:5]:

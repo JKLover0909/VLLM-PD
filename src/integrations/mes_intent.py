@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import date
 
 
 def normalized_text(question: str) -> str:
@@ -179,6 +180,7 @@ def time_sql_for_question(question: str) -> str:
     if not is_time_related_mes_question(question):
         return ""
 
+    range_start, range_end = extract_date_range(question)
     explicit_month = extract_month(question)
     explicit_date = extract_date(question)
     limit = extract_top_limit(normalized)
@@ -207,6 +209,30 @@ def time_sql_for_question(question: str) -> str:
     )
     asks_month = "thang" in normalized or "month" in normalized or "月" in original
     asks_day = "ngay" in normalized or "day" in normalized or "日" in original
+
+    if range_start and range_end and has_lot and has_error and asks_top:
+        return f"""
+            SELECT lot_id, product_id, SUM(quantity) AS total_error_qty
+            FROM v_error_details
+            WHERE error_time >= '{range_start}'
+              AND error_time < date('{range_end}', '+1 day')
+            GROUP BY lot_id, product_id
+            ORDER BY total_error_qty DESC, lot_id
+            LIMIT {limit}
+        """
+
+    if range_start and range_end and has_error:
+        return f"""
+            SELECT date(error_time) AS error_date,
+                   SUM(quantity) AS total_error_qty,
+                   COUNT(*) AS error_record_count
+            FROM v_error_details
+            WHERE error_time >= '{range_start}'
+              AND error_time < date('{range_end}', '+1 day')
+            GROUP BY date(error_time)
+            ORDER BY error_date
+            LIMIT 366
+        """
 
     if explicit_date and has_lot and has_error and asks_top:
         return f"""
@@ -390,39 +416,64 @@ def should_use_sql_agent(question: str) -> bool:
     )
 
 
+def _normalized_date(year: str, month: str, day: str) -> str:
+    try:
+        parsed = date(int(year), int(month), int(day))
+    except ValueError:
+        return ""
+    return parsed.isoformat()
+
+
 def extract_date(question: str) -> str:
     original = question or ""
     match = re.search(r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b", original)
     if not match:
         return ""
-    year, month, day = match.groups()
-    return f"{year}-{int(month):02d}-{int(day):02d}"
+    return _normalized_date(*match.groups())
+
+
+def extract_date_range(question: str) -> tuple[str, str]:
+    """Resolve two valid explicit dates as an inclusive, ordered range."""
+    matches = re.findall(
+        r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b",
+        question or "",
+    )
+    if len(matches) != 2:
+        return "", ""
+    dates = [_normalized_date(*value) for value in matches]
+    if not all(dates):
+        return "", ""
+    start, end = sorted(dates)
+    return start, end
+
+
+def _normalized_month(year: str, month: str) -> str:
+    month_number = int(month)
+    if not 1 <= month_number <= 12:
+        return ""
+    return f"{year}-{month_number:02d}"
 
 
 def extract_month(question: str) -> str:
     original = question or ""
     match = re.search(r"\b(20\d{2})[-/](\d{1,2})(?:[-/]\d{1,2})?\b", original)
     if match:
-        year, month = match.groups()
-        return f"{year}-{int(month):02d}"
+        return _normalized_month(*match.groups())
     normalized = normalized_text(question)
     match = re.search(r"\bthang\s+(\d{1,2})\s*(?:/|nam\s+)?(20\d{2})\b", normalized)
     if match:
         month, year = match.groups()
-        return f"{year}-{int(month):02d}"
+        return _normalized_month(year, month)
     match = re.search(r"\b(\d{1,2})/(20\d{2})\b", original)
     if match:
         month, year = match.groups()
-        if 1 <= int(month) <= 12:
-            return f"{year}-{int(month):02d}"
+        return _normalized_month(year, month)
     match = re.search(r"\b(20\d{2})\s+nam\s+thang\s+(\d{1,2})\b", normalized)
     if match:
-        year, month = match.groups()
-        return f"{year}-{int(month):02d}"
+        return _normalized_month(*match.groups())
     japanese_match = re.search(r"(20\d{2})年\s*(\d{1,2})月", original)
     if japanese_match:
-        year, month = japanese_match.groups()
-        return f"{year}-{int(month):02d}"
+        return _normalized_month(*japanese_match.groups())
     return ""
 
 

@@ -304,6 +304,8 @@ class MesQueryService:
                     attempt + 1,
                     len(result.rows),
                 )
+                if result.is_effectively_empty():
+                    return self.mes_sql_agent.fallback_answer(result), routed_model
                 if self.prefer_confident_template() and (
                     self.mes_sql_agent.has_confident_template(result)
                 ):
@@ -391,6 +393,8 @@ class MesQueryService:
             logger.warning("MES deterministic compound SQL rejected: %s", exc)
             return None
 
+        if result.is_effectively_empty():
+            return self.mes_sql_agent.fallback_answer(result), routed_model
         if routed_model in LOCAL_MODEL_ALIASES or (
             self.prefer_confident_template()
             and self.mes_sql_agent.has_confident_template(result)
@@ -432,6 +436,8 @@ class MesQueryService:
         except MesSqlAgentError as exc:
             logger.warning("MES deterministic time SQL rejected: %s", exc)
             return None
+        if result.is_effectively_empty():
+            return self.mes_sql_agent.fallback_answer(result), routed_model
         if routed_model in LOCAL_MODEL_ALIASES or (
             self.prefer_confident_template()
             and self.mes_sql_agent.has_confident_template(result)

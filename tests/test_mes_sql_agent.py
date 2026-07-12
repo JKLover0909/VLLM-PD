@@ -222,3 +222,38 @@ def test_fallback_answer_formats_time_aggregation():
     assert "lỗi theo thời gian" in answer
     assert "2026-06-02: 30.000" in answer
     assert "2026-06-01: 5.000" in answer
+
+
+def test_empty_aggregate_is_not_formatted_as_unknown_error(sql_agent):
+    result = sql_agent.execute(
+        """
+        SELECT error_id, error_name, SUM(quantity) AS total_error_qty
+        FROM v_error_details
+        WHERE error_time >= '2040-01-01'
+          AND error_time < date('2040-01-01', '+1 month')
+        """
+    )
+
+    assert result.rows == [
+        {"error_id": None, "error_name": None, "total_error_qty": None}
+    ]
+    assert result.is_effectively_empty() is True
+    answer = MesSqlAgent.fallback_answer(result)
+    assert "không có dữ liệu" in answer
+    assert "Lỗi chưa rõ tên" not in answer
+    assert "None" not in answer
+    assert MesSqlAgent.has_confident_template(result) is False
+
+
+def test_legitimate_unmapped_error_is_not_effectively_empty():
+    result = MesSqlQueryResult(
+        columns=["error_id", "error_name", "total_error_qty"],
+        rows=[
+            {"error_id": "E3", "error_name": None, "total_error_qty": 12}
+        ],
+        imported_at="2026-06-20",
+        truncated=False,
+    )
+
+    assert result.is_effectively_empty() is False
+    assert "E3 - *Lỗi chưa rõ tên*: 12" in MesSqlAgent.fallback_answer(result)
