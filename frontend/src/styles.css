@@ -151,8 +151,8 @@ summary:focus-visible {
 .icon-button {
   display: inline-grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   color: inherit;
   background: transparent;
@@ -627,7 +627,7 @@ summary:focus-visible {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 34px;
+  min-height: 44px;
   padding: 0 12px;
   color: #626b76;
   font-size: 13px;
@@ -2164,12 +2164,14 @@ summary:focus-visible {
     position: fixed;
     left: 0;
     transform: translateX(-100%);
+    visibility: hidden;
     width: min(320px, 88vw);
-    transition: transform 180ms ease;
+    transition: transform 180ms ease, visibility 180ms;
   }
 
   .document-sidebar.open {
     transform: translateX(0);
+    visibility: visible;
   }
 
   .close-sidebar {
@@ -2309,8 +2311,8 @@ summary:focus-visible {
 
   /* Bấm bằng ngón tay là chính trên mobile: nâng vùng chạm lên tối thiểu 44px. */
   .icon-button {
-    width: 44px;
-    height: 44px;
+    width: 48px;
+    height: 48px;
   }
 
   .send-button {
@@ -2319,7 +2321,7 @@ summary:focus-visible {
   }
 
   .mode-tabs button {
-    min-height: 44px;
+    min-height: 48px;
   }
 
   .composer-attach {
@@ -2378,7 +2380,7 @@ summary:focus-visible {
 
   .mode-tabs button {
     flex: 1;
-    min-height: 38px;
+    min-height: 44px;
     padding: 0 8px;
     font-size: 12px;
   }
@@ -2406,8 +2408,8 @@ summary:focus-visible {
   }
 
   .header-tool.icon-button {
-    width: 38px;
-    height: 38px;
+    width: 44px;
+    height: 44px;
   }
 
   .model-select {
@@ -2579,7 +2581,7 @@ summary:focus-visible {
   }
 
   .mode-tabs button {
-    min-height: 34px;
+    min-height: 44px;
     padding: 0 6px;
     font-size: 11px;
   }
@@ -2593,7 +2595,7 @@ summary:focus-visible {
   }
 
   .mode-research .mode-tabs button {
-    min-width: 36px;
+    min-width: 44px;
     padding: 0 5px;
   }
 
@@ -2602,7 +2604,7 @@ summary:focus-visible {
   }
 
   .language-toggle {
-    height: 36px;
+    height: 44px;
   }
 
   .language-toggle span {
@@ -2618,8 +2620,8 @@ summary:focus-visible {
   }
 
   .header-tool.icon-button {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
   }
 
   .message-list {
