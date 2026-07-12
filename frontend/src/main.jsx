@@ -228,7 +228,7 @@ function FileTypeIcon({ filename, size = 17 }) {
 const QUICK_PROMPTS = {
   vi: {
     mkac: [
-      "Meiko Automation có bao nhiêu phòng ban và gồm những phòng nào?",
+      "Meiko Automation gồm những phòng ban nào?",
       "Quy định làm thêm giờ ở MKAC như thế nào?",
       "Các sản phẩm chính của MKAC là gì?",
     ],
@@ -245,7 +245,7 @@ const QUICK_PROMPTS = {
   },
   ja: {
     mkac: [
-      "Meiko Automationにはいくつの部署があり、どの部署がありますか？",
+      "Meiko Automationにはどの部署がありますか？",
       "MKACの残業規定はどうなっていますか？",
       "MKACの主な製品は何ですか？",
     ],
