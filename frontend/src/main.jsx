@@ -48,6 +48,11 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
+import { EmployeeLogin } from "./components/EmployeeLogin";
+import { SourcePreviewDialog } from "./components/SourcePreviewDialog";
+import { ResearchSidebar } from "./components/ResearchSidebar";
+import { MessageList } from "./components/MessageList";
+import { ChatInput } from "./components/ChatInput";
 import "./styles.css";
 
 // Icon theo loại file để người dùng phân biệt nhanh PDF/Word/Excel/ảnh trong
@@ -2321,316 +2326,48 @@ function App() {
 
   return (
     <div className={`app-shell mode-${mode} ${mode !== "research" ? "mkac-layout" : ""}`}>
-      {mode === "research" && (
-        <>
-          <button
-            className="mobile-menu icon-button"
-            type="button"
-            title={t("common.openDocuments")}
-            onClick={() => setSidebarOpen(true)}
-          >
-            <Menu size={20} />
-          </button>
-
-          {sidebarOpen && (
-            <button
-              className="sidebar-backdrop"
-              type="button"
-              aria-label={t("common.closeDocuments")}
-              onClick={() => setSidebarOpen(false)}
-            />
-          )}
-
-          <aside className={`document-sidebar ${sidebarOpen ? "open" : ""}`}>
-            <div className="brand-row">
-              <div className="brand-mark logo-mark">
-                <img src="/mkac-logo.png" alt="MKAC" />
-              </div>
-              <div>
-                <strong>MKAC</strong>
-                <span>{t("common.assistantName")}</span>
-              </div>
-              <button
-                className="icon-button close-sidebar"
-                type="button"
-                title={t("common.close")}
-                onClick={() => setSidebarOpen(false)}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="session-strip">
-              <div>
-                <span>{t("common.workSession")}</span>
-                <strong
-                  className="session-title"
-                  title={sessionTitles[currentWorkspaceKey]}
-                >
-                  {sessionTitles[currentWorkspaceKey]}
-                </strong>
-              </div>
-              {researchScope === "upload" && (
-                <button
-                  className="icon-button"
-                  type="button"
-                  title={t("common.newSession")}
-                  onClick={() => resetSession("research")}
-                  disabled={busy || uploading}
-                >
-                  <RefreshCcw size={17} />
-                </button>
-              )}
-            </div>
-
-            <div className="research-source-tabs" role="tablist" aria-label={modeText("research").chooseTopic}>
-              <button
-                type="button"
-                className={researchScope === "topic" ? "active" : ""}
-                onClick={() => selectResearchScope("topic")}
-                disabled={busy || uploading}
-                role="tab"
-                aria-selected={researchScope === "topic"}
-              >
-                <Layers3 size={16} />
-                <span>{modeText("research").sourceTopic}</span>
-              </button>
-              <button
-                type="button"
-                className={researchScope === "upload" ? "active" : ""}
-                onClick={() => selectResearchScope("upload")}
-                disabled={busy || uploading}
-                role="tab"
-                aria-selected={researchScope === "upload"}
-              >
-                <FileUp size={16} />
-                <span>{modeText("research").sourceUpload}</span>
-              </button>
-            </div>
-
-            <section className="sidebar-section">
-              <div className="section-heading">
-                <span>{t("common.researchDocuments")}</span>
-                <span className="count-badge">
-                  {researchScope === "topic"
-                    ? researchTopicId
-                      ? selectedResearchTopic()?.num_files ?? 0
-                      : researchTopicsTotalFiles()
-                    : files.length}
-                </span>
-              </div>
-
-              {researchScope === "topic" && researchTopics.ready && (
-                <div className="sidebar-topic-panel">
-                  {researchTopicId ? (
-                    <>
-                      <div className="sidebar-topic-selected">
-                        <div className="topic-info-col">
-                          <span className="topic-overline">
-                            {language === "ja" ? "選択中のカテゴリ" : "Nhóm tài liệu đang chọn"}
-                          </span>
-                          <strong title={researchTopicLabel(selectedResearchTopic())}>
-                            {researchTopicLabel(selectedResearchTopic())}
-                          </strong>
-                        </div>
-                        <button
-                          type="button"
-                          className="icon-button subtle danger topic-clear-btn"
-                          title={modeText("research").changeTopic}
-                          onClick={clearResearchTopic}
-                          disabled={busy}
-                        >
-                          <X size={16} />
-                        </button>
-                      </div>
-                      <p className="scope-note">
-                        {formatText(modeText("research").allDocsNote, {
-                          count: selectedResearchTopic()?.num_files ?? 0,
-                        })}
-                      </p>
-                      <details className="sidebar-file-browser" key={researchTopicId}>
-                        <summary>
-                          <span>
-                            <FileText size={15} aria-hidden="true" />
-                            {modeText("research").browseDocuments}
-                          </span>
-                          <span className="file-browser-count">
-                            {selectedResearchTopic()?.num_files ?? 0}
-                          </span>
-                          <ChevronDown className="file-browser-chevron" size={15} />
-                        </summary>
-                        <div className="file-browser-content">
-                          <div className="file-search">
-                            <Search size={14} aria-hidden="true" />
-                            <input
-                              type="search"
-                              value={fileSearch}
-                              onChange={(event) => setFileSearch(event.target.value)}
-                              placeholder={modeText("research").searchFiles}
-                              aria-label={modeText("research").searchFiles}
-                            />
-                          </div>
-                          <div className="file-list">
-                            {filterFileNames(selectedResearchTopic()?.files || []).map(
-                              (filename) => (
-                                <div className="file-item readonly" key={filename}>
-                                  <FileTypeIcon filename={filename} />
-                                  <span title={filename}>{filename}</span>
-                                </div>
-                              ),
-                            )}
-                            {filterFileNames(selectedResearchTopic()?.files || [])
-                              .length === 0 && (
-                              <div className="empty-files">
-                                <Search size={20} />
-                                <span>{modeText("research").noMatchingFiles}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </details>
-                    </>
-                  ) : (
-                    <p className="sidebar-topic-hint">
-                      {modeText("research").chooseTopicHint}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              <input
-                ref={fileInputRef}
-                className="hidden-input"
-                type="file"
-                multiple
-                accept=".pdf,.docx,.xlsx,.pptx,.html,.htm,.png,.jpg,.jpeg"
-                aria-label={t("common.chooseDocument")}
-                onChange={(event) => addPendingFiles(event.target.files)}
-              />
-
-              {researchScope === "upload" && (
-                <button
-                  className={`upload-zone ${dragActive ? "dragging" : ""}`}
-                  type="button"
-                  onClick={requestResearchUploadPicker}
-                  onDragEnter={(event) => {
-                    event.preventDefault();
-                    setDragActive(true);
-                  }}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDragLeave={() => setDragActive(false)}
-                  onDrop={onDrop}
-                >
-                  <UploadCloud size={23} />
-                  <span>{t("common.chooseDocument")}</span>
-                  <small>{t("common.supportedFiles")}</small>
-                </button>
-              )}
-
-              {pendingFiles.length > 0 && (
-                <div className="pending-panel">
-                  <div className="pending-header">
-                    <span>{pendingFiles.length} {t("common.files")}</span>
-                    <span>{formatBytes(pendingTotalSize)}</span>
-                  </div>
-                  <div className="pending-list">
-                    {pendingFiles.map((file, index) => (
-                      <div className="pending-file" key={`${file.name}-${file.size}`}>
-                        <FileUp size={15} />
-                        <span title={file.name}>{file.name}</span>
-                        <button
-                          className="icon-button subtle"
-                          type="button"
-                          title={t("common.removeFile", { name: file.name })}
-                          onClick={() => removePendingFile(index)}
-                          disabled={uploading}
-                        >
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  <button
-                    className="index-button"
-                    type="button"
-                    onClick={uploadDocuments}
-                    disabled={uploading}
-                  >
-                    {uploading ? <Loader2 className="spin" size={16} /> : <Database size={16} />}
-                    {uploading
-                      ? t("common.indexing", {
-                          done: uploadProgress.done,
-                          total: uploadProgress.total,
-                        })
-                      : t("common.indexDocument")}
-                  </button>
-                  {uploading && (
-                    <div className="upload-progress" role="status" aria-live="polite">
-                      <div className="upload-progress-copy">
-                        <span>{t("common.processing")}</span>
-                        <strong title={uploadProgress.current}>
-                          {uploadProgress.current}
-                        </strong>
-                      </div>
-                      <div className="upload-progress-track" aria-hidden="true">
-                        <span />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {uploadSummary && (
-                <div className="upload-summary" role="status" aria-live="polite">
-                  <CheckCircle2 size={15} />
-                  <span>
-                    {t("common.indexedSummary", {
-                      files: uploadSummary.files,
-                      chunks: uploadSummary.chunks,
-                    })}
-                  </span>
-                </div>
-              )}
-
-              {researchScope === "upload" && (
-                <div className="file-list">
-                  {files.map((filename) => (
-                    <div className="file-item" key={filename}>
-                      <FileTypeIcon filename={filename} />
-                      <span title={filename}>{filename}</span>
-                      <button
-                        className="icon-button subtle danger"
-                        type="button"
-                        title={t("common.deleteFile", { name: filename })}
-                        onClick={() => setConfirmDeleteFile(filename)}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  ))}
-                  {files.length === 0 && (
-                    <div className="empty-files">
-                      <FileText size={20} />
-                      <span>{t("common.noDocuments")}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </section>
-
-            <div className="sidebar-footer">
-              <div className={`service-state ${health}`}>
-                {health === "online" ? <CheckCircle2 size={15} /> : <Server size={15} />}
-                <span>{health === "online" ? t("common.onlineMachine") : t("common.checking")}</span>
-              </div>
-              <span className="security-chip">
-                <ShieldCheck size={14} />
-                {t("common.groundedBadge")}
-              </span>
-            </div>
-          </aside>
-        </>
-      )}
+      <ResearchSidebar
+        mode={mode}
+        t={t}
+        modeText={modeText}
+        sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
+        sessionTitles={sessionTitles}
+        currentWorkspaceKey={currentWorkspaceKey}
+        researchScope={researchScope}
+        resetSession={resetSession}
+        busy={busy}
+        uploading={uploading}
+        selectResearchScope={selectResearchScope}
+        researchTopicId={researchTopicId}
+        selectedResearchTopic={selectedResearchTopic}
+        researchTopicsTotalFiles={researchTopicsTotalFiles}
+        files={files}
+        researchTopics={researchTopics}
+        language={language}
+        researchTopicLabel={researchTopicLabel}
+        clearResearchTopic={clearResearchTopic}
+        formatText={formatText}
+        fileSearch={fileSearch}
+        setFileSearch={setFileSearch}
+        filterFileNames={filterFileNames}
+        FileTypeIcon={FileTypeIcon}
+        fileInputRef={fileInputRef}
+        addPendingFiles={addPendingFiles}
+        dragActive={dragActive}
+        setDragActive={setDragActive}
+        requestResearchUploadPicker={requestResearchUploadPicker}
+        onDrop={onDrop}
+        pendingFiles={pendingFiles}
+        pendingTotalSize={pendingTotalSize}
+        formatBytes={formatBytes}
+        removePendingFile={removePendingFile}
+        uploadDocuments={uploadDocuments}
+        uploadProgress={uploadProgress}
+        uploadSummary={uploadSummary}
+        setConfirmDeleteFile={setConfirmDeleteFile}
+        health={health}
+      />
 
       <main className={`workspace ${sourcePanelOpen ? "" : "sources-collapsed"}`}>
         <header className="workspace-header">
@@ -2775,43 +2512,16 @@ function App() {
           >
             <div className="conversation-scroll" ref={conversationScrollRef}>
               {(mode === "mkac" || mode === "mes") && !mkacAuthorized ? (
-                <div className="employee-gate">
-                  <form className="employee-card" onSubmit={verifyEmployeeCode}>
-                    <div className="employee-logo">
-                      <img src="/mkac-logo.png" alt="MKAC" />
-                    </div>
-                    <h1>{t("common.employeeAuth")}</h1>
-                    <p>{modeText(mode).authHint}</p>
-                    <label className="employee-field">
-                      <span>{t("common.employeeCode")}</span>
-                      <input
-                        value={employeeCodeInput}
-                        onChange={(event) =>
-                          updateEmployeeCodeInput(event.target.value)
-                        }
-                        inputMode="numeric"
-                        autoComplete="off"
-                        maxLength={6}
-                        placeholder={t("common.employeeCode")}
-                        disabled={employeeVerifying}
-                        autoFocus
-                      />
-                    </label>
-                    {employeeCodeError && (
-                      <span className="employee-error" role="alert">
-                        {employeeCodeError}
-                      </span>
-                    )}
-                    <button
-                      className="employee-submit"
-                      type="submit"
-                      disabled={employeeVerifying}
-                    >
-                      {employeeVerifying && <Loader2 className="spin" size={16} />}
-                      {employeeVerifying ? t("common.verifying") : t("common.continue")}
-                    </button>
-                  </form>
-                </div>
+                <EmployeeLogin
+                  mode={mode}
+                  modeText={modeText}
+                  t={t}
+                  verifyEmployeeCode={verifyEmployeeCode}
+                  employeeCodeInput={employeeCodeInput}
+                  updateEmployeeCodeInput={updateEmployeeCodeInput}
+                  employeeCodeError={employeeCodeError}
+                  employeeVerifying={employeeVerifying}
+                />
               ) : messages.length === 0 ? (
                 <div className="empty-conversation">
                   <div className="empty-copy">
@@ -2968,186 +2678,28 @@ function App() {
                   </div>
                 </div>
               ) : (
-                <div
-                  className="message-list"
-                  role="log"
-                  aria-live="polite"
-                  aria-relevant="additions text"
-                >
-                  {messages.map((message) => (
-                    <article className={`message ${message.role}`} key={message.id}>
-                      <div className="message-avatar">
-                        {message.role === "user" ? "U" : <Bot size={18} />}
-                      </div>
-                      <div className="message-content">
-                        {message.role === "assistant" && (
-                          <div className="message-meta">
-                            <span>{message.model}</span>
-                            {message.stopped && <span>{t("common.stopped")}</span>}
-                            <span>
-                              {message.answerScope === "general"
-                                ? t("common.noResult")
-                                : message.answerScope === "web"
-                                  ? t("common.webSearch")
-                                : message.answerScope === "mes"
-                                  ? t("common.mesData")
-                                : message.answerScope === "mes_database"
-                                  ? t("common.mesSnapshot")
-                                : message.answerScope === "mes_report"
-                                  ? t("common.mesReport")
-                                : message.answerScope === "mes_report_unsupported"
-                                  ? t("common.mesReportUnsupported")
-                                : message.mode === "research"
-                                  ? t("common.research")
-                                  : t("common.mkacSource")}
-                            </span>
-                          </div>
-                        )}
-                        {message.role === "assistant" && message.agentTimeline && (
-                          <AgentTimeline
-                            timeline={message.agentTimeline}
-                            language={language}
-                          />
-                        )}
-                        {message.content ? (
-                          <div className="message-body">
-                            <MessageMarkdown content={message.content} />
-                            {busy &&
-                              message.role === "assistant" &&
-                              message.id === latestAssistantMessage?.id && (
-                                <span
-                                  className="stream-cursor"
-                                  aria-hidden="true"
-                                />
-                              )}
-                          </div>
-                        ) : message.id === pendingAssistantId ? (
-                          <div
-                            className="waiting-status"
-                            role="status"
-                            aria-live="polite"
-                          >
-                            <div className="waiting-head">
-                              <Loader2 className="spin" size={17} />
-                              <span className="waiting-copy">
-                                <span key={message.status || waitingMessageIndex}>
-                                  {message.status || text.waiting[waitingMessageIndex]}
-                                </span>
-                                {language === "ja" && (
-                                  <small>{t("common.languageConverting")}</small>
-                                )}
-                              </span>
-                            </div>
-                            <div className="skeleton" aria-hidden="true">
-                              <span className="skeleton-line" />
-                              <span className="skeleton-line" />
-                              <span className="skeleton-line short" />
-                            </div>
-                          </div>
-                        ) : null}
-                        {message.role === "assistant" && message.artifact && (
-                          <ReportArtifactCard artifact={message.artifact} language={language} />
-                        )}
-                        {message.role === "assistant" && message.content && (
-                          <div className="message-actions">
-                            <details className="ai-disclosure">
-                              <summary title={t("common.aiInfo")}>
-                                <Sparkles size={14} />
-                                <span>AI</span>
-                              </summary>
-                              <div>
-                                <strong>{message.model}</strong>
-                                <span>
-                                  {message.answerScope === "web"
-                                    ? t("answerScope.web")
-                                    : message.answerScope === "mes"
-                                      ? t("answerScope.mes")
-                                    : message.answerScope === "mes_database"
-                                      ? t("answerScope.mes_database")
-                                    : message.answerScope === "mes_report"
-                                      ? t("answerScope.mes_report")
-                                    : message.answerScope === "mes_report_unsupported"
-                                      ? t("answerScope.mes_report_unsupported")
-                                    : message.answerScope === "research"
-                                      ? t("answerScope.research")
-                                      : message.answerScope === "mkac"
-                                        ? t("answerScope.mkac")
-                                        : t("answerScope.fallback")}
-                                </span>
-                              </div>
-                            </details>
-                            <button
-                              className="message-action-button"
-                              type="button"
-                              title={t("common.copyAnswer")}
-                              onClick={() => copyAnswer(message)}
-                            >
-                              {copiedMessageId === message.id ? (
-                                <Check size={14} />
-                              ) : (
-                                <Copy size={14} />
-                              )}
-                              <span>
-                                {copiedMessageId === message.id ? t("common.copied") : t("common.copy")}
-                              </span>
-                            </button>
-                          </div>
-                        )}
-                        {message.role === "assistant" && message.sources?.length > 0 && (
-                          <details className="message-sources">
-                            <summary>{message.sources.length} {t("common.sources")}</summary>
-                            {message.sources.map((source, index) => (
-                              <div key={`${source.file}-${source.page}-${index}`}>
-                                {source.url ? (
-                                  <a href={source.url} target="_blank" rel="noreferrer">
-                                    <strong>{source.file}</strong>
-                                  </a>
-                                ) : (
-                                  <button
-                                    className="inline-source-button"
-                                    type="button"
-                                    onClick={() => openSourcePreview(source, message.mode)}
-                                  >
-                                    <strong>{source.file}</strong>
-                                  </button>
-                                )}
-                                <span>
-                                  {source.url
-                                    ? t("common.webSource")
-                                    : t("common.page", { page: source.page })}
-                                </span>
-                              </div>
-                            ))}
-                          </details>
-                        )}
-                        {message.role === "assistant" &&
-                          message.id !== pendingAssistantId &&
-                          message.content &&
-                          getSuggestions(message.content, mode, message.id).length > 0 && (
-                            <div className="message-suggestions">
-                              <p>{t("common.suggestions")}</p>
-                              <ul className="suggestion-list">
-                                {getSuggestions(message.content, mode, message.id).map(
-                                  (suggestion, i) => (
-                                    <li key={i}>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleQuickAnswerClick(suggestion)}
-                                        title={t("common.autoAsk")}
-                                      >
-                                        {suggestion.question}
-                                      </button>
-                                    </li>
-                                  )
-                                )}
-                              </ul>
-                            </div>
-                          )}
-                      </div>
-                    </article>
-                  ))}
-                  <div ref={endRef} />
-                </div>
+                <MessageList
+                  messages={messages}
+                  mode={mode}
+                  busy={busy}
+                  language={language}
+                  t={t}
+                  latestAssistantMessage={latestAssistantMessage}
+                  pendingAssistantId={pendingAssistantId}
+                  waitingMessageIndex={waitingMessageIndex}
+                  text={text}
+                  copiedMessageId={copiedMessageId}
+                  copyAnswer={copyAnswer}
+                  openSourcePreview={openSourcePreview}
+                  getSuggestions={getSuggestions}
+                  handleQuickAnswerClick={handleQuickAnswerClick}
+                  endRef={endRef}
+                  error={error}
+                  MessageMarkdown={MessageMarkdown}
+                  AgentTimeline={AgentTimeline}
+                  ReportArtifactCard={ReportArtifactCard}
+                  Bot={Bot}
+                />
               )}
             </div>
 
@@ -3167,77 +2719,34 @@ function App() {
             )}
 
             {mkacAuthorized && (
-              <form className="composer" onSubmit={onSubmit}>
-                {mode === "research" && researchScope === "upload" && (
-                  <button
-                    className="composer-attach icon-button"
-                    type="button"
-                    title={t("common.addResearchDocument")}
-                    onClick={requestResearchUploadPicker}
-                    disabled={busy || uploading}
-                  >
-                    <Paperclip size={18} />
-                  </button>
-                )}
-                <textarea
-                  ref={textareaRef}
-                  value={question}
-                  onChange={(event) => setQuestion(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      sendMessage(event.currentTarget.value);
-                    }
-                  }}
-                  rows={2}
-                  maxLength={4000}
-                  aria-label={
-                    mode === "research"
-                      ? modeText("research").inputLabel
-                      : mode === "mes"
-                        ? modeText("mes").inputLabel
-                        : modeText("mkac").inputLabel
-                  }
-                  placeholder={
-                    mode === "research"
-                      ? researchReady
-                        ? modeText("research").placeholderReady
-                        : researchScope === "upload"
-                          ? modeText("research").uploadEmpty
-                          : modeText("research").placeholderEmpty
-                      : mode === "mes"
-                        ? modeText("mes").placeholder
-                        : modeText("mkac").placeholder
-                  }
-                  disabled={busy || !researchReady}
-                />
-                <div className="composer-footer">
-                  <div className="composer-context">
-                  <span className={`model-dot ${health === "online" ? "ready" : "offline"}`} />
-                  <span>
-                    {health === "online" ? t("common.ready") : t("common.notReady")}
-                    </span>
-                  </div>
-                  <div className="composer-actions">
-                    {question.length > 0 && (
-                      <span className="char-count">{question.length}/4000</span>
-                    )}
-                    <button
-                      className={busy ? "send-button stopping" : "send-button"}
-                      type={busy ? "button" : "submit"}
-                      title={busy ? t("common.stop") : t("common.send")}
-                      onClick={busy ? stopGeneration : undefined}
-                      disabled={busy ? false : !canAsk}
-                    >
-                      {busy ? (
-                        <Square size={16} fill="currentColor" />
-                      ) : (
-                        <Send size={18} />
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </form>
+              <ChatInput
+              mode={mode}
+              t={t}
+              modeText={modeText}
+              busy={busy}
+              question={question}
+              setQuestion={setQuestion}
+              onSubmit={onSubmit}
+              textareaRef={textareaRef}
+              employee={employee}
+              language={language}
+              quickPromptsFor={quickPromptsFor}
+              researchQuickPrompts={researchQuickPrompts}
+              sendMessage={sendMessage}
+              health={health}
+              researchScope={researchScope}
+              researchTopicId={researchTopicId}
+              researchReady={researchTopics.ready}
+              mkacAuthorized={mkacAuthorized}
+              requestResearchUploadPicker={requestResearchUploadPicker}
+              uploading={uploading}
+              stopGeneration={stopGeneration}
+              canAsk={canAsk}
+              Square={Square}
+              Send={Send}
+              Paperclip={Paperclip}
+              Search={Search}
+            />
             )}
           </section>
 
@@ -3310,70 +2819,12 @@ function App() {
           </aside>
         </div>
       </main>
-      {sourcePreview && (
-        <div
-          className="source-preview-backdrop"
-          role="presentation"
-          onClick={() => setSourcePreview(null)}
-        >
-          <section
-            className="source-preview-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label={t("common.previewDialog")}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="source-preview-header">
-              <div>
-                <span>{t("common.sources")}</span>
-                <strong title={sourcePreview.source.file}>
-                  {sourcePreview.source.file}
-                </strong>
-              </div>
-              <button
-                className="icon-button"
-                type="button"
-                title={t("common.closePreview")}
-                onClick={() => setSourcePreview(null)}
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="source-preview-meta">
-              <span>{t("common.page", { page: sourcePreview.source.page || "?" })}</span>
-              <span>
-                {t("common.similarity", {
-                  score: Math.round((sourcePreview.source.score || 0) * 100),
-                })}
-              </span>
-            </div>
-            {sourcePreview.source.has_page_preview && !sourcePreview.imageFailed ? (
-              <div className="source-preview-image-wrap">
-                <img
-                  src={sourcePreviewUrl(sourcePreview.source, sourcePreview.mode)}
-                  alt={`${sourcePreview.source.file} ${t("common.page", {
-                    page: sourcePreview.source.page || "?",
-                  })}`}
-                  onError={() =>
-                    setSourcePreview((current) =>
-                      current ? { ...current, imageFailed: true } : current,
-                    )
-                  }
-                />
-              </div>
-            ) : (
-              <div className="source-preview-placeholder">
-                <FileText size={28} />
-                <span>{t("common.noPreviewImage")}</span>
-              </div>
-            )}
-            <div className="source-preview-text">
-              <strong>{t("common.snippet")}</strong>
-              <p>{sourcePreview.source.preview}</p>
-            </div>
-          </section>
-        </div>
-      )}
+      <SourcePreviewDialog
+        sourcePreview={sourcePreview}
+        setSourcePreview={setSourcePreview}
+        sourcePreviewUrl={sourcePreviewUrl}
+        t={t}
+      />
 
       {confirmResearchUploadOpen && (
         <div
