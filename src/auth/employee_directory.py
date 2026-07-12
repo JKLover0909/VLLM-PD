@@ -115,10 +115,10 @@ class EmployeeDirectory:
                 SELECT full_name, position
                 FROM employees
                 WHERE department = ?
-                  AND (position LIKE '%Trưởng phòng%' OR position LIKE '%Phó phòng%')
+                  AND (position LIKE '%Trưởng phòng%' AND position NOT LIKE '%Phó trưởng phòng%' OR position LIKE '%Phó phòng%')
                 ORDER BY
                   CASE
-                    WHEN position LIKE '%Trưởng phòng%' THEN 0
+                    WHEN position LIKE '%Trưởng phòng%' AND position NOT LIKE '%Phó trưởng phòng%' THEN 0
                     WHEN position LIKE '%Phó phòng%' THEN 1
                     ELSE 2
                   END,
@@ -316,7 +316,7 @@ class EmployeeDirectory:
                 WHERE department = ?
                 ORDER BY
                   CASE
-                    WHEN position LIKE '%Trưởng phòng%' THEN 0
+                    WHEN position LIKE '%Trưởng phòng%' AND position NOT LIKE '%Phó trưởng phòng%' THEN 0
                     WHEN position LIKE '%Phó phòng%' THEN 1
                     ELSE 2
                   END,
