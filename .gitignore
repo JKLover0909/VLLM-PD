@@ -77,3 +77,6 @@ Thumbs.db
 
 # Docker/local compose overrides
 docker-compose.override.yml
+
+# Claude Code Agent Worktrees
+.claude/worktrees/
