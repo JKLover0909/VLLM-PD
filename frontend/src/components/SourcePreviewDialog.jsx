@@ -61,15 +61,22 @@ export function SourcePreviewDialog({
             />
           </div>
         ) : (
-          <div className="source-preview-placeholder">
-            <FileText size={28} />
-            <span>{t("common.noPreviewImage")}</span>
+          // Tài liệu không có ảnh preview (ví dụ HTML): hiển thị trích đoạn
+          // dạng "trang văn bản" thay cho placeholder trống.
+          <div className="source-preview-textpage">
+            <div className="source-preview-textpage-head">
+              <FileText size={16} aria-hidden="true" />
+              <span>{t("common.snippet")}</span>
+            </div>
+            <p>{sourcePreview.source.preview}</p>
           </div>
         )}
-        <div className="source-preview-text">
-          <strong>{t("common.snippet")}</strong>
-          <p>{sourcePreview.source.preview}</p>
-        </div>
+        {sourcePreview.source.has_page_preview && !sourcePreview.imageFailed && (
+          <div className="source-preview-text">
+            <strong>{t("common.snippet")}</strong>
+            <p>{sourcePreview.source.preview}</p>
+          </div>
+        )}
       </section>
     </div>
   );

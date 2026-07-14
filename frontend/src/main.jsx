@@ -1694,6 +1694,7 @@ function App() {
   function selectResearchTopic(topicId) {
     if (busy) return;
     if (topicId === "all") return;
+    const topicChanged = topicId !== researchTopicId;
     setResearchScope("topic");
     setResearchTopicId(topicId);
     try {
@@ -1701,6 +1702,13 @@ function App() {
       localStorage.setItem(researchTopicStorageKey(language), topicId);
     } catch {
       // Topic selection still works in-memory when storage is unavailable.
+    }
+    // Each topic is a separate corpus. Switching topics starts a fresh
+    // conversation so answers never mix context across document groups.
+    if (topicChanged) {
+      setModeMessages("research", [], language);
+      setPendingAssistantId("");
+      setSourcePreview(null);
     }
     setQuestion("");
     setError("");
@@ -2346,7 +2354,7 @@ function App() {
         researchTopics={researchTopics}
         language={language}
         researchTopicLabel={researchTopicLabel}
-        clearResearchTopic={clearResearchTopic}
+        selectResearchTopic={selectResearchTopic}
         formatText={formatText}
         fileSearch={fileSearch}
         setFileSearch={setFileSearch}
@@ -2718,7 +2726,11 @@ function App() {
               </div>
             )}
 
-            {mkacAuthorized && (
+            {mkacAuthorized &&
+              // Research: ẩn ô chat khi chưa chọn nhóm chủ đề hoặc chưa upload tài liệu.
+              !(mode === "research" &&
+                ((researchScope === "topic" && !researchTopicId) ||
+                  (researchScope === "upload" && files.length === 0))) && (
               <ChatInput
               mode={mode}
               t={t}

@@ -2092,6 +2092,40 @@ summary:focus-visible {
   border-bottom: 1px solid #e2e7ec;
 }
 
+/* Preview thay thế dạng "trang văn bản" cho tài liệu không có ảnh (HTML...). */
+.source-preview-textpage {
+  min-height: 220px;
+  max-height: 46vh;
+  overflow: auto;
+  margin: 14px 16px;
+  padding: 18px 20px;
+  background: #ffffff;
+  border: 1px solid #d5dde4;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(20, 30, 40, 0.08);
+}
+
+.source-preview-textpage-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 10px;
+  color: #5a6672;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.source-preview-textpage p {
+  margin: 0;
+  color: #2b3540;
+  font-size: 13.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .source-preview-text {
   padding: 13px 16px 16px;
   border-top: 1px solid #e2e7ec;
@@ -3147,6 +3181,20 @@ html[data-theme="dark"] .source-preview-text p {
   color: #b8c3ce;
 }
 
+html[data-theme="dark"] .source-preview-textpage {
+  background: #20262e;
+  border-color: #3a444f;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme="dark"] .source-preview-textpage-head {
+  color: #9faab6;
+}
+
+html[data-theme="dark"] .source-preview-textpage p {
+  color: #d3dae2;
+}
+
 html[data-theme="dark"] .error-banner {
   color: #ffb9b0;
   background: #3a2221;
@@ -3462,6 +3510,55 @@ html[data-theme="dark"] .confirm-danger:hover {
   margin-right: -4px;
 }
 
+/* Dropdown chuyển nhóm chủ đề research trong sidebar. */
+.topic-switcher {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+}
+
+.topic-switcher-select {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 30px 6px 9px;
+  color: #232a33;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  background: #ffffff;
+  border: 1px solid #ccd5dd;
+  border-radius: 7px;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.topic-switcher-select:hover:not(:disabled) {
+  border-color: #9fb0be;
+}
+
+.topic-switcher-select:focus-visible {
+  outline: 2px solid #17b3a0;
+  outline-offset: 1px;
+}
+
+.topic-switcher-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.topic-switcher-chevron {
+  position: absolute;
+  right: 9px;
+  color: #7c8794;
+  pointer-events: none;
+}
+
 .sidebar-topic-list {
   display: flex;
   flex-direction: column;
@@ -3734,6 +3831,20 @@ html[data-theme="dark"] .sidebar-topic-selected strong {
 }
 
 html[data-theme="dark"] .topic-overline {
+  color: #8b96a3;
+}
+
+html[data-theme="dark"] .topic-switcher-select {
+  color: #edf2f7;
+  background: #262d36;
+  border-color: #3a444f;
+}
+
+html[data-theme="dark"] .topic-switcher-select:hover:not(:disabled) {
+  border-color: #55626f;
+}
+
+html[data-theme="dark"] .topic-switcher-chevron {
   color: #8b96a3;
 }
 

@@ -25,7 +25,7 @@ export function ResearchSidebar({
   researchTopics,
   language,
   researchTopicLabel,
-  clearResearchTopic,
+  selectResearchTopic,
   formatText,
   fileSearch,
   setFileSearch,
@@ -157,19 +157,25 @@ export function ResearchSidebar({
                       <span className="topic-overline">
                         {language === "ja" ? "選択中のカテゴリ" : "Nhóm tài liệu đang chọn"}
                       </span>
-                      <strong title={researchTopicLabel(selectedResearchTopic())}>
-                        {researchTopicLabel(selectedResearchTopic())}
-                      </strong>
+                      {/* Dropdown đổi nhóm chủ đề: chọn nhóm khác sẽ mở phiên chat mới. */}
+                      <div className="topic-switcher">
+                        <select
+                          className="topic-switcher-select"
+                          value={researchTopicId}
+                          onChange={(event) => selectResearchTopic(event.target.value)}
+                          disabled={busy}
+                          aria-label={modeText("research").changeTopic}
+                          title={modeText("research").changeTopic}
+                        >
+                          {researchTopics.topics.map((topic) => (
+                            <option key={topic.id} value={topic.id} disabled={!topic.ready}>
+                              {researchTopicLabel(topic)}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="topic-switcher-chevron" size={15} aria-hidden="true" />
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      className="icon-button subtle danger topic-clear-btn"
-                      title={modeText("research").changeTopic}
-                      onClick={clearResearchTopic}
-                      disabled={busy}
-                    >
-                      <X size={16} />
-                    </button>
                   </div>
                   <p className="scope-note">
                     {formatText(modeText("research").allDocsNote, {
