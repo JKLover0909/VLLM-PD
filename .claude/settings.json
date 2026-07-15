@@ -1,0 +1,22 @@
+{
+  "env": {
+    "MEIBOOK_PYTHON": "/home/jkl/miniconda3/envs/meibook/bin/python",
+    "MEIBOOK_HOST_ENV": "meibook",
+    "PYTHONNOUSERSITE": "1"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/require-meibook-python.sh\"",
+            "timeout": 5,
+            "statusMessage": "Checking Meibook Python environment"
+          }
+        ]
+      }
+    ]
+  }
+}

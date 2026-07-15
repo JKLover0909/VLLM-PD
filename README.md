@@ -621,15 +621,18 @@ curl -fsS http://localhost:4000/v1/chat/completions \
 
 ### Index tài liệu MKAC
 
+Host Python phải dùng Conda environment `meibook` qua wrapper
+`scripts/meibook-python`; không chạy bare `python` từ Conda `base`.
+
 ```bash
-python scripts/index_mkac_documents.py --dry-run
-python scripts/index_mkac_documents.py
+scripts/meibook-python scripts/index_mkac_documents.py --dry-run
+scripts/meibook-python scripts/index_mkac_documents.py
 ```
 
 Index lại một file:
 
 ```bash
-python scripts/index_mkac_documents.py \
+scripts/meibook-python scripts/index_mkac_documents.py \
   --file "ten-file.pdf" \
   --reindex
 ```
@@ -655,9 +658,9 @@ Sau khi import, kiểm tra `/health` để xem:
 Một số test nhẹ không cần load BGE-M3:
 
 ```bash
-python -m py_compile src/rag/rag_pipeline.py src/integrations/mes_query_service.py
+scripts/meibook-python -m py_compile src/rag/rag_pipeline.py src/integrations/mes_query_service.py
 
-python -m pytest \
+scripts/meibook-python -m pytest \
   tests/test_query_routing.py \
   tests/test_mes_time_sql_routing.py \
   tests/test_mes_sql_agent.py \

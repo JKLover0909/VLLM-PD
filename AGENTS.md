@@ -44,15 +44,20 @@ Người dùng chọn 1 chủ đề trên UI. Backend query vào Qdrant (`docjp_
 ### 4.4 Source Preview / Citation Flow
 Nhấn vào nguồn trên UI, API `/sources/preview` đọc file ảnh PNG (được generate lúc index) từ ổ cứng (`docjp_processed` hoặc `mkac_processed`). Hàm `resolve_processed_image_path` trong `src/rag/media_paths.py` xử lý mapping đường dẫn từ Host (`/home/...`) vào Docker (`/app/...`).
 
-## 5. How to Run the Project
-Dự án dùng Docker bind-mount. Thường chỉ cần restart app sau khi sửa code, không rebuild image trừ khi thay đổi dependency.
-*   **Restart app:** `docker compose -f docker-compose.web.yml restart app`
-*   **Build Frontend:** `cd frontend && npm run build` (Cần chạy sau khi sửa UI).
-*   **Index tài liệu Research:** `MAX_DOCUMENT_PAGES=200 python scripts/index_docjp_documents.py --reindex`
+## 5. Host Python và cách chạy dự án
+
+Dự án dùng Docker bind-mount. Runtime Docker dùng Python riêng trong image và không dùng Conda host. Mọi lệnh Python chạy trực tiếp trên host (test, lint, script) phải đi qua `scripts/meibook-python`; cấm dùng bare `python`, `python3`, `pip`, `pytest`, `pyflakes` hoặc Conda `base`.
+
+*   **Main host env:** `meibook`, Python 3.10; bootstrap từ `environment.host.yml` và `requirements.host.in`.
+*   **Dev host env:** `meibook-dev`, Python 3.10; chỉ dùng trong checkout `/home/jkl/Code/VLLM-PD-dev`.
+*   **CPU host mặc định:** wrapper đặt embedding/OCR CPU để không cạnh tranh GPU Production. Chỉ đặt `MEIBOOK_ALLOW_GPU=1` cho tác vụ GPU đã được người dùng phê duyệt.
+*   **Restart app Production:** `docker compose -f docker-compose.web.yml restart app`
+*   **Build Frontend:** `cd frontend && npm run build` (cần chạy sau khi sửa UI).
+*   **Index tài liệu Research:** `MAX_DOCUMENT_PAGES=200 scripts/meibook-python scripts/index_docjp_documents.py --reindex`
 
 ## 6. How to Test, Lint, Build and Verify
-*   **Backend Test:** `python3 -m pytest tests/ -q --ignore=tests/test_mes_integration.py --ignore=tests/test_mkac_pipeline.py`
-*   **Backend Linter:** `python3 -m pyflakes src/api/*.py src/rag/*.py src/integrations/*.py`
+*   **Backend Test:** `scripts/meibook-python -m pytest tests/ -q --ignore=tests/test_mes_integration.py --ignore=tests/test_mkac_pipeline.py`
+*   **Backend Linter:** `scripts/meibook-python -m pyflakes src/api/*.py src/rag/*.py src/integrations/*.py`
 *   **Frontend Lint:** `cd frontend && npm run lint`
 *   **Xem log API/Preview:** `docker logs meibook-web --tail 50`
 

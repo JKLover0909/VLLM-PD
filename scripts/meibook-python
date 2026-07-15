@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Run root Meibook host Python without ever falling back to Conda base.
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+case "$REPO_ROOT" in
+  /home/jkl/Code/VLLM-PD)
+    ENV_NAME="meibook"
+    ;;
+  /home/jkl/Code/VLLM-PD-dev)
+    ENV_NAME="meibook-dev"
+    ;;
+  *)
+    echo "Unsupported Meibook checkout: $REPO_ROOT" >&2
+    exit 2
+    ;;
+esac
+
+PYTHON_BIN="/home/jkl/miniconda3/envs/$ENV_NAME/bin/python"
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  echo "Missing Conda environment '$ENV_NAME': $PYTHON_BIN" >&2
+  echo "Create the env with: /home/jkl/miniconda3/bin/conda env create -n $ENV_NAME -f $REPO_ROOT/environment.host.yml" >&2
+  echo "Then install dependencies with: $REPO_ROOT/scripts/meibook-python -m pip install -r $REPO_ROOT/requirements.host.in" >&2
+  exit 127
+fi
+
+export MEIBOOK_HOST_ENV="$ENV_NAME"
+export MEIBOOK_PYTHON="$PYTHON_BIN"
+export PYTHONNOUSERSITE=1
+
+# Host commands default to CPU so they do not compete with the Docker Production GPU.
+# Set MEIBOOK_ALLOW_GPU=1 explicitly for an approved, intentional GPU host task.
+if [[ "${MEIBOOK_ALLOW_GPU:-0}" != "1" ]]; then
+  export EMBEDDING_DEVICE=cpu
+  export EMBEDDING_DTYPE=float32
+  export DOCLING_DEVICE=cpu
+  export MKAC_INDEX_EMBEDDING_DEVICE=cpu
+  export DOCJP_INDEX_EMBEDDING_DEVICE=cpu
+  export RESEARCH_INDEX_EMBEDDING_DEVICE=cpu
+fi
+
+cd "$REPO_ROOT"
+exec "$PYTHON_BIN" "$@"
