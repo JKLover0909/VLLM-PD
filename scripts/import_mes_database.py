@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tạo SQLite MES tối ưu truy vấn từ ba bản dump SQL thô."""
+"""Tạo SQLite MES tối ưu truy vấn từ các bản dump SQL thô."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE_DIR = REPO_ROOT / "database" / "raw_mkac"
 DEFAULT_SCHEMA_PATH = REPO_ROOT / "database" / "schema" / "mes.sql"
 DEFAULT_DB_PATH = REPO_ROOT / "data" / "mes.sqlite"
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 RAW_SCHEMA_PREFIX = "MES_DATA"
 
 RAW_TABLE_COLUMNS = {
@@ -47,12 +47,24 @@ RAW_TABLE_COLUMNS = {
         "ERROR_NAME_JA", "ERROR_NAME_EN", "ERROR_NAME_CH", "PRIORITY_ERROR",
         "USER_ID",
     ),
+    "D_MAIN": (
+        "ID", "EDIT_DATE", "CREATE_DATE", "LOT_ID", "ROUTE_ID", "PROCESS_ID",
+        "PROCESS_ORDER", "T1", "T2", "T3", "T4", "USER_ID", "NOTE",
+        "STAFF_ID", "STAFF_NAME", "P_OK", "P_NG_DEFECT", "P_NG_SCRAP",
+        "S_OK", "S_NG_DEFECT", "S_NG_SCRAP", "B_OK", "B_NG_DEFECT",
+        "B_NG_SCRAP", "T1_DATE", "T2_DATE", "T3_DATE", "T4_DATE",
+        "OUTPUT_MAX_B", "OUTPUT_MAX_S", "OUTPUT_MAX_P", "IS_MOVE_STEP",
+        "PROCESS_PHYSICAL_SUB", "MOVING_STATUS",
+    ),
 }
 
 FILE_PATTERNS = {
     "M_LOT": "M_LOT_*.sql",
     "D_ERROR": "D_ERROR_*.sql",
     "P_ERROR": "P_ERROR_*.sql",
+}
+OPTIONAL_FILE_PATTERNS = {
+    "D_MAIN": "D_MAIN_*.sql",
 }
 
 
@@ -79,10 +91,15 @@ def _latest_source(source_dir: Path, pattern: str) -> Path:
 
 
 def discover_sources(source_dir: Path) -> dict[str, Path]:
-    return {
+    sources = {
         table: _latest_source(source_dir, pattern)
         for table, pattern in FILE_PATTERNS.items()
     }
+    for table, pattern in OPTIONAL_FILE_PATTERNS.items():
+        matches = sorted(source_dir.glob(pattern))
+        if matches:
+            sources[table] = matches[-1]
+    return sources
 
 
 def _create_raw_table(connection: sqlite3.Connection, table: str) -> None:
@@ -106,7 +123,7 @@ def _load_raw_dump(
 
 def load_raw_sources(sources: dict[str, Path]) -> sqlite3.Connection:
     connection = sqlite3.connect(":memory:")
-    for table in RAW_TABLE_COLUMNS:
+    for table in sources:
         _create_raw_table(connection, table)
         _load_raw_dump(connection, table, sources[table])
     return connection
@@ -336,6 +353,63 @@ def _insert_error_events(
         )
 
 
+def _insert_process_steps(
+    target: sqlite3.Connection,
+    rows: Iterable[sqlite3.Row],
+    lot_pk_by_id: dict[str, int],
+) -> None:
+    sql = """
+        INSERT INTO process_steps (
+            source_id, lot_pk, edit_date, create_date, lot_id, route_id,
+            process_id, process_order, t1_unix, t2_unix, t3_unix, t4_unix,
+            p_ok, p_ng_defect, p_ng_scrap, s_ok, s_ng_defect, s_ng_scrap,
+            b_ok, b_ng_defect, b_ng_scrap, t1_date, t2_date, t3_date,
+            t4_date, output_max_b, output_max_s, output_max_p, is_move_step,
+            process_physical_sub, moving_status
+        ) VALUES ({})
+    """.format(",".join("?" for _ in range(31)))
+    for row in rows:
+        lot_id = _required_text(row["LOT_ID"], "D_MAIN.LOT_ID")
+        target.execute(
+            sql,
+            (
+                _required_non_negative_int(row["ID"], "D_MAIN.ID"),
+                lot_pk_by_id.get(lot_id),
+                _optional_text(row["EDIT_DATE"]),
+                _optional_text(row["CREATE_DATE"]),
+                lot_id,
+                _required_text(row["ROUTE_ID"], "D_MAIN.ROUTE_ID"),
+                _required_text(row["PROCESS_ID"], "D_MAIN.PROCESS_ID"),
+                _required_non_negative_int(
+                    row["PROCESS_ORDER"], "D_MAIN.PROCESS_ORDER"
+                ),
+                _optional_int(row["T1"]),
+                _optional_int(row["T2"]),
+                _optional_int(row["T3"]),
+                _optional_int(row["T4"]),
+                _optional_int(row["P_OK"]),
+                _optional_int(row["P_NG_DEFECT"]),
+                _optional_int(row["P_NG_SCRAP"]),
+                _optional_int(row["S_OK"]),
+                _optional_int(row["S_NG_DEFECT"]),
+                _optional_int(row["S_NG_SCRAP"]),
+                _optional_int(row["B_OK"]),
+                _optional_int(row["B_NG_DEFECT"]),
+                _optional_int(row["B_NG_SCRAP"]),
+                _optional_text(row["T1_DATE"]),
+                _optional_text(row["T2_DATE"]),
+                _optional_text(row["T3_DATE"]),
+                _optional_text(row["T4_DATE"]),
+                _optional_int(row["OUTPUT_MAX_B"]),
+                _optional_int(row["OUTPUT_MAX_S"]),
+                _optional_int(row["OUTPUT_MAX_P"]),
+                _optional_text(row["IS_MOVE_STEP"]),
+                _optional_text(row["PROCESS_PHYSICAL_SUB"]),
+                _optional_text(row["MOVING_STATUS"]),
+            ),
+        )
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
@@ -372,6 +446,12 @@ def _write_metadata(
         "unmapped_error_name_count": target.execute(
             "SELECT COUNT(*) FROM error_events WHERE error_catalog_pk IS NULL"
         ).fetchone()[0],
+        "process_step_count": target.execute(
+            "SELECT COUNT(*) FROM process_steps"
+        ).fetchone()[0],
+        "orphan_process_step_count": target.execute(
+            "SELECT COUNT(*) FROM process_steps WHERE lot_pk IS NULL"
+        ).fetchone()[0],
     }
     target.executemany(
         "INSERT INTO schema_metadata (key, value) VALUES (?, ?)",
@@ -386,7 +466,7 @@ def build_database(
 ) -> dict[str, int]:
     sources = discover_sources(source_dir)
     raw = load_raw_sources(sources)
-    raw_rows = {table: _rows(raw, table) for table in RAW_TABLE_COLUMNS}
+    raw_rows = {table: _rows(raw, table) for table in sources}
     raw_counts = {table: len(rows) for table, rows in raw_rows.items()}
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -409,6 +489,12 @@ def build_database(
                     lot_pk_by_id,
                     catalog_pk_by_key,
                 )
+                if "D_MAIN" in raw_rows:
+                    _insert_process_steps(
+                        target,
+                        raw_rows["D_MAIN"],
+                        lot_pk_by_id,
+                    )
                 _write_metadata(
                     target,
                     sources,
@@ -437,6 +523,7 @@ def build_database(
         "lots": raw_counts["M_LOT"],
         "error_events": raw_counts["D_ERROR"],
         "error_catalog": raw_counts["P_ERROR"],
+        "process_steps": raw_counts.get("D_MAIN", 0),
     }
 
 
@@ -447,6 +534,7 @@ def main() -> int:
     print(f"Lots:          {counts['lots']}")
     print(f"Error events:  {counts['error_events']}")
     print(f"Error catalog: {counts['error_catalog']}")
+    print(f"Process steps: {counts['process_steps']}")
     return 0
 
 

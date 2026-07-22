@@ -221,12 +221,12 @@ summary:focus-visible {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
   min-height: 42px;
-  padding: 7px 8px;
+  padding: 7px 4px;
   color: #aab3bd;
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 750;
   line-height: 1.25;
   background: transparent;
@@ -236,7 +236,9 @@ summary:focus-visible {
 
 .research-source-tabs button span {
   min-width: 0;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .research-source-tabs button.active {
@@ -3724,6 +3726,10 @@ html[data-theme="dark"] .confirm-danger:hover {
   color: #5c6774;
   font-size: 12px;
   line-height: 1.5;
+}
+
+html[lang="ja"] .scope-note {
+  white-space: pre-line;
 }
 
 .file-search {

@@ -27,6 +27,31 @@ def mes_database(tmp_path: Path) -> MesDatabase:
         )
         connection.executemany(
             """
+            INSERT INTO process_steps (
+                process_step_pk, source_id, lot_pk, lot_id, route_id,
+                process_id, process_order, t1_date, t4_date, p_ok,
+                p_ng_defect, is_move_step, moving_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    1, 201, 1, "000001-01-000", "ROUTE-1", "PROC-1", 1,
+                    "2026-06-01 08:00:00", "2026-06-01 08:30:00", 100,
+                    2, "N", "0",
+                ),
+                (
+                    2, 202, 1, "000001-01-000", "ROUTE-1", "PROC-2", 2,
+                    "2026-06-01 09:00:00", "2026-06-01 09:30:00", 98,
+                    1, "Y", "0",
+                ),
+                (
+                    3, 203, 3, "000003-01-000", "ROUTE-T", "PROC-T", 1,
+                    "2026-06-03 08:00:00", None, 999, 99, "N", "0",
+                ),
+            ],
+        )
+        connection.executemany(
+            """
             INSERT INTO error_catalog (
                 error_catalog_pk, error_id, error_type, process_id,
                 error_name, error_name_vi, is_canonical
@@ -60,6 +85,8 @@ def mes_database(tmp_path: Path) -> MesDatabase:
                 ("error_event_count", "5"),
                 ("error_catalog_count", "2"),
                 ("unmapped_error_name_count", "0"),
+                ("process_step_count", "3"),
+                ("orphan_process_step_count", "0"),
             ],
         )
     return MesDatabase(db_path)
@@ -79,6 +106,18 @@ def mes_database(tmp_path: Path) -> MesDatabase:
         ("Which lots have error code E001?", "lots_for_error"),
         ("Liệt kê các lot", "list_lots"),
         ("Có những lot nào?", "list_lots"),
+        (
+            "Liệt kê công đoạn Lot 000001-01-000 đã qua",
+            "lot_process_steps",
+        ),
+        (
+            "Lot 000001-01-000 đã qua bao nhiêu công đoạn?",
+            "lot_process_step_count",
+        ),
+        (
+            "Tiến độ công đoạn Lot 000001-01-000 hiện tại?",
+            "lot_process_progress",
+        ),
     ],
 )
 def test_routes_allowlisted_mes_questions(mes_database, question, intent):
@@ -88,6 +127,42 @@ def test_routes_allowlisted_mes_questions(mes_database, question, intent):
     assert result.intent == intent
     assert result.rows
     assert result.imported_at == "2026-06-20T03:52:08+00:00"
+
+
+def test_process_step_intents_are_deterministic_and_privacy_safe(mes_database):
+    history = mes_database.query_question(
+        "Liệt kê công đoạn Lot 000001-01-000 đã qua"
+    )
+    count = mes_database.query_question(
+        "Lot 000001-01-000 đã qua bao nhiêu công đoạn?"
+    )
+    progress = mes_database.query_question(
+        "Lot 000001-01-000 đang ở công đoạn nào?"
+    )
+
+    assert history is not None
+    assert history.intent == "lot_process_steps"
+    assert [row["process_id"] for row in history.rows] == ["PROC-1", "PROC-2"]
+    assert "kế hoạch" in history.fallback_answer
+    assert count is not None
+    assert count.intent == "lot_process_step_count"
+    assert count.rows[0]["step_count"] == 2
+    assert progress is not None
+    assert progress.intent == "lot_process_progress"
+    assert progress.rows[0]["latest_process_id"] == "PROC-2"
+    assert "PROC-2" in progress.fallback_answer
+    assert "Private" not in history.fallback_answer
+
+
+def test_process_question_for_unknown_lot_returns_explicit_empty_result(mes_database):
+    result = mes_database.query_question(
+        "Lot 999999-01-999 đang ở công đoạn nào?"
+    )
+
+    assert result is not None
+    assert result.intent == "lot_process_progress"
+    assert result.rows == []
+    assert "Không tìm thấy" in result.fallback_answer
 
 
 def test_list_lots_returns_recent_lots_without_sql_agent(mes_database):
@@ -347,3 +422,5 @@ def test_status_reads_snapshot_metadata(mes_database):
     assert status["error_events"] == 3
     assert status["raw_error_events"] == 5
     assert status["excluded_test_error_events"] == 2
+    assert status["process_steps"] == 3
+    assert status["orphan_process_steps"] == 0

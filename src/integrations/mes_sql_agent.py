@@ -88,11 +88,14 @@ class MesSqlAgent:
         "v_lot_error_breakdown",
         "v_product_error_summary",
         "v_error_details",
+        "v_lot_process_steps",
+        "v_lot_process_progress",
     }
     INTERNAL_TABLES = {
         "lots",
         "error_events",
         "error_catalog",
+        "process_steps",
     }
     PROHIBITED_NODE_KEYS = {
         "alter",
@@ -368,6 +371,10 @@ class MesSqlAgent:
                     "SQL, JSON hoặc tên field kỹ thuật. Chỉ trả về câu trả lời "
                     "thuần, không bọc trong JSON. Nói rõ là MES snapshot. "
                     "Tên lỗi rỗng phải nói '*Lỗi chưa rõ tên*'. Không suy đoán. "
+                    "Dữ liệu công đoạn là các bước đã ghi nhận từ D_MAIN, không "
+                    "phải kế hoạch. Không suy diễn tên process, ý nghĩa status hay "
+                    "danh tính người vận hành. Các bộ đếm P/S/B là ba đơn vị riêng; "
+                    "không gộp chúng với total_error_qty và không tự tính yield rate. "
                     "Nếu kết quả có nhiều hơn 3 dòng, trình bày mỗi dòng dữ liệu "
                     "trên một mục gạch đầu dòng markdown riêng (bắt đầu bằng "
                     "'- '), không dồn các dòng thành một đoạn văn nối bằng dấu "

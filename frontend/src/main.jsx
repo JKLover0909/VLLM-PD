@@ -554,7 +554,7 @@ const UI_TEXT = {
         topicNotReady: "このカテゴリはまだ利用できません。",
         documentsCount: "{count}件の資料",
         documentsSummary: "{count}件の資料 · {topics}カテゴリ",
-        allDocsNote: "このカテゴリの{count}件の資料すべてから検索します。",
+        allDocsNote: "このカテゴリの{count}件の資料\nすべてから検索します。",
         browseDocuments: "資料一覧を表示",
         searchFiles: "資料名で検索...",
         noMatchingFiles: "一致する資料がありません",

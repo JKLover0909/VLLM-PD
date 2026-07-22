@@ -77,6 +77,10 @@ def normalize_mes_text(value: str) -> str:
         jp_tokens.append("liet ke danh sach list")
     if re.search(r"(工程|プロセス)", original):
         jp_tokens.append("process cong doan")
+    if re.search(r"(進捗|現在の工程|最新の工程|どの工程)", original):
+        jp_tokens.append("tien do dang o cong doan moi nhat")
+    if re.search(r"(工程履歴|通過した工程|工程一覧)", original):
+        jp_tokens.append("lich su liet ke cong doan da qua")
     if re.search(r"(数量|数はいくつ)", original):
         jp_tokens.append("so luong quantity")
     if re.search(r"(表形式|表で)", original):
@@ -179,6 +183,10 @@ class MesDatabase:
                     0,
                 ),
                 "error_catalog": int(metadata.get("error_catalog_count", 0)),
+                "process_steps": int(metadata.get("process_step_count", 0)),
+                "orphan_process_steps": int(
+                    metadata.get("orphan_process_step_count", 0)
+                ),
                 "unmapped_error_names": int(
                     metadata.get("unmapped_error_name_count", 0)
                 ),
@@ -268,6 +276,12 @@ class MesDatabase:
             and not has_error
         ):
             return self._list_lots()
+        if lot_id and self._is_lot_process_question(normalized):
+            if self._asks_count(normalized):
+                return self._lot_process_step_count(lot_id)
+            if self._asks_process_history(normalized):
+                return self._lot_process_steps(lot_id)
+            return self._lot_process_progress(lot_id)
         if lot_id and self._is_lot_error_record_count_question(normalized):
             return self._lot_record_count(lot_id)
         if lot_id and self._is_lot_distinct_error_count_question(normalized):
@@ -619,7 +633,8 @@ class MesDatabase:
         row = rows[0]
         answer = (
             f"Theo MES snapshot, Lot {row['lot_id']} thuộc mã hàng "
-            f"{row['product_id']}, trạng thái {row['status'] or 'chưa rõ'}, "
+            f"{row['product_id']}, mã trạng thái "
+            f"{row['status'] or 'chưa rõ'} (snapshot chưa có bảng giải nghĩa), "
             f"có {self._number(row['pcs_lot'])} PCS, "
             f"{self._number(row['error_record_count'])} bản ghi lỗi, "
             f"{self._number(row['distinct_error_count'])} loại lỗi khác nhau "
@@ -630,6 +645,117 @@ class MesDatabase:
             rows,
             answer,
             (str(row["lot_id"]), str(row["product_id"]), str(row["total_error_qty"])),
+        )
+
+    def _lot_process_steps(self, lot_id: str) -> MesDatabaseResult:
+        rows = self._fetch_all(
+            """
+            SELECT lot_id, product_id, route_id, process_id, process_order,
+                   t1_date, t2_date, t3_date, t4_date, is_move_step,
+                   moving_status
+            FROM v_lot_process_steps
+            WHERE lot_id = ?
+            ORDER BY process_order, process_step_pk
+            """,
+            (lot_id,),
+        )
+        if not rows:
+            return self._result(
+                "lot_process_steps",
+                [],
+                f"Không tìm thấy lịch sử công đoạn của Lot {lot_id} "
+                "trong MES snapshot.",
+                (lot_id,),
+            )
+        descriptions = format_item_list(
+            [
+                f"bước {self._number(row['process_order'])}: "
+                f"process {row['process_id']}"
+                for row in rows
+            ]
+        )
+        answer = (
+            f"Theo MES snapshot, Lot {lot_id} có {len(rows)} công đoạn đã ghi nhận "
+            f"theo thứ tự: {descriptions}. Đây là lịch sử ghi nhận từ D_MAIN, "
+            "không phải kế hoạch sản xuất."
+        )
+        return self._result(
+            "lot_process_steps",
+            rows,
+            answer,
+            (lot_id, str(rows[0]["process_id"]), str(rows[-1]["process_id"])),
+        )
+
+    def _lot_process_step_count(self, lot_id: str) -> MesDatabaseResult:
+        rows = self._fetch_all(
+            """
+            SELECT lot_id, product_id, step_count, latest_process_id,
+                   latest_process_order
+            FROM v_lot_process_progress
+            WHERE lot_id = ?
+            LIMIT 1
+            """,
+            (lot_id,),
+        )
+        if not rows:
+            return self._result(
+                "lot_process_step_count",
+                [],
+                f"Không tìm thấy lịch sử công đoạn của Lot {lot_id} "
+                "trong MES snapshot.",
+                (lot_id,),
+            )
+        row = rows[0]
+        answer = (
+            f"Theo MES snapshot, Lot {lot_id} có "
+            f"{self._number(row['step_count'])} công đoạn đã ghi nhận trong D_MAIN."
+        )
+        return self._result(
+            "lot_process_step_count",
+            rows,
+            answer,
+            (lot_id, str(row["step_count"])),
+        )
+
+    def _lot_process_progress(self, lot_id: str) -> MesDatabaseResult:
+        rows = self._fetch_all(
+            """
+            SELECT lot_id, product_id, route_id, step_count,
+                   latest_process_id, latest_process_order, latest_recorded_at,
+                   is_move_step, moving_status, lot_mapped
+            FROM v_lot_process_progress
+            WHERE lot_id = ?
+            LIMIT 1
+            """,
+            (lot_id,),
+        )
+        if not rows:
+            return self._result(
+                "lot_process_progress",
+                [],
+                f"Không tìm thấy tiến độ công đoạn của Lot {lot_id} "
+                "trong MES snapshot.",
+                (lot_id,),
+            )
+        row = rows[0]
+        recorded_at = row.get("latest_recorded_at") or "chưa rõ thời điểm"
+        answer = (
+            f"Theo MES snapshot, bước được ghi nhận mới nhất của Lot {lot_id} là "
+            f"process {row['latest_process_id']} (thứ tự "
+            f"{self._number(row['latest_process_order'])}), thời điểm "
+            f"{recorded_at}. Tổng cộng có {self._number(row['step_count'])} "
+            "công đoạn đã ghi nhận. Đây là bước mới nhất trong snapshot D_MAIN, "
+            "không phải diễn giải trạng thái hay kế hoạch sản xuất."
+        )
+        return self._result(
+            "lot_process_progress",
+            rows,
+            answer,
+            (
+                lot_id,
+                str(row["latest_process_id"]),
+                str(row["latest_process_order"]),
+            ),
         )
 
     def _lot_record_count(self, lot_id: str) -> MesDatabaseResult:
@@ -1424,6 +1550,59 @@ class MesDatabase:
         )
 
     @staticmethod
+    def _is_lot_process_question(normalized: str) -> bool:
+        has_process = any(
+            marker in normalized
+            for marker in (
+                "cong doan",
+                "process step",
+                "process steps",
+                "process history",
+                "process progress",
+                "tien do process",
+                "lich su process",
+                "工程",
+                "プロセス",
+            )
+        )
+        has_progress = any(
+            marker in normalized
+            for marker in (
+                "tien do",
+                "dang o",
+                "hien tai",
+                "moi nhat",
+                "da qua",
+                "lich su",
+                "liet ke",
+                "danh sach",
+                "bao nhieu",
+                "step count",
+                "latest",
+                "current",
+                "history",
+                "list",
+            )
+        )
+        return has_process and has_progress
+
+    @staticmethod
+    def _asks_process_history(normalized: str) -> bool:
+        return any(
+            marker in normalized
+            for marker in (
+                "da qua",
+                "lich su",
+                "liet ke",
+                "danh sach",
+                "process history",
+                "list process",
+                "工程履歴",
+                "工程一覧",
+            )
+        )
+
+    @staticmethod
     def _is_lot_error_record_count_question(normalized: str) -> bool:
         return MesDatabase._asks_count(normalized) and any(
             marker in normalized
@@ -1727,11 +1906,17 @@ class MesDatabase:
     def _unsupported_scope_reason(normalized: str) -> str:
         if any(
             marker in normalized
-            for marker in ("cong nhan", "nguoi san xuat", "operator", "worker")
+            for marker in (
+                "cong nhan",
+                "nguoi san xuat",
+                "nguoi van hanh",
+                "operator",
+                "worker",
+            )
         ):
             return (
-                "MES snapshot hiện không có cột công nhân/người sản xuất, "
-                "nên không thể xác định người sản xuất Lot."
+                "MES snapshot không cung cấp danh tính công nhân/người vận hành "
+                "cho chức năng hỏi đáp vì đây là dữ liệu nhân sự nhạy cảm."
             )
         if any(
             marker in normalized
