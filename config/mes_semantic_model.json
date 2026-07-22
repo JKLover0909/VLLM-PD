@@ -68,12 +68,63 @@
         "lot_mapped": "1 nếu nối được Lot",
         "error_name_mapped": "1 nếu nối được tên lỗi"
       }
+    },
+    "v_lot_process_steps": {
+      "description": "Các công đoạn đã ghi nhận cho từng Lot từ D_MAIN; không chứa danh tính người vận hành hay ghi chú tự do.",
+      "columns": {
+        "process_step_pk": "Khóa nội bộ của bản ghi công đoạn",
+        "lot_id": "Mã Lot",
+        "product_id": "Mã sản phẩm hoặc mã hàng; có thể rỗng nếu chưa nối được Lot",
+        "route_id": "Mã tuyến sản xuất, chưa có bảng giải nghĩa",
+        "process_id": "Mã công đoạn, chưa có bảng giải nghĩa",
+        "process_order": "Thứ tự công đoạn đã ghi nhận",
+        "t1_unix": "Giá trị thời gian T1 dạng số thô",
+        "t2_unix": "Giá trị thời gian T2 dạng số thô",
+        "t3_unix": "Giá trị thời gian T3 dạng số thô",
+        "t4_unix": "Giá trị thời gian T4 dạng số thô",
+        "t1_date": "Thời gian T1 đã ghi nhận",
+        "t2_date": "Thời gian T2 đã ghi nhận",
+        "t3_date": "Thời gian T3 đã ghi nhận",
+        "t4_date": "Thời gian T4 đã ghi nhận",
+        "p_ok": "Bộ đếm P OK; NULL khi nguồn là số âm/chưa biết",
+        "p_ng_defect": "Bộ đếm P NG defect; không phải total_error_qty",
+        "p_ng_scrap": "Bộ đếm P NG scrap; không phải total_error_qty",
+        "s_ok": "Bộ đếm S OK; NULL khi nguồn là số âm/chưa biết",
+        "s_ng_defect": "Bộ đếm S NG defect; không phải total_error_qty",
+        "s_ng_scrap": "Bộ đếm S NG scrap; không phải total_error_qty",
+        "b_ok": "Bộ đếm B OK; NULL khi nguồn là số âm/chưa biết",
+        "b_ng_defect": "Bộ đếm B NG defect; không phải total_error_qty",
+        "b_ng_scrap": "Bộ đếm B NG scrap; không phải total_error_qty",
+        "output_max_b": "Output max B đã ghi nhận",
+        "output_max_s": "Output max S đã ghi nhận",
+        "output_max_p": "Output max P đã ghi nhận",
+        "is_move_step": "Cờ chuyển bước dạng mã thô, không tự giải nghĩa",
+        "moving_status": "Mã trạng thái chuyển bước, không tự giải nghĩa",
+        "lot_mapped": "1 nếu nối được bảng Lot"
+      }
+    },
+    "v_lot_process_progress": {
+      "description": "Bước có process_order lớn nhất đã ghi nhận cho mỗi Lot; đây không phải kế hoạch hay trạng thái thời gian thực.",
+      "columns": {
+        "lot_id": "Mã Lot",
+        "product_id": "Mã sản phẩm hoặc mã hàng",
+        "route_id": "Mã tuyến sản xuất",
+        "step_count": "Số công đoạn đã ghi nhận trong D_MAIN",
+        "latest_process_id": "Mã công đoạn có thứ tự lớn nhất đã ghi nhận",
+        "latest_process_order": "Thứ tự công đoạn lớn nhất đã ghi nhận",
+        "latest_recorded_at": "Thời gian T4/T3/T2/T1 gần nhất có trên bản ghi đó",
+        "is_move_step": "Cờ chuyển bước dạng mã thô",
+        "moving_status": "Mã trạng thái chuyển bước dạng thô",
+        "lot_mapped": "1 nếu nối được bảng Lot"
+      }
     }
   },
   "relationships": [
     "v_lot_error_summary.lot_id = v_lot_error_breakdown.lot_id",
     "v_lot_error_summary.lot_id = v_error_details.lot_id",
-    "v_lot_error_summary.product_id = v_product_error_summary.product_id"
+    "v_lot_error_summary.product_id = v_product_error_summary.product_id",
+    "v_lot_process_progress.lot_id = v_lot_process_steps.lot_id",
+    "v_lot_process_progress.lot_id = v_lot_error_summary.lot_id"
   ],
   "business_rules": [
     "Cụm 'tổng lỗi' nghĩa là SUM(quantity) hoặc total_error_qty, không phải COUNT bản ghi.",
@@ -87,7 +138,11 @@
     "Khi hỏi Top/Liệt kê Lot có tổng lỗi cao nhất trong một ngày/tháng/năm, mặc định lọc theo v_error_details.error_time và GROUP BY lot_id, product_id; không dùng produce_date nếu câu hỏi không nói rõ 'ngày sản xuất'.",
     "Câu hỏi về Lot sản xuất theo ngày mới dùng v_lot_error_summary.produce_date; không nhầm produce_date với error_time.",
     "QUAN TRỌNG: Các view public đã loại sẵn Lot và sản phẩm test theo quy tắc lower(lot_id/product_id) chứa 'test'. Không dùng bảng gốc và không cố truy xuất lại dữ liệu test.",
-    "Không giải nghĩa status vì snapshot chưa có bảng mã trạng thái.",
+    "Không giải nghĩa status, process_id, route_id, is_move_step hoặc moving_status vì snapshot chưa có bảng mã tương ứng.",
+    "Dữ liệu công đoạn là các bước đã ghi nhận từ D_MAIN, không phải kế hoạch sản xuất hoặc dữ liệu thời gian thực.",
+    "Không truy vấn hay suy luận danh tính công nhân/người vận hành; các view công đoạn không chứa USER_ID, STAFF_ID, STAFF_NAME hoặc NOTE.",
+    "Giá trị âm của bộ đếm P/S/B được view chuyển thành NULL và phải hiển thị là chưa rõ; không cộng NULL như số 0.",
+    "P/S/B là ba nhóm bộ đếm riêng. Không gộp các nhóm, không tự tính yield rate khi chưa có đơn vị/quy tắc nghiệp vụ, và không xem NG là total_error_qty.",
     "Tên lỗi rỗng phải hiển thị là '*Lỗi chưa rõ tên*'."
   ]
 }

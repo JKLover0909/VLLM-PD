@@ -1,0 +1,25 @@
+# Host-only dependency input for the root Meibook runtime.
+#
+# Use this file only inside the dedicated Python 3.10 Conda environments
+# (`meibook` or `meibook-dev`). Do not install it into Conda base. Docker keeps
+# its own CUDA-capable dependency resolution until a separately reviewed image
+# lock is introduced.
+--extra-index-url https://download.pytorch.org/whl/cpu
+-r requirements.txt
+
+# Direct imports currently installed separately or only transitively.
+numpy>=1.26,<3
+openai>=2.45,<3
+google-api-python-client>=2.192.0,<3.0.0
+google-auth-httplib2>=0.3.0,<1.0.0
+google-auth-oauthlib>=1.3.0,<2.0.0
+
+# Host CPU stack. Keep Torch and Torchvision aligned; never mix this CPU pair
+# with the CUDA packages currently installed in Conda base.
+torch==2.13.0+cpu
+torchvision==0.28.0+cpu
+
+# Root tests, static checks, and legacy spreadsheet OCR script.
+pytest>=8,<9
+pyflakes>=3,<4
+xlrd>=2,<3

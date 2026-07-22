@@ -119,6 +119,7 @@ export function ResearchSidebar({
             disabled={busy || uploading}
             role="tab"
             aria-selected={researchScope === "topic"}
+            title={modeText("research").sourceTopic}
           >
             <Layers3 size={16} />
             <span>{modeText("research").sourceTopic}</span>
@@ -130,6 +131,7 @@ export function ResearchSidebar({
             disabled={busy || uploading}
             role="tab"
             aria-selected={researchScope === "upload"}
+            title={modeText("research").sourceUpload}
           >
             <FileUp size={16} />
             <span>{modeText("research").sourceUpload}</span>

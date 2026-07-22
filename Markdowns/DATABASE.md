@@ -259,6 +259,68 @@ scripts/import_mes_database.py
 | `import_batches` | Metadata file import |
 | `schema_metadata` | Phiên bản schema và chỉ số chất lượng |
 
+### Sơ đồ quan hệ thực thể (ERD)
+
+```mermaid
+erDiagram
+    lots ||--o{ error_events : "lot_pk (Foreign Key)"
+    lots ||--o{ process_steps : "lot_pk (Foreign Key)"
+    error_catalog ||--o{ error_events : "error_catalog_pk (Foreign Key)"
+
+    lots {
+        INTEGER lot_pk PK
+        INTEGER source_id UK
+        TEXT lot_id UK
+        TEXT product_id
+        INTEGER pcs_lot
+        TEXT status
+    }
+    error_events {
+        INTEGER error_pk PK
+        INTEGER lot_pk FK "nullable"
+        INTEGER error_catalog_pk FK "nullable"
+        TEXT lot_id
+        TEXT error_id
+        TEXT process_id
+        TEXT error_type
+        INTEGER quantity
+        TEXT error_time
+    }
+    error_catalog {
+        INTEGER error_catalog_pk PK
+        TEXT error_id
+        TEXT process_id
+        TEXT error_type
+        TEXT error_name_vi
+        INTEGER is_canonical
+    }
+    process_steps {
+        INTEGER process_step_pk PK
+        INTEGER source_id UK
+        INTEGER lot_pk FK "nullable"
+        TEXT lot_id
+        TEXT route_id
+        TEXT process_id
+        INTEGER process_order
+        TEXT t1_date
+        TEXT t4_date
+    }
+    import_batches {
+        TEXT source_name PK
+    }
+    schema_metadata {
+        TEXT key PK
+    }
+```
+
+*Chú thích về liên kết:*
+
+- Quan hệ giữa `lots` và `error_events` là 1 - Nhiều (One-to-Many) qua trường `lot_pk`. Trường này cho phép `NULL` (nullable) để lưu các sự kiện lỗi chưa khớp được với lô hàng cụ thể.
+- Quan hệ giữa `error_catalog` và `error_events` là 1 - Nhiều (One-to-Many) qua trường `error_catalog_pk`. Trường này cũng cho phép `NULL` khi mã lỗi chưa định nghĩa trong từ điển.
+- Quan hệ giữa `lots` và `process_steps` là 1 - Nhiều qua `lot_pk` nullable; công đoạn từ `D_MAIN` không khớp được Lot vẫn được giữ để đo chất lượng dữ liệu. Bảng chuẩn hóa và các view công đoạn không lưu/trả về `USER_ID`, `STAFF_ID`, `STAFF_NAME`, `NOTE`.
+- Hai bảng `import_batches` và `schema_metadata` là các bảng hệ thống độc lập, không có khóa ngoại (Foreign Key) liên kết trực tiếp với các bảng nghiệp vụ chính.
+- **Lưu ý nghiệp vụ:** Khi thực hiện phép kết (Join) hoặc mapping lỗi thủ công bằng mã lỗi, **bắt buộc** phải khớp tổ hợp 3 trường `(error_id, process_id, error_type)` thay vì chỉ dùng `error_id` độc nhất.
+
 ### View phục vụ query
 
 | View | Mục đích |

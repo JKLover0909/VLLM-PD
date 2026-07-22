@@ -417,8 +417,9 @@ LiteLLM aliases trong `litellm_config.yaml`:
 | `auto-model` | `ollama_chat/qwen3:14b` | Route mặc định cho hỏi đáp text |
 | `local-qwen-chat` | `ollama_chat/qwen3:14b` | Chat model local chính |
 | `local-qwen-small` | `ollama_chat/qwen2.5:3b-instruct` | Model phụ cho dịch/intent/rewrite/format |
-| `local-qwen-coder` | llama.cpp OpenAI-compatible Qwen2.5 Coder 14B | SQL Agent/Coding |
-| `coding-model` | Qwen2.5 Coder 14B | LangGraph Coding Agent |
+| `local-qwen-coder` | Ollama OpenAI-compatible Qwen2.5 Coder 14B Q4 trên LAN | SQL Agent/Coding chính |
+| `local-qwen-coder-ngrok` | llama.cpp Qwen2.5 Coder 14B Q5 qua ngrok | Coder fallback |
+| `coding-model` | Qwen2.5 Coder 14B Q4 trên LAN | LangGraph Coding Agent |
 | `openai-model` | OpenAI-compatible cloud fallback | Dự phòng kỹ thuật |
 | `grok-model` | Azure/OpenAI-compatible Grok route | Vision/dự phòng cũ |
 
@@ -434,8 +435,12 @@ local-qwen-chat:
 local-qwen-small:
   - local-qwen-chat
   - openai-model
+local-qwen-coder:
+  - local-qwen-coder-ngrok
+  - local-qwen-chat
+  - openai-model
 coding-model:
-  - local-qwen-coder
+  - local-qwen-coder-ngrok
   - local-qwen-chat
   - openai-model
 ```
@@ -537,8 +542,10 @@ QWEN_CHAT_NGROK_API_BASE=https://carless-overarch-establish.ngrok-free.dev
 QWEN_CHAT_MODEL=qwen3:14b
 QWEN_SMALL_API_BASE=http://host.docker.internal:11435
 QWEN_SMALL_MODEL=qwen2.5:3b-instruct
-QWEN_CODER_API_BASE=https://.../v1
-QWEN_CODER_API_KEY=sk-local
+QWEN_CODER_LAN_API_BASE=http://192.168.10.14:11434/v1
+QWEN_CODER_LAN_API_KEY=sk-local
+QWEN_CODER_NGROK_API_BASE=https://.../v1
+QWEN_CODER_NGROK_API_KEY=sk-local
 
 TRANSLATION_ENABLED=true
 TRANSLATION_MODEL=local-qwen-small
@@ -621,15 +628,18 @@ curl -fsS http://localhost:4000/v1/chat/completions \
 
 ### Index tài liệu MKAC
 
+Host Python phải dùng Conda environment `meibook-dev` qua wrapper
+`scripts/meibook-python`; không chạy bare `python` từ Conda `base`.
+
 ```bash
-python scripts/index_mkac_documents.py --dry-run
-python scripts/index_mkac_documents.py
+scripts/meibook-python scripts/index_mkac_documents.py --dry-run
+scripts/meibook-python scripts/index_mkac_documents.py
 ```
 
 Index lại một file:
 
 ```bash
-python scripts/index_mkac_documents.py \
+scripts/meibook-python scripts/index_mkac_documents.py \
   --file "ten-file.pdf" \
   --reindex
 ```
@@ -655,9 +665,9 @@ Sau khi import, kiểm tra `/health` để xem:
 Một số test nhẹ không cần load BGE-M3:
 
 ```bash
-python -m py_compile src/rag/rag_pipeline.py src/integrations/mes_query_service.py
+scripts/meibook-python -m py_compile src/rag/rag_pipeline.py src/integrations/mes_query_service.py
 
-python -m pytest \
+scripts/meibook-python -m pytest \
   tests/test_query_routing.py \
   tests/test_mes_time_sql_routing.py \
   tests/test_mes_sql_agent.py \

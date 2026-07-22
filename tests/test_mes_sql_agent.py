@@ -33,6 +33,31 @@ def sql_agent(tmp_path: Path) -> MesSqlAgent:
         )
         connection.executemany(
             """
+            INSERT INTO process_steps (
+                process_step_pk, source_id, lot_pk, lot_id, route_id,
+                process_id, process_order, t1_date, t4_date, p_ok,
+                p_ng_defect, is_move_step, moving_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    1, 11, 1, "LOT-A", "R1", "P1", 1,
+                    "2026-06-01 08:00:00", "2026-06-01 08:30:00",
+                    100, 2, "N", "0",
+                ),
+                (
+                    2, 12, 1, "LOT-A", "R1", "P2", 2,
+                    "2026-06-01 09:00:00", "2026-06-01 09:30:00",
+                    98, -1, "Y", "0",
+                ),
+                (
+                    3, 13, 3, "LOT-TEST", "RT", "PT", 1,
+                    "2026-06-03 11:00:00", None, 999, 99, "N", "0",
+                ),
+            ],
+        )
+        connection.executemany(
+            """
             INSERT INTO error_catalog (
                 error_catalog_pk, error_id, error_type, process_id,
                 error_name_vi, is_canonical
@@ -109,6 +134,39 @@ def test_sql_agent_views_hide_test_lots(sql_agent):
 
     assert [row["lot_id"] for row in result.rows] == ["LOT-B", "LOT-A"]
     assert all("test" not in row["product_id"].lower() for row in result.rows)
+
+
+def test_sql_agent_process_views_hide_test_lots_and_negative_sentinels(sql_agent):
+    steps = sql_agent.execute(
+        """
+        SELECT lot_id, product_id, process_id, process_order, p_ng_defect
+        FROM v_lot_process_steps
+        ORDER BY lot_id, process_order
+        """
+    )
+    progress = sql_agent.execute(
+        """
+        SELECT lot_id, step_count, latest_process_id, latest_process_order
+        FROM v_lot_process_progress
+        ORDER BY lot_id
+        """
+    )
+
+    assert [row["process_id"] for row in steps.rows] == ["P1", "P2"]
+    assert steps.rows[1]["p_ng_defect"] is None
+    assert progress.rows == [
+        {
+            "lot_id": "LOT-A",
+            "step_count": 2,
+            "latest_process_id": "P2",
+            "latest_process_order": 2,
+        }
+    ]
+
+
+def test_sql_agent_rejects_private_process_steps_table(sql_agent):
+    with pytest.raises(MesSqlAgentError):
+        sql_agent.validate_sql("SELECT * FROM process_steps")
 
 
 def test_executes_daily_error_aggregation_without_test_lots(sql_agent):

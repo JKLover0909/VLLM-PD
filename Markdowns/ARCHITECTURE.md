@@ -354,8 +354,9 @@ Các model logic:
 | `local-qwen-chat` | `ollama_chat/qwen3:14b` | Chat chính local |
 | `local-qwen-chat-ngrok` | `ollama_chat/qwen3:14b` | Fallback cùng model qua ngrok |
 | `local-qwen-small` | `ollama_chat/qwen2.5:3b-instruct` | Dịch ngắn, intent, rewrite, format |
-| `local-qwen-coder` | Qwen2.5 Coder 14B OpenAI-compatible | SQL Agent/Coding |
-| `coding-model` | Qwen2.5 Coder 14B | Tên ổn định cho Coding Agent |
+| `local-qwen-coder` | Ollama Qwen2.5 Coder 14B Q4 trên LAN | SQL Agent/Coding chính |
+| `local-qwen-coder-ngrok` | llama.cpp Qwen2.5 Coder 14B Q5 qua ngrok | Coder fallback |
+| `coding-model` | Qwen2.5 Coder 14B Q4 trên LAN | Tên ổn định cho Coding Agent |
 | `openai-model` | `openai/gpt-5.4-mini` | Cloud fallback kỹ thuật |
 | `grok-model` | Azure/OpenAI-compatible Grok | Route cũ cho vision/dự phòng |
 
@@ -371,8 +372,12 @@ local-qwen-chat:
 local-qwen-small:
   - local-qwen-chat
   - openai-model
+local-qwen-coder:
+  - local-qwen-coder-ngrok
+  - local-qwen-chat
+  - openai-model
 coding-model:
-  - local-qwen-coder
+  - local-qwen-coder-ngrok
   - local-qwen-chat
   - openai-model
 ```
