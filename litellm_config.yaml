@@ -76,12 +76,29 @@ model_list:
       cache_creation_input_token_cost: 0.0
       cache_read_input_token_cost: 0.0
 
-  # Local Qwen Coder served by llama.cpp's OpenAI-compatible API.
+  # Primary Qwen Coder route: Ollama OpenAI-compatible API on the LAN.
   - model_name: local-qwen-coder
     litellm_params:
+      model: openai/qwen2.5-coder:14b
+      api_base: os.environ/QWEN_CODER_LAN_API_BASE
+      api_key: os.environ/QWEN_CODER_LAN_API_KEY
+      timeout: 120
+      stream: true
+      max_parallel_requests: 1
+    model_info:
+      max_input_tokens: 16384
+      max_output_tokens: 4096
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+      cache_creation_input_token_cost: 0.0
+      cache_read_input_token_cost: 0.0
+
+  # Q5 Coder fallback served by llama.cpp through the ngrok tunnel.
+  - model_name: local-qwen-coder-ngrok
+    litellm_params:
       model: openai//home/jkl0909/models/qwen2.5-coder-14b/Qwen2.5-Coder-14B-Instruct-Q5_K_M.gguf
-      api_base: os.environ/QWEN_CODER_API_BASE
-      api_key: os.environ/QWEN_CODER_API_KEY
+      api_base: os.environ/QWEN_CODER_NGROK_API_BASE
+      api_key: os.environ/QWEN_CODER_NGROK_API_KEY
       headers:
         ngrok-skip-browser-warning: "true"
       timeout: 120
@@ -109,14 +126,12 @@ model_list:
       api_base: os.environ/AZURE_OPENAI_ENDPOINT
       timeout: 120
 
-  # Coding Agent keeps a stable logical name.
+  # Coding Agent keeps a stable logical name and uses the same LAN primary.
   - model_name: coding-model
     litellm_params:
-      model: openai//home/jkl0909/models/qwen2.5-coder-14b/Qwen2.5-Coder-14B-Instruct-Q5_K_M.gguf
-      api_base: os.environ/QWEN_CODER_API_BASE
-      api_key: os.environ/QWEN_CODER_API_KEY
-      headers:
-        ngrok-skip-browser-warning: "true"
+      model: openai/qwen2.5-coder:14b
+      api_base: os.environ/QWEN_CODER_LAN_API_BASE
+      api_key: os.environ/QWEN_CODER_LAN_API_KEY
       timeout: 120
       stream: true
       max_parallel_requests: 1
@@ -133,7 +148,8 @@ router_settings:
     - auto-model: ["local-qwen-chat-ngrok", "openai-model"]
     - local-qwen-chat: ["local-qwen-chat-ngrok", "openai-model"]
     - local-qwen-small: ["local-qwen-chat", "openai-model"]
-    - coding-model: ["local-qwen-coder", "local-qwen-chat", "openai-model"]
+    - local-qwen-coder: ["local-qwen-coder-ngrok", "local-qwen-chat", "openai-model"]
+    - coding-model: ["local-qwen-coder-ngrok", "local-qwen-chat", "openai-model"]
   num_retries: 1
   timeout: 120
   routing_strategy: simple-shuffle
