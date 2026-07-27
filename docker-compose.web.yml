@@ -97,10 +97,10 @@ services:
       - ${MEIBOOK_ENV_FILE:-.env.docker}
     environment:
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
-      QWEN_CHAT_API_BASE: http://192.168.10.150:11434
+      QWEN_CHAT_API_BASE: http://172.100.0.9:11434
       QWEN_CHAT_NGROK_API_BASE: https://carless-overarch-establish.ngrok-free.dev
       QWEN_SMALL_API_BASE: http://host.docker.internal:11435
-      QWEN_CODER_LAN_API_BASE: http://192.168.10.141:11434/v1
+      QWEN_CODER_LAN_API_BASE: http://172.100.0.8:11434/v1
       QWEN_CODER_LAN_API_KEY: sk-local
       QWEN_CODER_NGROK_API_BASE: https://36b4-2405-4803-f160-2090-b282-e2ff-fe05-dfe9.ngrok-free.app/v1
       QWEN_CODER_NGROK_API_KEY: sk-local
