@@ -38,6 +38,14 @@ Nhận diện Intent xem có phải câu hỏi cấu trúc không (lấy từ SQ
 ### 4.2 MES Q&A
 Parse thông số (mã Lot, Mã hàng, Thời gian). Ưu tiên deterministic/rule-based SQL cho MES vì dễ kiểm chứng, ổn định và ít hallucination hơn LLM-generated SQL. Tuy nhiên agent vẫn phải kiểm tra schema, dữ liệu đầu vào, điều kiện lọc và kết quả trả về trước khi kết luận. Nếu phức tạp, gọi `mes_sql_agent` (LLM-based) làm fallback.
 
+### 4.2b WMS Q&A — chưa có trên Production
+
+WMS (`mode=wms`) hiện là capability Dev-only, chưa được promote sang Production. Không giả định nó đã tồn tại ở checkout này.
+
+Ghi chú trước cho lúc promote: ở Dev, WMS **được phép** fallback sang LLM-generated SQL (`wms_sql_agent`) khi câu hỏi không khớp intent deterministic hoặc bị deterministic guardrail từ chối vì semantics chưa xác minh. Đây là đánh đổi đã được người dùng chấp nhận, kèm ba rủi ro đã biết — cộng số lượng giữa các UOM chưa có master quy đổi, so sánh cross-era giữa current balance và legacy archive vốn khác grain, và suy diễn WIP/bottleneck/trend/min-stock vốn không tồn tại trong snapshot.
+
+Khi promote WMS sang Production, phải mang theo nguyên các ràng buộc của Dev: read-only, allowlisted view, row limit, timeout; chỉ fail-closed trước LLM khi snapshot disabled/unavailable/incompatible/query-error; và đánh dấu rõ kết quả LLM-generated là suy luận độ tin cậy thấp. Xem `AGENTS.md` mục 4.2b ở checkout Dev để biết chi tiết đầy đủ.
+
 ### 4.3 Research / NotebookLM-like Document QA
 Người dùng chọn 1 chủ đề trên UI. Backend query vào Qdrant (`docjp_knowledge`) kết hợp filter `metadata.category`. Không dùng double-translation đối với tài liệu tiếng Nhật để tránh nhiễu RAG.
 
