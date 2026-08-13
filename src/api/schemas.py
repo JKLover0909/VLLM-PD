@@ -19,9 +19,12 @@ class QueryRequest(BaseModel):
     question: str
     stream: bool = True
     model: Literal["auto", "local", "openai", "grok"] = "auto"
-    mode: Literal["mkac", "mes", "research"] = "mkac"
+    mode: Literal["mkac", "mes", "wms", "research"] = "mkac"
     ui_language: Literal["vi", "ja"] = "vi"
     employee_id: Optional[str] = None
+    # Optional UI hint for a server-prepared WMS suggestion. The API validates the
+    # ID again against the selected mode, language and canonical question.
+    quick_answer_id: Optional[str] = None
     conversation_context: List[Dict[str, Any]] = Field(default_factory=list)
     # Research corpus selector. ``topic`` queries the shared DocJP collection;
     # ``upload`` queries documents isolated by the request session UUID.
@@ -34,6 +37,51 @@ class QueryRequest(BaseModel):
     research_topic: Optional[str] = None
 
 
+class WmsDatasetEvidence(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    dataset: str = ""
+    status: str = ""
+    reason_code: str = ""
+    source_state: str = ""
+    candidate_row_count: int = 0
+    inserted_row_count: int = 0
+    invalid_quantity_row_count: int = 0
+    source_as_of: str = ""
+    source_as_of_state: str = ""
+    source_as_of_basis: str = ""
+    source_timezone: str = "unverified"
+    semantic_epoch: str = ""
+
+
+class WmsPagination(BaseModel):
+    page: int
+    page_size: int
+    total_count: int
+    has_more: bool
+
+
+class WmsAnswerMetadata(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    contract_version: str = ""
+    data_contract_version: str = ""
+    semantic_contract_version: str = ""
+    intent: str = ""
+    domain: str = ""
+    status: str = ""
+    reason_codes: List[str] = Field(default_factory=list)
+    imported_at: str = ""
+    source_as_of: str = ""
+    source_as_of_state: str = ""
+    source_as_of_basis: str = ""
+    source_timezone: str = "unverified"
+    semantic_epoch: str = ""
+    dataset_evidence: List[WmsDatasetEvidence] = Field(default_factory=list)
+    grain: str = ""
+    pagination: Optional[WmsPagination] = None
+
+
 class QueryResponse(BaseModel):
     answer: str
     sources: List[Dict[str, Any]]
@@ -41,6 +89,8 @@ class QueryResponse(BaseModel):
     model: str
     mode: str
     answer_scope: str
+    wms_metadata: Optional[WmsAnswerMetadata] = None
+    artifact: Optional[Dict[str, Any]] = None
 
 
 class SessionInfoResponse(BaseModel):

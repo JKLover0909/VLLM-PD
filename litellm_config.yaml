@@ -112,13 +112,56 @@ model_list:
       cache_creation_input_token_cost: 0.0
       cache_read_input_token_cost: 0.0
 
-  # Cloud providers selectable from the web UI.
-  - model_name: openai-model
+  # Role-specific cloud fallbacks. The existing Azure endpoint is configured
+  # as OpenAI-compatible, so preserve its verified provider/model form. Each
+  # role has a separate alias even when it initially shares the same Azure
+  # deployment; aliases can later point to different deployments independently.
+  - model_name: azure-chat-fallback
+    litellm_params:
+      model: openai/grok-4-20-reasoning
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+      api_base: os.environ/AZURE_OPENAI_ENDPOINT
+      timeout: 120
+      max_parallel_requests: 1
+
+  - model_name: azure-small-fallback
+    litellm_params:
+      model: openai/grok-4-20-reasoning
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+      api_base: os.environ/AZURE_OPENAI_ENDPOINT
+      timeout: 60
+      max_parallel_requests: 2
+
+  - model_name: azure-coder-fallback
+    litellm_params:
+      model: openai/grok-4-20-reasoning
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+      api_base: os.environ/AZURE_OPENAI_ENDPOINT
+      timeout: 120
+      max_parallel_requests: 1
+
+  - model_name: openai-chat-fallback
     litellm_params:
       model: openai/gpt-5.4-mini
       api_key: os.environ/OPENAI_API_KEY
       timeout: 120
+      max_parallel_requests: 1
 
+  - model_name: openai-small-fallback
+    litellm_params:
+      model: openai/gpt-5.4-mini
+      api_key: os.environ/OPENAI_API_KEY
+      timeout: 60
+      max_parallel_requests: 2
+
+  - model_name: openai-coder-fallback
+    litellm_params:
+      model: openai/gpt-5.4-mini
+      api_key: os.environ/OPENAI_API_KEY
+      timeout: 120
+      max_parallel_requests: 1
+
+  # Legacy vision route. It is not used by the text fallback chains below.
   - model_name: grok-model
     litellm_params:
       model: openai/grok-4-20-reasoning
@@ -145,11 +188,13 @@ model_list:
 
 router_settings:
   fallbacks:
-    - auto-model: ["local-qwen-chat-ngrok", "openai-model"]
-    - local-qwen-chat: ["local-qwen-chat-ngrok", "openai-model"]
-    - local-qwen-small: ["local-qwen-chat", "openai-model"]
-    - local-qwen-coder: ["local-qwen-coder-ngrok", "local-qwen-chat", "openai-model"]
-    - coding-model: ["local-qwen-coder-ngrok", "local-qwen-chat", "openai-model"]
+    # Keep the local model for each role primary. Azure is the first cloud
+    # provider and OpenAI is the independent final fallback for that same role.
+    - auto-model: ["local-qwen-chat-ngrok", "azure-chat-fallback", "openai-chat-fallback"]
+    - local-qwen-chat: ["local-qwen-chat-ngrok", "azure-chat-fallback", "openai-chat-fallback"]
+    - local-qwen-small: ["local-qwen-chat", "azure-small-fallback", "openai-small-fallback"]
+    - local-qwen-coder: ["local-qwen-coder-ngrok", "azure-coder-fallback", "openai-coder-fallback"]
+    - coding-model: ["local-qwen-coder-ngrok", "azure-coder-fallback", "openai-coder-fallback"]
   num_retries: 1
   timeout: 120
   routing_strategy: simple-shuffle

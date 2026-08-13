@@ -266,6 +266,8 @@ erDiagram
     lots ||--o{ error_events : "lot_pk (Foreign Key)"
     lots ||--o{ process_steps : "lot_pk (Foreign Key)"
     error_catalog ||--o{ error_events : "error_catalog_pk (Foreign Key)"
+    wms_processes ||--o{ wms_current_balances : "process_pk (Foreign Key)"
+    wms_processes ||--o{ wms_legacy_archive_records : "process_pk (Foreign Key)"
 
     lots {
         INTEGER lot_pk PK
@@ -304,6 +306,27 @@ erDiagram
         INTEGER process_order
         TEXT t1_date
         TEXT t4_date
+    }
+    wms_processes {
+        INTEGER process_pk PK
+        TEXT process_id UK
+        TEXT process_name
+        TEXT process_physical_id
+    }
+    wms_current_balances {
+        INTEGER balance_pk PK
+        INTEGER process_pk FK
+        TEXT process_id
+        TEXT item_code
+        TEXT quantity_decimal
+        INTEGER quantity_valid
+    }
+    wms_legacy_archive_records {
+        INTEGER archive_record_pk PK
+        INTEGER process_pk FK
+        TEXT item_code
+        TEXT item_lot_id
+        TEXT archive_date
     }
     import_batches {
         TEXT source_name PK

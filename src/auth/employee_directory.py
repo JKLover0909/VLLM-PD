@@ -57,7 +57,7 @@ class EmployeeDirectory:
                 "department": "",
                 "birth_date": "",
                 "marital_status": "",
-                "greeting": "Chào mừng đến với hệ thống Meibook,",
+                "greeting": "Chào mừng đến với hệ thống Meibook.",
                 "department_size": 0,
                 "department_heads": [],
                 "department_deputies": [],

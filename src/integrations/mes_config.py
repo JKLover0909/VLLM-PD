@@ -17,7 +17,8 @@ if TYPE_CHECKING:  # pragma: no cover - chỉ dùng cho type hint
 MODEL_ROUTES = {
     "auto": "auto-model",
     "local": "local-qwen-chat",
-    "openai": "openai-model",
+    # Explicit UI cloud choice uses the role-specific chat fallback alias.
+    "openai": "openai-chat-fallback",
     "grok": "grok-model",
 }
 
@@ -36,7 +37,7 @@ def env_int(name: str, default: int, *, minimum: int = 1, maximum: int = 4096) -
 
 def resolve_model(model: str) -> str:
     if model == "grok":
-        return "openai-model"
+        return "openai-chat-fallback"
     try:
         return MODEL_ROUTES[model]
     except KeyError as exc:
@@ -45,6 +46,13 @@ def resolve_model(model: str) -> str:
 
 def resolve_sql_agent_model(model: str) -> str:
     forced_model = os.getenv("MES_SQL_AGENT_MODEL", "local-qwen-coder").strip()
+    if forced_model:
+        return MODEL_ROUTES.get(forced_model, forced_model)
+    return resolve_model(model)
+
+
+def resolve_wms_sql_agent_model(model: str) -> str:
+    forced_model = os.getenv("WMS_SQL_AGENT_MODEL", "local-qwen-coder").strip()
     if forced_model:
         return MODEL_ROUTES.get(forced_model, forced_model)
     return resolve_model(model)
@@ -78,6 +86,15 @@ def sql_planner_max_tokens() -> int:
 def sql_answer_max_tokens(result: "MesSqlQueryResult") -> int:
     default = 512 if result.truncated or len(result.rows) > 10 else 384
     return env_int("MES_SQL_ANSWER_MAX_TOKENS", default, minimum=192, maximum=800)
+
+
+def wms_sql_planner_max_tokens() -> int:
+    return env_int("WMS_SQL_PLANNER_MAX_TOKENS", 1200, minimum=512, maximum=1600)
+
+
+def wms_sql_answer_max_tokens(result: Any) -> int:
+    default = 512 if result.truncated or len(result.rows) > 10 else 384
+    return env_int("WMS_SQL_ANSWER_MAX_TOKENS", default, minimum=192, maximum=800)
 
 
 def prefer_template_answers(routed_model: str) -> bool:

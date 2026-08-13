@@ -100,7 +100,7 @@ Payload quan trọng:
 Request
   -> rate limit
   -> validate session/model/mode
-  -> check employee_id nếu mode=mkac/mes
+  -> check employee_id nếu mode=mkac/mes/wms
   -> localize query nếu cần
   -> cache lookup nếu hợp lệ
   -> route theo mode
@@ -317,25 +317,33 @@ Trong `litellm_config.yaml`:
 | `local-qwen-small` | dịch/intent/rewrite/format ngắn |
 | `local-qwen-coder` | SQL Agent/Coding |
 | `coding-model` | tên logic ổn định cho Coding Agent |
-| `openai-model` | cloud fallback |
+| `azure-*-fallback` | cloud fallback Azure theo role Chat / Small / Coder |
+| `openai-*-fallback` | cloud fallback OpenAI theo role Chat / Small / Coder |
 | `grok-model` | route cũ vision/dự phòng |
 
-Fallback quan trọng:
+Fallback quan trọng: local là primary; ngrok cùng role, Azure, rồi OpenAI.
 
 ```yaml
 auto-model:
   - local-qwen-chat-ngrok
-  - openai-model
+  - azure-chat-fallback
+  - openai-chat-fallback
 local-qwen-chat:
   - local-qwen-chat-ngrok
-  - openai-model
+  - azure-chat-fallback
+  - openai-chat-fallback
 local-qwen-small:
   - local-qwen-chat
-  - openai-model
+  - azure-small-fallback
+  - openai-small-fallback
+local-qwen-coder:
+  - local-qwen-coder-ngrok
+  - azure-coder-fallback
+  - openai-coder-fallback
 coding-model:
-  - local-qwen-coder
-  - local-qwen-chat
-  - openai-model
+  - local-qwen-coder-ngrok
+  - azure-coder-fallback
+  - openai-coder-fallback
 ```
 
 Lưu ý: `auto-model` và `local-qwen-chat` bản chất là cùng Qwen3 14B, khác nhau ở

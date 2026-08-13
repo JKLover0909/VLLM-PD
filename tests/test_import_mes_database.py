@@ -153,6 +153,39 @@ def test_reimport_replaces_database_instead_of_duplicating_rows(tmp_path):
         assert connection.execute("SELECT COUNT(*) FROM process_steps").fetchone()[0] == 2
 
 
+def test_process_step_natural_order_can_repeat_for_rework(tmp_path):
+    raw_dir = tmp_path / "raw"
+    _write_raw_files(raw_dir)
+    main_path = raw_dir / "D_MAIN_202601010000.sql"
+    sql = main_path.read_text(encoding="utf-8")
+    sql = sql.replace(
+        ");",
+        "),\n"
+        "(32,NULL,TIMESTAMP'2026-01-01 10:00:00','LOT-1','ROUTE-1',"
+        "'PROC-REWORK',1,6,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,"
+        "NULL,NULL,NULL,NULL,NULL,NULL,NULL,TIMESTAMP'2026-01-01 10:00:00',"
+        "NULL,NULL,NULL,NULL,NULL,NULL,'N',NULL,'0');",
+        1,
+    )
+    main_path.write_text(sql, encoding="utf-8")
+    db_path = tmp_path / "mes.sqlite"
+    schema_path = Path(__file__).parents[1] / "database" / "schema" / "mes.sql"
+
+    counts = build_database(raw_dir, schema_path, db_path)
+
+    assert counts["process_steps"] == 3
+    with sqlite3.connect(db_path) as connection:
+        progress = connection.execute(
+            """
+            SELECT step_count, latest_process_id
+            FROM v_lot_process_progress
+            WHERE lot_id='LOT-1'
+            """
+        ).fetchone()
+
+    assert progress == (2, "PROC-REWORK")
+
+
 def test_build_mes_database_without_optional_d_main(tmp_path):
     raw_dir = tmp_path / "raw"
     _write_raw_files(raw_dir)

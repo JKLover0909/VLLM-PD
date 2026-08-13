@@ -97,6 +97,27 @@ Nhận diện intent xem có phải câu hỏi cấu trúc không (lấy từ SQ
 
 Parse thông số (mã Lot, Mã hàng, Thời gian). Ưu tiên deterministic/rule-based SQL cho MES vì dễ kiểm chứng, ổn định và ít hallucination hơn LLM-generated SQL. Tuy nhiên agent vẫn phải kiểm tra schema, dữ liệu đầu vào, điều kiện lọc và kết quả trả về trước khi kết luận. Nếu phức tạp, gọi `mes_sql_agent` (LLM-based) làm fallback.
 
+### 4.2b WMS Q&A (Dev extension) — chính sách LLM-generated SQL
+
+WMS (`mode=wms`) đọc riêng `data/mes_wms.sqlite`. Luồng mặc định vẫn là deterministic intent + SQL viết tay trong `src/integrations/mes_wms_database.py`, vì kết quả kiểm chứng được và ổn định.
+
+**Quyết định vận hành hiện tại:** khi câu hỏi không khớp intent deterministic hoặc bị deterministic guardrail từ chối vì semantics chưa xác minh, WMS **được phép** fallback sang LLM-generated SQL (`wms_sql_agent`) thay vì dừng ở clarification/suppression. Người dùng đã chấp nhận đánh đổi này để tăng độ phủ câu hỏi, sau khi được cảnh báo rõ các rủi ro bên dưới.
+
+**Rủi ro đã được chấp nhận** — agent phải hiểu là chúng có thật, không phải chỉ là cảnh báo hình thức:
+
+* **Cộng số lượng khác UOM.** Schema `database/schema/mes_wms.sql` không có cột đơn vị tính và không có master quy đổi. Một câu `SUM(quantity_decimal)` chạy qua nhiều `item_code` sẽ ra con số vô nghĩa nhưng trông hợp lệ.
+* **So sánh cross-era.** Dữ liệu current balance và legacy archive khác grain, khác key, khác freshness. LLM rất dễ `JOIN` hoặc `UNION` hai era như thể chúng tương thích.
+* **Suy diễn WIP / bottleneck / trend / min-stock / expiry.** Snapshot không chứa các khái niệm này; LLM có thể tự dựng chúng từ các cột sẵn có và trình bày như sự thật nghiệp vụ.
+
+**Ràng buộc bắt buộc khi implement hoặc sửa nhánh fallback này:**
+
+* Chỉ read-only, chỉ chạy qua allowlisted view, có row limit và timeout như MES SQL Agent hiện tại.
+* Các suppression ngữ nghĩa sẵn có (`_cross_item_aggregate_suppression`, `_completed_movements_suppressed`, WIP ambiguity, unsupported KPI) chỉ là kết quả deterministic; WMS được phép chuyển tiếp chúng sang `wms_sql_agent`. Chỉ các lỗi hạ tầng/contract khiến snapshot không thể truy vấn an toàn (disabled, unavailable, incompatible, query error) mới phải fail-closed trước LLM.
+* Kết quả từ LLM-generated SQL phải được đánh dấu là suy luận độ tin cậy thấp trên cả metadata lẫn UI, phân biệt rõ với kết quả deterministic.
+* Không trình bày số liệu từ nhánh này như dữ liệu đã kiểm chứng hợp đồng.
+
+Khi một dạng câu hỏi trở nên phổ biến, ưu tiên "nâng cấp" nó thành intent deterministic + SQL viết tay + test, thay vì để nó sống mãi ở nhánh fallback.
+
 ### 4.3 Research / NotebookLM-like Document QA
 
 Research có hai scope: topic dùng collection `docjp_knowledge` với filter `metadata.category`, còn tài liệu người dùng upload được cô lập theo session trong `docmind_documents`. Không dùng double-translation đối với tài liệu tiếng Nhật để tránh nhiễu RAG.

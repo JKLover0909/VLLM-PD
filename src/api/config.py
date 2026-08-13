@@ -58,6 +58,24 @@ MIN_QUERY_RESPONSE_SECONDS = max(
     0.0,
     float(os.getenv("MIN_QUERY_RESPONSE_SECONDS", "2.0")),
 )
+# Report deterministic chạy gần như tức thời, nên toàn bộ timeline hiện ra cùng
+# lúc và người dùng thấy giả. Nhịp dưới đây chỉ giãn thời điểm phát SSE, không
+# đổi dữ liệu: mỗi bước có khoảng dừng trước khi báo kết quả, và thẻ báo cáo
+# hiện sau khi timeline đã chạy xong. Đặt 0 để tắt hoàn toàn (test dùng 0).
+REPORT_STEP_PACING_SECONDS = max(
+    0.0,
+    float(os.getenv("REPORT_STEP_PACING_SECONDS", "0.55")),
+)
+# WMS snapshot validation is often deterministic and nearly instant. Space its
+# already-completed milestones for a readable UX without changing verification.
+# Set 0 to disable this presentation pacing; cap it to avoid excessive waiting.
+WMS_VERIFICATION_STEP_PACING_SECONDS = min(
+    1.0,
+    max(
+        0.0,
+        float(os.getenv("WMS_VERIFICATION_STEP_PACING_SECONDS", "0.55")),
+    ),
+)
 UPLOAD_RATE_LIMIT = int(os.getenv("UPLOAD_RATE_LIMIT_PER_HOUR", "10"))
 UPLOAD_PROCESSING_CONCURRENCY = max(
     1, int(os.getenv("UPLOAD_PROCESSING_CONCURRENCY", "1"))

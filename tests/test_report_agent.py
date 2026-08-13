@@ -5,7 +5,9 @@ from pathlib import Path
 import pytest
 
 from src.actions.report_agent import (
+    HrExecutiveReportAgent,
     MesReportAgent,
+    MesWmsReportAgent,
     build_report_plan,
     format_number,
     render_html,
@@ -85,26 +87,178 @@ def test_report_intent_requires_report_and_mes_context():
 
 
 @pytest.mark.parametrize(
-    ("question", "status", "shape"),
+    ("question", "status", "shape", "domain"),
     [
-        ("Lập báo cáo tổng hợp lỗi MES", "supported", "overview"),
-        ("Lập báo cáo về 7 lỗi nhiều nhất", "supported", "top_errors"),
-        ("Lot nào có tổng lỗi cao nhất?", "not_report", ""),
-        ("Lập báo cáo nhân sự quý 2", "unsupported", ""),
-        ("Lập báo cáo sản lượng sản xuất theo ca", "unsupported", ""),
-        ("Tạo báo cáo chất lượng riêng cho mã hàng PRODUCT-B", "unsupported", ""),
-        ("Chỉ tạo báo cáo xu hướng tổng lỗi theo tháng", "unsupported", ""),
-        ("Tạo báo cáo các Lot có trên 100 lỗi", "unsupported", ""),
-        ("Tạo báo cáo so sánh lỗi tháng 5/2026 và tháng 6/2026", "unsupported", ""),
-        ("Generate a production report by shift", "unsupported", ""),
-        ("品番別の生産量レポートを作成してください。", "unsupported", ""),
+        ("Lập báo cáo tổng hợp lỗi MES", "supported", "overview", "mes"),
+        ("Lập báo cáo về 7 lỗi nhiều nhất", "supported", "top_errors", "mes"),
+        ("Ban giám đốc cần tổng quan lỗi MES", "supported", "overview", "mes"),
+        ("役員向けにMESエラーの全体像を出してください", "supported", "overview", "mes"),
+        ("Ban giám đốc cần tổng quan nhân sự", "supported", "hr_executive", "hr"),
+        ("社長向けに人事組織の概要を出してください", "supported", "hr_executive", "hr"),
+        ("Ban giám đốc cần tình hình chung tồn kho WMS", "supported", "wms_executive", "wms"),
+        ("役員向けにWMS工程在庫の概要を出してください", "supported", "wms_executive", "wms"),
+        ("Lot nào có tổng lỗi cao nhất?", "not_report", "", ""),
+        ("Ban giám đốc gồm những ai?", "not_report", "", ""),
+        ("Tình hình Lot A thế nào?", "not_report", "", ""),
+        (
+            "Lập báo cáo tổng quan tồn kho công đoạn WMS",
+            "supported",
+            "wms_executive",
+            "wms",
+        ),
+        ("工程在庫レポートを作成してください。", "supported", "wms_executive", "wms"),
+        ("Lập báo cáo nhân sự quý 2", "unsupported", "", "hr"),
+        ("Lập báo cáo sản lượng sản xuất theo ca", "unsupported", "", "mes"),
+        ("Ban giám đốc cần tổng quan tình hình sản xuất", "unsupported", "", "mes"),
+        ("Tạo báo cáo chất lượng riêng cho mã hàng PRODUCT-B", "unsupported", "", "mes"),
+        ("Chỉ tạo báo cáo xu hướng tổng lỗi theo tháng", "unsupported", "", "mes"),
+        ("Tạo báo cáo các Lot có trên 100 lỗi", "unsupported", "", "mes"),
+        ("Tạo báo cáo so sánh lỗi tháng 5/2026 và tháng 6/2026", "unsupported", "", "mes"),
+        ("Generate a production report by shift", "unsupported", "", "mes"),
+        ("品番別の生産量レポートを作成してください。", "unsupported", "", "mes"),
     ],
 )
-def test_report_capability_fails_closed(question, status, shape):
+def test_report_capability_fails_closed(question, status, shape, domain):
     capability = report_capability(question)
 
     assert capability.status == status
     assert capability.shape == shape
+    assert capability.domain == domain
+
+
+@pytest.mark.parametrize(
+    ("question", "domain", "shape"),
+    [
+        # Động từ giao việc liền danh từ.
+        ("Cho xem báo cáo WMS", "wms", "wms_executive"),
+        ("Xin báo cáo WMS", "wms", "wms_executive"),
+        ("Cần báo cáo tồn kho WMS ngay", "wms", "wms_executive"),
+        ("Gửi báo cáo lỗi MES", "mes", "overview"),
+        # Động từ cách danh từ vài từ.
+        ("Cho anh coi báo cáo WMS", "wms", "wms_executive"),
+        ("Trình Chủ tịch báo cáo nhân sự", "hr", "hr_executive"),
+        ("Xuất file báo cáo tồn kho WMS", "wms", "wms_executive"),
+        # Danh từ đứng đầu kiểu khẩu lệnh.
+        ("Báo cáo headcount", "hr", "hr_executive"),
+        ("Báo cáo tồn kho WMS", "wms", "wms_executive"),
+        ("Báo cáo WMS đâu", "wms", "wms_executive"),
+        ("Báo cáo tồn kho và tồn công đoạn", "wms", "wms_executive"),
+        # Khẩu lệnh tổng quan nói tắt, không có chữ "báo cáo".
+        ("Tình hình tồn kho WMS hiện tại", "wms", "wms_executive"),
+        ("Tổng quan nhân sự", "hr", "hr_executive"),
+        ("Tình hình lỗi MES", "mes", "overview"),
+        # Slash/bang command.
+        ("/report wms", "wms", "wms_executive"),
+        ("!report mes", "mes", "overview"),
+        ("/baocao hr", "hr", "hr_executive"),
+        # Khẩu lệnh ngắn tiếng Nhật và tiếng Anh.
+        ("WMS在庫レポートを出力してください", "wms", "wms_executive"),
+        ("人事レポートを見せて", "hr", "hr_executive"),
+        ("MESエラー報告書が必要", "mes", "overview"),
+        ("Show report WMS inventory", "wms", "wms_executive"),
+        ("Export report MES errors", "mes", "overview"),
+    ],
+)
+def test_short_management_commands_open_report(question, domain, shape):
+    assert is_report_request(question) is True
+    capability = report_capability(question)
+
+    assert capability.status == "supported"
+    assert capability.domain == domain
+    assert capability.shape == shape
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        # Chữ "báo cáo" ở vai trò mô tả hoặc hỏi thủ tục.
+        "Lỗi này đã được báo cáo chưa?",
+        "Quy trình báo cáo lỗi là gì?",
+        "Mẫu báo cáo nào đang dùng?",
+        "Ai báo cáo sự cố này?",
+        # Khẩu lệnh nói tắt nhưng thu hẹp về một đối tượng cụ thể.
+        "Tình hình Lot 000866-05-000",
+        "Tình hình nhân sự phòng Kế toán",
+        "Tình hình Lot A thế nào?",
+        # Q&A tra cứu thường.
+        "Tổng số bản ghi lỗi trong hệ thống là bao nhiêu?",
+        "Trong Lot lỗi nhiều nhất, loại nào phổ biến nhất?",
+        "Dữ liệu MES snapshot được lấy từ đâu?",
+        "Mã hàng 3736-0008 có tổng bao nhiêu lỗi?",
+    ],
+)
+def test_short_command_matcher_keeps_normal_qa(question):
+    assert is_report_request(question) is False
+    assert report_capability(question).status == "not_report"
+
+
+def test_report_without_domain_fails_closed_without_defaulting_to_mes():
+    capability = report_capability("Tạo báo cáo")
+
+    assert capability.status == "unsupported"
+    assert capability.domain == ""
+    assert "lĩnh vực" in capability.reason
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Lập báo cáo chi phí lương theo phòng ban",
+        "Tạo báo cáo KPI cá nhân từng nhân viên",
+        "Xuất báo cáo tuyển dụng và nghỉ việc nhân sự",
+        "Báo cáo chấm công và tăng ca nhân sự",
+        "Lập báo cáo danh sách nhân viên toàn công ty",
+        "給与レポートを作成してください",
+        "人事評価レポートを出力",
+    ],
+)
+def test_hr_report_rejects_out_of_scope_concepts(question):
+    capability = report_capability(question)
+
+    assert capability.status == "unsupported"
+    assert capability.domain == "hr"
+    assert capability.shape == ""
+    assert "aggregate" in capability.reason
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Lập báo cáo tuổi hàng tồn kho WMS",
+        "Tạo báo cáo xuất nhập tồn WMS",
+        "Xuất báo cáo giá trị tồn kho WMS",
+        "Lập báo cáo vòng quay tồn kho WMS",
+        "在庫年齢レポートを作成",
+        "受払レポートを出力",
+    ],
+)
+def test_wms_report_rejects_out_of_scope_concepts(question):
+    capability = report_capability(question)
+
+    assert capability.status == "unsupported"
+    assert capability.domain == "wms"
+    assert capability.shape == ""
+    assert "WMS contract v4" in capability.reason
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Lập báo cáo tổng tồn kho WMS",
+        "Lập báo cáo xu hướng tồn kho WMS tháng 7/2026",
+        "Lập báo cáo WMS dưới tồn tối thiểu",
+        "Lập báo cáo WIP và bottleneck kho công đoạn WMS",
+        "Tạo báo cáo WMS riêng cho công đoạn PROC-A",
+        "WMS在庫推移レポートを作成してください。",
+        "WMS最低在庫レポートを作成してください。",
+    ],
+)
+def test_wms_report_capability_rejects_unverified_semantics(question):
+    capability = report_capability(question)
+
+    assert capability.status == "unsupported"
+    assert capability.shape == ""
+    assert "WMS contract v4" in capability.reason
 
 
 @pytest.mark.parametrize(
@@ -147,7 +301,7 @@ def test_report_period_parses_month_day_and_range():
 def test_report_plan_uses_error_time_and_guarded_views():
     plan = build_report_plan("Lập báo cáo top 3 lỗi tháng 6/2026")
 
-    assert len(plan.steps) == 5
+    assert len(plan.steps) == 6
     assert plan.limit == 3
     for step in plan.steps:
         assert "v_error_details" in step.sql
@@ -171,6 +325,149 @@ def test_report_agent_generates_verified_report_and_excludes_test_data(sql_agent
     assert "35" in summary
     assert report["snapshot_imported_at"] == "2026-06-20"
     assert report["observations"]
+    assert report["charts"][0]["svg"].startswith("<svg")
+    assert report["matrices"][0]["row_label"] == "Mã hàng"
+    assert report["matrices"][0]["columns"] == ["E1", "E2"]
+    assert "Ma trận" in render_html(report)
+
+
+def test_report_matrix_groups_same_error_id_across_names(sql_agent):
+    with sqlite3.connect(sql_agent.db_path) as connection:
+        connection.execute(
+            """
+            INSERT INTO error_catalog (
+                error_catalog_pk, error_id, error_type, process_id,
+                error_name_vi, is_canonical
+            ) VALUES (?, ?, ?, ?, ?, 1)
+            """,
+            (3, "E1", "1", "P3", "Tên E1 biến thể"),
+        )
+        connection.execute(
+            """
+            INSERT INTO error_events (
+                error_pk, lot_pk, error_catalog_pk, lot_id, process_id,
+                error_type, error_id, quantity, error_time
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (5, 1, 3, "LOT-A", "P3", "1", "E1", 7, "2026-06-04 08:00:00"),
+        )
+
+    report, _ = asyncio.run(
+        MesReportAgent(sql_agent).build_report(
+            "Lập báo cáo top 5 lỗi sản xuất tháng 6/2026"
+        )
+    )
+    matrix = report["matrices"][0]
+    product_a = next(row for row in matrix["rows"] if row["label"] == "PRODUCT-A")
+
+    assert matrix["columns"] == ["E1", "E2"]
+    assert product_a["values"] == [12, None]
+
+
+class FakeEmployeeDirectory:
+    @staticmethod
+    def count():
+        return 10
+
+    @staticmethod
+    def department_summaries():
+        return [
+            {"department": "設計 <A&B>", "size": 6},
+            {"department": "Sản xuất", "size": 4},
+        ]
+
+
+def test_hr_executive_report_is_aggregate_only_and_bilingual():
+    agent = HrExecutiveReportAgent(FakeEmployeeDirectory())
+
+    report_vi, _ = asyncio.run(
+        agent.build_report("Ban giám đốc cần tổng quan nhân sự", language="vi")
+    )
+    report_ja, summary_ja = asyncio.run(
+        agent.build_report("社長向けに人事組織の概要を出してください", language="ja")
+    )
+
+    assert report_vi["report_type"] == "hr_executive_report"
+    assert [item["value"] for item in report_vi["kpis"]] == [10, 2, 6]
+    assert report_vi["matrices"][0]["heatmap"] is False
+    assert set(report_vi["sections"][0]["columns"]) == {"department", "size"}
+    assert all("name" not in row for row in report_vi["sections"][0]["rows"])
+    assert "設計 &lt;A&amp;B&gt;" in report_vi["html_content"]
+    assert "個人一覧" in report_ja["governance"][0]
+    assert report_ja["charts"][0]["title"] == "部門別従業員数"
+    assert report_ja["matrices"][0]["columns"] == ["従業員数", "構成比"]
+    assert "チャート" in summary_ja
+
+
+class FakeCompatibleWmsDatabase:
+    available = True
+
+    @staticmethod
+    def compatibility():
+        return {"compatible": True}
+
+    @staticmethod
+    def get_executive_matrix_data(limit_processes):
+        assert limit_processes == 8
+        return {
+            "quality": {
+                "source_as_of": "2026-07-27 23:49:17",
+                "distinct_item_count": 3,
+                "distinct_process_code_count": 2,
+                "current_row_count": 3,
+                "mapped_process_row_count": 2,
+            },
+            "processes": [
+                {
+                    "process_id": "PROC-A",
+                    "process_name": "Công đoạn <A&B>",
+                    "process_mapped": 1,
+                    "distinct_item_count": 2,
+                }
+            ],
+            "items": ["ITEM-<A&1>"],
+            "matrix": {"PROC-A": {"ITEM-<A&1>": "12.5"}},
+        }
+
+
+class FakeIncompatibleWmsDatabase(FakeCompatibleWmsDatabase):
+    @staticmethod
+    def compatibility():
+        return {"compatible": False}
+
+
+def test_wms_report_agent_requires_compatible_snapshot():
+    assert MesWmsReportAgent(FakeCompatibleWmsDatabase()).available is True
+    assert MesWmsReportAgent(FakeIncompatibleWmsDatabase()).available is False
+
+
+def test_wms_report_agent_builds_safe_bilingual_artifacts():
+    agent = MesWmsReportAgent(FakeCompatibleWmsDatabase())
+
+    report_vi, summary_vi = asyncio.run(
+        agent.generate_report("Lập báo cáo tổng quan WMS", language="vi")
+    )
+    report_ja, summary_ja = asyncio.run(
+        agent.generate_report("WMS在庫レポートを作成", language="ja")
+    )
+
+    assert report_vi["report_type"] == "wms_executive_report"
+    assert [item["key"] for item in report_vi["kpis"]] == [
+        "distinct_item_count",
+        "distinct_process_count",
+        "process_mapping_coverage",
+    ]
+    assert report_vi["limitations"]
+    assert '<html lang="vi">' in report_vi["html_content"]
+    assert "Công đoạn &lt;A&amp;B&gt;" in report_vi["html_content"]
+    assert "ITEM-&lt;A&amp;1&gt;" in report_vi["html_content"]
+    assert "không tính tổng xuyên vật tư" in report_vi["observations"][1]
+    assert "tải xuống" in summary_vi
+
+    assert '<html lang="ja">' in report_ja["html_content"]
+    assert "WMS工程倉庫" in report_ja["title"]
+    assert "異なる資材間の合計は計算していません" in report_ja["observations"][1]
+    assert "ダウンロード" in summary_ja
 
 
 def test_report_agent_streams_plan_steps_and_artifact(sql_agent):
@@ -184,8 +481,8 @@ def test_report_agent_streams_plan_steps_and_artifact(sql_agent):
 
     events = asyncio.run(collect())
     assert events[0]["event"] == "plan"
-    assert len([item for item in events if item["event"] == "step_start"]) == 5
-    assert len([item for item in events if item["event"] == "step_result"]) == 5
+    assert len([item for item in events if item["event"] == "step_start"]) == 6
+    assert len([item for item in events if item["event"] == "step_result"]) == 6
     assert events[-1]["event"] == "report"
 
 
@@ -363,6 +660,33 @@ class ScriptedSqlAgent:
         )
 
 
+class TruncatedMatrixSqlAgent:
+    available = True
+
+    def __init__(self):
+        self.calls = 0
+
+    def execute(self, sql):
+        self.calls += 1
+        if self.calls == 1:
+            return MesSqlQueryResult(
+                columns=["total_error_qty", "error_record_count", "lot_count", "product_count"],
+                rows=[{"total_error_qty": 10, "error_record_count": 1, "lot_count": 1, "product_count": 1}],
+                imported_at="2026-06-20",
+                truncated=False,
+            )
+        if self.calls == 6:
+            return MesSqlQueryResult(
+                columns=["product_id", "error_label", "total_error_qty"],
+                rows=[{"product_id": "PRODUCT-A", "error_label": "E1", "total_error_qty": 10}],
+                imported_at="2026-06-20",
+                truncated=True,
+            )
+        return MesSqlQueryResult(
+            columns=[], rows=[], imported_at="2026-06-20", truncated=False
+        )
+
+
 def test_report_agent_continues_after_guarded_sql_step_failure():
     async def collect():
         events = []
@@ -376,8 +700,18 @@ def test_report_agent_continues_after_guarded_sql_step_failure():
     results = [event for event in events if event["event"] == "step_result"]
     report = events[-1]["report"]
 
-    assert len(results) == 5
+    assert len(results) == 6
     assert results[1]["step_id"] == "top_lots"
     assert results[1]["status"] == "error"
     assert any("Top 5 Lot" in note for note in report["limitations"])
     assert events[-1]["event"] == "report"
+
+
+def test_report_agent_warns_when_matrix_is_truncated():
+    report, _ = asyncio.run(
+        MesReportAgent(TruncatedMatrixSqlAgent()).build_report(
+            "Lập báo cáo lỗi sản xuất"
+        )
+    )
+
+    assert "Ma trận điều hành bị cắt bớt theo giới hạn dòng truy vấn." in report["limitations"]

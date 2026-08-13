@@ -1,5 +1,10 @@
 # Triển khai Docker web nội bộ Meibook
 
+> **Ranh giới môi trường:** Phần 8 là runbook Dev cho
+> `/home/jkl/Code/VLLM-PD-dev` và `docker-compose.dev.yml`. Các phần dùng
+> `/home/jkl/Code/VLLM-PD`, port `8001` hoặc `docker-compose.web.yml` là
+> Production và không được chạy khi đang hoàn thiện WMS Phase 2C Dev.
+
 Tài liệu này mô tả cách triển khai Meibook theo cấu hình Docker web hiện tại
 trong repository `VLLM-PD`. Chế độ này phục vụ web hỏi đáp MKAC/MES, Qdrant,
 LiteLLM, SQLite nhân sự, MES snapshot và Gmail send action. Coding Agent tắt
@@ -100,8 +105,16 @@ AZURE_OPENAI_ENDPOINT=...
 QWEN_CHAT_API_BASE=http://192.168.10.124:11434
 QWEN_CHAT_NGROK_API_BASE=https://carless-overarch-establish.ngrok-free.dev
 QWEN_SMALL_API_BASE=http://host.docker.internal:11435
-QWEN_CODER_API_BASE=https://d3d2-2405-4803-f16d-d2f0-b282-e2ff-fe05-dfe9.ngrok-free.app/v1
-QWEN_CODER_API_KEY=sk-local
+QWEN_CODER_LAN_API_BASE=http://192.168.10.14:11434/v1
+QWEN_CODER_LAN_API_KEY=sk-local
+QWEN_CODER_NGROK_API_BASE=https://your-qwen-coder-tunnel.example/v1
+QWEN_CODER_NGROK_API_KEY=sk-local
+
+# Role-specific cloud fallback credentials (Azure is attempted before OpenAI).
+OPENAI_API_KEY=...
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_ENDPOINT=https://your-resource-name.openai.azure.com/openai/v1
+CHAT_FALLBACK_MODEL=azure-chat-fallback
 
 TRANSLATION_MODEL=local-qwen-small
 MES_SQL_AGENT_MODEL=local-qwen-coder
@@ -271,7 +284,95 @@ Kỳ vọng hiện tại:
 }
 ```
 
-## 8. Index MKAC từ Markdown curated
+## 8. Import WMS kho công đoạn MKHC — contract v4 / Phase 2C Dev
+
+> **Chỉ chạy trong Dev:** mọi lệnh trong phần này phải dùng checkout
+> `/home/jkl/Code/VLLM-PD-dev`, nhánh `dev`, `docker-compose.dev.yml`, app port
+> `8002` và bind mount Dev. Không thay bằng Compose hoặc port Production.
+
+WMS dùng snapshot riêng `data/mes_wms.sqlite`; không nhập vào `mes.sqlite` và
+không chạy nguyên Oracle export. Importer chỉ parse INSERT thuộc allowlist, bỏ
+qua database link/DDL/procedure/grant/bảng `_TEST` và field nhạy cảm. Contract v4
+tách `CURRENT_BALANCE`, `LEGACY_ARCHIVE` và `RAW_TRANSACTION_AUDIT` với evidence,
+capability và freshness riêng.
+
+Trước mọi dry-run/import/restart phải xác minh đúng Dev; không in toàn Compose
+config vì có thể làm lộ secret đã resolve:
+
+```bash
+cd /home/jkl/Code/VLLM-PD-dev
+pwd                         # /home/jkl/Code/VLLM-PD-dev
+git branch --show-current   # dev
+test -f docker-compose.dev.yml
+docker compose -f docker-compose.dev.yml config -q
+docker compose -f docker-compose.dev.yml config --services
+docker compose -f docker-compose.dev.yml ps
+```
+
+Kiểm tra chọn lọc resolved Compose và `docker inspect`: project `meibook-dev`,
+container `meibook-web-dev`, ports `8002/4001/6334`, bind source
+`/home/jkl/Code/VLLM-PD-dev/data` vào `/app/data`. Nếu lệch, dừng thay vì fallback
+sang Production.
+
+Stage export trong vùng Dev-approved, ví dụ
+`/home/jkl/Code/VLLM-PD-dev/data/staging/mes_wms_export.sql`. Không dùng raw path
+từ checkout Production. Dry-run machine-readable phải pass và duplicate count
+phải bằng 0:
+
+```bash
+scripts/meibook-python scripts/import_mes_wms.py \
+  --source /home/jkl/Code/VLLM-PD-dev/data/staging/mes_wms_export.sql \
+  --schema database/schema/mes_wms.sql \
+  --dry-run \
+  --report-json -
+```
+
+`PW_CURRENT_ITEM` bắt buộc có dữ liệu và unique theo `(process_id,item_code)`.
+`PW_PROCESS`, `PW_SNAPSHORT`, `PW_TRANSACTION`, `PW_TRANSACTION_DEFINE`,
+`PW_TRANS_DETAIL` optional; không thấy INSERT được báo `NOT_OBSERVED_IN_EXPORT`.
+Chỉ khi report pass mới import atomically vào Dev:
+
+```bash
+scripts/meibook-python scripts/import_mes_wms.py \
+  --source /home/jkl/Code/VLLM-PD-dev/data/staging/mes_wms_export.sql \
+  --schema database/schema/mes_wms.sql \
+  --db /home/jkl/Code/VLLM-PD-dev/data/mes_wms.sqlite
+scripts/meibook-python scripts/import_mes_wms.py \
+  --validate-snapshot /home/jkl/Code/VLLM-PD-dev/data/mes_wms.sqlite \
+  --report-json -
+```
+
+Cấu hình Dev container:
+
+```env
+MES_WMS_DATABASE_ENABLED=true
+MES_WMS_DATABASE_PATH=/app/data/mes_wms.sqlite
+```
+
+Smoke sau khi nạp code/runtime Dev:
+
+```bash
+curl -fsS http://127.0.0.1:8002/health | jq '.mes_wms_database'
+```
+
+Syntax legacy archive: nêu đủ mã vật tư + lot vật tư + công đoạn, tùy chọn khoảng
+ngày ISO và phân trang, ví dụ: `WMS snapshot mã vật tư ITEM-A lot vật tư LOT-A
+công đoạn PROC-A từ 2026-01-01 đến 2026-01-31 trang 1 page size 20`.
+
+Current authoritative theo `(process_id,item_code)` và không trả current theo lot.
+Cross-era presence luôn là diagnostic `SUPPRESSED`: archive có/không có exact-key,
+current `NOT_EVALUATED`, không kết luận hết tồn/nhập-xuất/delta/trend. Raw audit chỉ
+hiển thị code/status/date/quantity thô; không gọi completed movement, không suy
+diễn direction/net. Khi chỉ thấy definition/detail nhưng không thấy header,
+evidence là `PARTIAL_SOURCE_OBSERVED` và capability audit bị `SUPPRESSED` với
+`RAW_TRANSACTION_HEADER_NOT_OBSERVED`; không diễn giải thành dataset vắng hoàn
+toàn. UOM/cross-item totals, min-stock, HSD/window-time, trend, completed
+movement, WIP, bottleneck và valuation tiếp tục bị khóa.
+
+Production giữ `MES_WMS_DATABASE_ENABLED=false` đến khi release/data lifecycle
+riêng được phê duyệt; tuyệt đối không copy SQLite Dev sang Production.
+
+## 9. Index MKAC từ Markdown curated
 
 Index tài liệu MKAC:
 
@@ -644,13 +745,13 @@ MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml restart ap
 
 ## 16. Test sau deploy
 
-Test nhanh:
+Test nhanh trên host qua môi trường Python được quản lý:
 
 ```bash
-pytest tests/test_mes_database.py
-pytest tests/test_mes_sql_agent.py
-pytest tests/test_query_routing.py
-pytest tests/test_gmail_sender.py
+scripts/meibook-python -m pytest tests/test_mes_database.py
+scripts/meibook-python -m pytest tests/test_mes_sql_agent.py
+scripts/meibook-python -m pytest tests/test_query_routing.py
+scripts/meibook-python -m pytest tests/test_gmail_sender.py
 ```
 
 Test prompt đầy đủ:

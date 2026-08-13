@@ -6,6 +6,7 @@ Quản lý các REST API phục vụ cho RAG (Upload, Index, Query) và AI Agent
 """
 
 import asyncio
+import inspect
 import json
 import logging
 import os
@@ -33,8 +34,13 @@ from src.actions.calendar_action import (
     CalendarActionError,
     CalendarActionService,
 )
-from src.actions.report_agent import MesReportAgent, render_html
-from src.actions.report_intent import ReportCapability, report_capability
+from src.actions.report_agent import (
+    HrExecutiveReportAgent,
+    MesReportAgent,
+    MesWmsReportAgent,
+    render_html,
+)
+from src.actions.report_intent import ReportCapability, report_capability_for_mode
 from src.rag.parser import (
     DocumentLimitError,
     DocumentParser,
@@ -48,10 +54,19 @@ from src.rag.media_paths import resolve_processed_image_path
 from src.auth.employee_directory import EmployeeDirectory
 from src.auth.employee_intent import normalize_text
 from src.integrations.mes_database import MesDatabase
-from src.integrations.mes_query_service import MesQueryService
+from src.integrations.mes_query_service import (
+    MesQueryOutcome,
+    MesQueryService,
+    MesQueryStreamOutcome,
+)
+from src.integrations.mes_wms_database import MesWmsDatabase
 from src.integrations.gmail_sender import (
+    EmailDraft,
+    EmailDraftStore,
     GmailSender,
     GmailSenderError,
+    is_email_cancel_request,
+    is_email_confirm_request,
     parse_email_send_command,
     try_parse_email_send_command,
 )
@@ -70,6 +85,8 @@ from src.api.config import (
     MAX_UPLOAD_SIZE_MB,
     MES_QUERY_CACHE_TTL_SECONDS,
     MIN_QUERY_RESPONSE_SECONDS,
+    REPORT_STEP_PACING_SECONDS,
+    WMS_VERIFICATION_STEP_PACING_SECONDS,
     MKAC_PAGE_IMAGE_DIR,
     PREVIEW_IMAGE_EXTENSIONS,
     QDRANT_HOST,
@@ -99,6 +116,7 @@ from src.api.schemas import (
     EmployeeResponse,
     QueryRequest,
     QueryResponse,
+    WmsAnswerMetadata,
     ResearchDemoResponse,
     ResearchTopic,
     ResearchTopicsResponse,
@@ -107,8 +125,11 @@ from src.api.schemas import (
 )
 from src.api.sse import (
     query_processing_status_key,
+    sse_agent_plan,
     sse_event,
     sse_status,
+    sse_tool_result,
+    sse_tool_start,
 )
 from src.api.helpers import (
     build_direct_email_body,
@@ -148,12 +169,16 @@ doc_parser: Optional[DocumentParser] = None
 rag_pipeline: Optional[RAGPipeline] = None
 mes_query_service: Optional[MesQueryService] = None
 mes_report_agent: Optional[MesReportAgent] = None
+mes_wms_report_agent: Optional[MesWmsReportAgent] = None
+hr_report_agent: Optional[HrExecutiveReportAgent] = None
 calendar_action_service: Optional[CalendarActionService] = None
 artifact_store = ArtifactStore()
 web_searcher: Optional[WebSearcher] = None
 employee_directory = EmployeeDirectory(EMPLOYEE_DIRECTORY_DB_PATH)
 mes_database = MesDatabase.from_env()
+mes_wms_database = MesWmsDatabase.from_env()
 gmail_sender = GmailSender.from_env()
+email_draft_store = EmailDraftStore()
 translation_service = TranslationService.from_env()
 rate_limit_events: Dict[str, Deque[float]] = defaultdict(deque)
 rate_limit_lock = asyncio.Lock()
@@ -203,6 +228,14 @@ query_metrics: Dict[str, Any] = {
     "by_scope": defaultdict(int),
     "by_mode": defaultdict(int),
     "latency_ms": deque(maxlen=500),  # mẫu để tính p50/p95
+    "wms_verification": {
+        "by_source_kind": defaultdict(int),
+        "by_outcome": defaultdict(int),
+        "duration_ms": deque(maxlen=500),
+        "snapshot_validation_ms": deque(maxlen=500),
+        "answer_validation_ms": deque(maxlen=500),
+        "presentation_pacing_ms": deque(maxlen=500),
+    },
 }
 query_metrics_lock = asyncio.Lock()
 upload_processing_semaphore = asyncio.Semaphore(UPLOAD_PROCESSING_CONCURRENCY)
@@ -282,7 +315,8 @@ async def lifespan(app: FastAPI):
     """
     global embedder, vector_store, mkac_vector_store, docjp_vector_store
     global doc_parser, rag_pipeline
-    global mes_query_service, mes_report_agent, calendar_action_service
+    global mes_query_service, mes_report_agent, mes_wms_report_agent, hr_report_agent
+    global calendar_action_service
     global web_searcher
 
     logger.info("🚀 Starting Meibook API Gateway on Machine 2...")
@@ -315,12 +349,16 @@ async def lifespan(app: FastAPI):
         docjp_vector_store=docjp_vector_store,
         web_searcher=web_searcher,
         mes_database=mes_database,
+        mes_wms_database=mes_wms_database,
     )
     mes_query_service = MesQueryService(
         mes_database=mes_database,
         mes_sql_agent=rag_pipeline.mes_sql_agent,
+        mes_wms_database=mes_wms_database,
     )
     mes_report_agent = MesReportAgent(rag_pipeline.mes_sql_agent)
+    mes_wms_report_agent = MesWmsReportAgent(mes_wms_database)
+    hr_report_agent = HrExecutiveReportAgent(employee_directory)
     calendar_action_service = CalendarActionService(
         tool_runner=rag_pipeline.run_calendar_tool,
         planner=rag_pipeline.plan_calendar_event,
@@ -392,16 +430,20 @@ async def set_cached_query_response(
 
 
 def build_query_cache_key(req: QueryRequest) -> Optional[str]:
-    """query_cache_key có gắn phiên bản snapshot MES để re-import tự vô hiệu."""
+    """Attach only the snapshot version relevant to the requested domain."""
     if calendar_action_service and calendar_action_service.is_action_request(req.question):
         return None
     if question_uses_employee_context_reference(req.question):
+        return None
+    # WMS answers carry contract/availability metadata that must not survive a
+    # rebuild or feature-flag change inside the long MES-style response cache.
+    if req.mode == "wms" or MesWmsDatabase.is_wms_question(req.question):
         return None
     snapshot_version = ""
     if req.mode == "mes" and mes_database is not None:
         try:
             snapshot_version = mes_database.snapshot_version()
-        except Exception:  # pragma: no cover - phòng lỗi đọc metadata
+        except Exception:  # pragma: no cover - defensive metadata read
             snapshot_version = ""
     return query_cache_key(req, snapshot_version=snapshot_version)
 
@@ -427,7 +469,10 @@ def normalize_research_request(req: QueryRequest) -> QueryRequest:
 
 def question_uses_employee_context_reference(question: str) -> bool:
     normalized = normalize_text(question)
-    if any(marker in normalized for marker in EMPLOYEE_CONTEXT_REFERENCE_MARKERS):
+    if any(
+        re.search(rf"\b{re.escape(marker)}\b", normalized)
+        for marker in EMPLOYEE_CONTEXT_REFERENCE_MARKERS
+    ):
         return True
     return any(marker in (question or "") for marker in ("この人", "その人", "この方", "その方", "彼", "彼女"))
 
@@ -632,6 +677,35 @@ def resolve_mes_context_question(req: QueryRequest, question: str) -> str:
     return rewritten
 
 
+async def record_wms_verification_metric(
+    *,
+    source_kind: str,
+    outcome: str,
+    duration_ms: float,
+    snapshot_validation_ms: float,
+    answer_validation_ms: float,
+    presentation_pacing_ms: float,
+) -> None:
+    """Record aggregate WMS timing without request content."""
+    async with query_metrics_lock:
+        wms_metrics = query_metrics["wms_verification"]
+        wms_metrics["by_source_kind"][source_kind] += 1
+        wms_metrics["by_outcome"][outcome] += 1
+        wms_metrics["duration_ms"].append(duration_ms)
+        wms_metrics["snapshot_validation_ms"].append(snapshot_validation_ms)
+        wms_metrics["answer_validation_ms"].append(answer_validation_ms)
+        wms_metrics.setdefault("presentation_pacing_ms", deque(maxlen=500)).append(
+            presentation_pacing_ms
+        )
+
+
+async def pace_wms_presentation(multiplier: float = 1.0) -> float:
+    """Pause an already-safe WMS presentation milestone and report its duration."""
+    started_at = time.monotonic()
+    await pace_wms_verification_step(multiplier)
+    return (time.monotonic() - started_at) * 1000
+
+
 async def record_query_metric(
     *,
     mode: str,
@@ -671,6 +745,27 @@ def _percentile(values: list[float], pct: float) -> float:
     return round(ordered[rank], 1)
 
 
+async def pace_report_step(multiplier: float = 1.0) -> None:
+    """Giãn nhịp phát SSE của report cho khớp cảm giác agent đang suy luận.
+
+    Report deterministic trả kết quả gần như tức thời; nếu phát hết event trong
+    vài chục ms thì timeline và thẻ báo cáo bật ra cùng lúc. Hàm này chỉ delay
+    thời điểm phát, không sinh/sửa dữ liệu báo cáo.
+    """
+    if REPORT_STEP_PACING_SECONDS <= 0:
+        return
+    await asyncio.sleep(REPORT_STEP_PACING_SECONDS * max(0.0, multiplier))
+
+
+async def pace_wms_verification_step(multiplier: float = 1.0) -> None:
+    """Optionally space out already-completed WMS verification milestones."""
+    if WMS_VERIFICATION_STEP_PACING_SECONDS <= 0:
+        return
+    await asyncio.sleep(
+        WMS_VERIFICATION_STEP_PACING_SECONDS * max(0.0, multiplier)
+    )
+
+
 async def wait_for_min_query_latency(started_at: float) -> None:
     """Keep very fast prepared/cache answers feeling like a normal request."""
     if MIN_QUERY_RESPONSE_SECONDS <= 0:
@@ -684,7 +779,13 @@ def verify_mkac_employee(employee_id: Optional[str]) -> EmployeeResponse:
     """Return the employee record or reject MKAC access."""
     employee = employee_directory.profile(employee_id or "")
     if not employee:
-        raise HTTPException(status_code=403, detail="Mã nhân viên không hợp lệ.")
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "INVALID_EMPLOYEE_ID",
+                "message": "Mã nhân viên không hợp lệ.",
+            },
+        )
     return EmployeeResponse(
         id=employee["id"],
         name=employee["name"],
@@ -700,7 +801,7 @@ def verify_mkac_employee(employee_id: Optional[str]) -> EmployeeResponse:
 
 
 def authorize_query(req: QueryRequest) -> Optional[EmployeeResponse]:
-    if req.mode not in {"mkac", "mes"}:
+    if req.mode not in {"mkac", "mes", "wms"}:
         return None
     return verify_mkac_employee(req.employee_id)
 
@@ -761,10 +862,16 @@ async def localize_query_request(req: QueryRequest) -> QueryRequest:
     """Translate Japanese UI questions into Vietnamese for Vietnamese-first routes."""
     if req.ui_language != "ja" or translation_service is None:
         return req
-    # MES có bộ rule deterministic đọc được các marker Nhật cơ bản. Research
-    # dùng kho DocJP tiếng Nhật, nên dịch câu hỏi Nhật sang tiếng Việt sẽ làm
-    # nhiễu retrieval và có thể dính lời nhắc của lớp dịch vào câu query.
-    if req.mode in {"mes", "research"}:
+    # Action/report detectors đọc trực tiếp marker Nhật; dịch trước có thể làm
+    # lẫn từ "email" hoặc mất audience/domain marker rồi route sai. MES có bộ
+    # rule Nhật riêng, Research dùng kho DocJP tiếng Nhật nên cũng giữ nguyên.
+    if (
+        req.mode in {"mes", "wms", "research"}
+        or report_capability_for_mode(req.question, req.mode).is_report
+        or is_email_confirm_request(req.question)
+        or is_email_cancel_request(req.question)
+        or try_parse_email_send_command(req.question) is not None
+    ):
         return req
     try:
         translated = await translation_service.translate_query(
@@ -787,9 +894,16 @@ async def localize_query_request(req: QueryRequest) -> QueryRequest:
     return req.model_copy(update={"question": translated.backend_question})
 
 
-async def translate_answer_for_ui(answer: str, req: QueryRequest) -> str:
+async def translate_answer_for_ui(
+    answer: str,
+    req: QueryRequest,
+    *,
+    answer_scope: str = "",
+) -> str:
     """Translate Vietnamese backend answers back to the selected UI language."""
     if req.ui_language != "ja" or translation_service is None:
+        return answer
+    if answer_scope == "wms_database":
         return answer
     if req.mode == "research" and re.search(r"[\u3040-\u30ff\u3400-\u9fff]", answer or ""):
         return answer
@@ -854,25 +968,333 @@ def ensure_query_services_ready() -> None:
         raise HTTPException(status_code=503, detail="MES query service is not ready.")
 
 
-async def route_query(
+def _mes_method_kwargs(method: Any, req: QueryRequest, question: str) -> Dict[str, Any]:
+    """Call legacy tuple services without masking TypeError raised inside them."""
+    parameters = inspect.signature(method).parameters
+    kwargs: Dict[str, Any] = {"question": question, "model": req.model}
+    if "language" in parameters:
+        kwargs["language"] = req.ui_language
+    return kwargs
+
+
+def safe_wms_metadata(payload: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Validate and allowlist WMS metadata before any REST/SSE serialization."""
+    if not payload:
+        return None
+    return WmsAnswerMetadata.model_validate(payload).model_dump()
+
+
+def safe_wms_metadata_model(
+    payload: Optional[Dict[str, Any]],
+) -> Optional[WmsAnswerMetadata]:
+    """Build the response model through the same allowlisted metadata gate."""
+    safe_payload = safe_wms_metadata(payload)
+    return WmsAnswerMetadata.model_validate(safe_payload) if safe_payload else None
+
+
+def wms_suppressed_outcome(
+    req: QueryRequest,
+    *,
+    intent: str,
+    reason_code: str,
+) -> MesQueryOutcome:
+    """Return a public, data-free WMS refusal when validation cannot complete."""
+    answer = (
+        "WMSスナップショットまたは回答条件を検証できないため、在庫情報は表示しません。"
+        if req.ui_language == "ja"
+        else "Không thể xác minh WMS snapshot hoặc điều kiện trả lời nên tôi không hiển thị số liệu tồn kho."
+    )
+    return MesQueryOutcome(
+        answer=answer,
+        results=[],
+        routed_model="wms-validation",
+        answer_scope="wms_database",
+        wms_metadata={
+            "intent": intent,
+            "domain": "SUPPRESSED",
+            "status": "SUPPRESSED",
+            "reason_codes": [reason_code],
+            "source_as_of_state": "UNAVAILABLE",
+            "source_timezone": "unverified",
+        },
+    )
+
+
+def validated_wms_metadata_or_none(
+    req: QueryRequest,
+    outcome: MesQueryOutcome,
+) -> tuple[MesQueryOutcome, Optional[Dict[str, Any]]]:
+    """Never permit invalid WMS metadata to reach the stream or REST payload."""
+    try:
+        metadata = safe_wms_metadata(outcome.wms_metadata)
+    except Exception:
+        suppressed = wms_suppressed_outcome(
+            req,
+            intent="wms_metadata_validation_suppressed",
+            reason_code="WMS_METADATA_VALIDATION_FAILED",
+        )
+        return suppressed, safe_wms_metadata(suppressed.wms_metadata)
+    if metadata is None:
+        suppressed = wms_suppressed_outcome(
+            req,
+            intent="wms_metadata_validation_suppressed",
+            reason_code="WMS_METADATA_VALIDATION_FAILED",
+        )
+        return suppressed, safe_wms_metadata(suppressed.wms_metadata)
+    return outcome, metadata
+
+
+def wms_verification_copy(language: str) -> Dict[str, str]:
+    if language == "ja":
+        return {
+            "title": "WMS検証ステップ",
+            "snapshot": "WMSスナップショットと契約を検証",
+            "answer": "回答範囲と根拠を確認",
+            "snapshot_done": "スナップショットとデータ契約を確認しました",
+            "snapshot_suppressed": "スナップショットが在庫情報の表示を許可していません",
+            "prepared_done": "準備済みの内容が許可リストと一致しました",
+            "query_done": "決定的なWMS照会の範囲を確認しました",
+        }
+    return {
+        "title": "Các bước kiểm chứng WMS",
+        "snapshot": "Kiểm tra snapshot và data contract WMS",
+        "answer": "Kiểm tra phạm vi và căn cứ trả lời",
+        "snapshot_done": "Đã xác minh snapshot và data contract WMS",
+        "snapshot_suppressed": "Snapshot không cho phép hiển thị số liệu tồn kho",
+        "prepared_done": "Nội dung chuẩn bị đã khớp allowlist",
+        "query_done": "Đã xác minh phạm vi truy vấn WMS tất định",
+    }
+
+
+async def _wms_verification_event_generator(
+    req: QueryRequest,
+    *,
+    request_started_at: float,
+):
+    """Run an isolated, data-backed WMS validation workflow over SSE.
+
+    The events expose only completed deterministic milestones. They never expose
+    raw rows, SQL, user/session identifiers, prompts, or model reasoning.
+    """
+    copy = wms_verification_copy(req.ui_language)
+    presentation_pacing_ms = 0.0
+    yield sse_status(req, "received")
+    presentation_pacing_ms += await pace_wms_presentation(0.45)
+    yield sse_status(req, "routing")
+    presentation_pacing_ms += await pace_wms_presentation(0.45)
+    yield sse_status(req, "wms")
+    presentation_pacing_ms += await pace_wms_presentation(0.45)
+    yield sse_agent_plan(
+        title=copy["title"],
+        workflow="wms_verification",
+        steps=[
+            {"id": "wms_snapshot", "title": copy["snapshot"]},
+            {"id": "wms_answer", "title": copy["answer"]},
+        ],
+    )
+    yield sse_tool_start(
+        step_id="wms_snapshot",
+        tool="validate_wms_snapshot",
+        title=copy["snapshot"],
+    )
+    snapshot_validation_started_at = time.monotonic()
+    try:
+        snapshot_outcome = await route_query_outcome(req)
+    except asyncio.CancelledError:
+        logger.info("WMS verification cancelled during snapshot validation.")
+        raise
+    except Exception:
+        snapshot_outcome = wms_suppressed_outcome(
+            req,
+            intent="wms_snapshot_validation_suppressed",
+            reason_code="WMS_SNAPSHOT_QUERY_ERROR",
+        )
+    snapshot_outcome, metadata = validated_wms_metadata_or_none(
+        req,
+        snapshot_outcome,
+    )
+    status = str((metadata or {}).get("status") or "SUPPRESSED")
+    snapshot_validation_ms = (time.monotonic() - snapshot_validation_started_at) * 1000
+    presentation_pacing_ms += await pace_wms_presentation()
+    yield sse_tool_result(
+        step_id="wms_snapshot",
+        status="done" if status in {"AVAILABLE", "PARTIAL"} else "error",
+        summary=(
+            copy["snapshot_done"]
+            if status in {"AVAILABLE", "PARTIAL"}
+            else copy["snapshot_suppressed"]
+        ),
+    )
+
+    yield sse_tool_start(
+        step_id="wms_answer",
+        tool="validate_wms_answer_scope",
+        title=copy["answer"],
+    )
+    answer_validation_started_at = time.monotonic()
+    prepared_outcome = resolve_wms_prepared_response(req)
+    if req.quick_answer_id and prepared_outcome is None:
+        final_outcome = wms_prepared_validation_failure(req)
+        final_summary = copy["snapshot_suppressed"]
+        source_kind = "prepared"
+    elif status not in {"AVAILABLE", "PARTIAL"}:
+        final_outcome = snapshot_outcome
+        final_summary = copy["snapshot_suppressed"]
+        source_kind = "snapshot"
+    elif prepared_outcome is not None:
+        try:
+            prepared_metadata = safe_wms_metadata(prepared_outcome.wms_metadata) or {}
+        except Exception:
+            prepared_metadata = {}
+        contract_matches = all(
+            prepared_metadata.get(key) == (metadata or {}).get(key)
+            for key in (
+                "contract_version",
+                "data_contract_version",
+                "semantic_contract_version",
+                "semantic_epoch",
+            )
+        )
+        if not contract_matches:
+            final_outcome = wms_prepared_validation_failure(req)
+            final_summary = copy["snapshot_suppressed"]
+        else:
+            final_outcome = MesQueryOutcome(
+                answer=prepared_outcome.answer,
+                results=[],
+                routed_model=prepared_outcome.routed_model,
+                answer_scope="wms_database",
+                wms_metadata=metadata,
+            )
+            final_summary = copy["prepared_done"]
+        source_kind = "prepared"
+        logger.info(
+            "wms_prepared_validation matched=%s contract_matches=%s",
+            True,
+            contract_matches,
+        )
+    else:
+        final_outcome = snapshot_outcome
+        final_summary = copy["query_done"]
+        source_kind = "snapshot"
+
+    final_outcome, final_metadata = validated_wms_metadata_or_none(
+        req,
+        final_outcome,
+    )
+    answer_validation_ms = (time.monotonic() - answer_validation_started_at) * 1000
+    presentation_pacing_ms += await pace_wms_presentation()
+    yield sse_tool_result(
+        step_id="wms_answer",
+        status=(
+            "done"
+            if str((final_metadata or {}).get("status")) in {"AVAILABLE", "PARTIAL"}
+            else "error"
+        ),
+        summary=final_summary,
+    )
+    yield sse_status(req, "finalizing")
+    await wait_for_min_query_latency(request_started_at)
+    yield sse_event({"type": "sources", "sources": []})
+    yield sse_event(
+        {
+            "type": "meta",
+            "model": final_outcome.routed_model,
+            "mode": "wms",
+            "answer_scope": final_outcome.answer_scope,
+            "wms_metadata": final_metadata,
+            "workflow": "wms_verification",
+            "source_kind": source_kind,
+            "cache": False,
+        }
+    )
+    yield sse_event({"type": "token", "content": final_outcome.answer})
+    yield sse_event({"type": "agent_done"})
+    yield sse_event({"type": "done"})
+    verification_outcome = (
+        "verified"
+        if str((final_metadata or {}).get("status")) in {"AVAILABLE", "PARTIAL"}
+        else "suppressed"
+    )
+    duration_ms = (time.monotonic() - request_started_at) * 1000
+    logger.info(
+        "wms_verification_complete source_kind=%s outcome=%s duration_ms=%d",
+        source_kind,
+        verification_outcome,
+        int(duration_ms),
+    )
+    await record_wms_verification_metric(
+        source_kind=source_kind,
+        outcome=verification_outcome,
+        duration_ms=duration_ms,
+        snapshot_validation_ms=snapshot_validation_ms,
+        answer_validation_ms=answer_validation_ms,
+        presentation_pacing_ms=presentation_pacing_ms,
+    )
+    await record_query_metric(
+        mode=req.mode,
+        ui_language=req.ui_language,
+        answer_scope=final_outcome.answer_scope,
+        cache_hit=False,
+        latency_ms=duration_ms,
+    )
+
+
+async def wms_verification_event_generator(
+    req: QueryRequest,
+    *,
+    request_started_at: float,
+):
+    """Stop cleanly if the SSE task is cancelled before final payloads."""
+    try:
+        async for event in _wms_verification_event_generator(
+            req,
+            request_started_at=request_started_at,
+        ):
+            yield event
+    except asyncio.CancelledError:
+        logger.info("WMS verification stream cancelled before completion.")
+        raise
+
+
+async def route_query_outcome(
     req: QueryRequest,
     *,
     question: Optional[str] = None,
     current_user_context: Optional[Dict[str, Any]] = None,
-) -> tuple[str, list, str, str]:
-    """Route by mode so MES never falls through to document RAG."""
+) -> MesQueryOutcome:
+    """Route by mode and preserve additive WMS metadata."""
     ensure_query_services_ready()
     routed_question = question or req.question
+    if req.mode == "wms":
+        logger.info("Routing query to isolated WMS service.")
+        wms_method = getattr(mes_query_service, "query_wms_outcome", None)
+        if not callable(wms_method):
+            raise HTTPException(
+                status_code=503,
+                detail="WMS query service is not available.",
+            )
+        return await wms_method(
+            question=routed_question,
+            model=req.model,
+            language=req.ui_language,
+        )
     if req.mode == "mes":
         routed_question = resolve_mes_context_question(req, routed_question)
         logger.info("Routing query to MES service.")
-        return await mes_query_service.query(
-            question=routed_question,
-            model=req.model,
+        if hasattr(mes_query_service, "query_outcome"):
+            return await mes_query_service.query_outcome(
+                question=routed_question,
+                model=req.model,
+                language=req.ui_language,
+            )
+        answer, results, model, scope = await mes_query_service.query(
+            **_mes_method_kwargs(mes_query_service.query, req, routed_question)
         )
+        return MesQueryOutcome(answer, results, model, scope)
     if req.mode in {"mkac", "research"}:
         logger.info("Routing query to %s RAG service.", req.mode)
-        return await rag_pipeline.query(
+        answer, results, model, scope = await rag_pipeline.query(
             session_id=req.session_id,
             question=routed_question,
             model=req.model,
@@ -882,26 +1304,69 @@ async def route_query(
             research_topic=validate_research_topic(req.research_topic),
             research_scope=req.research_scope,
         )
+        return MesQueryOutcome(answer, results, model, scope)
     raise HTTPException(status_code=400, detail=f"Unsupported query mode: {req.mode}")
 
 
-async def route_query_stream(
+async def route_query(
+    req: QueryRequest,
+    *,
+    question: Optional[str] = None,
+    current_user_context: Optional[Dict[str, Any]] = None,
+) -> tuple[str, list, str, str]:
+    return (
+        await route_query_outcome(
+            req,
+            question=question,
+            current_user_context=current_user_context,
+        )
+    ).as_tuple()
+
+
+async def route_query_stream_outcome(
     req: QueryRequest,
     *,
     current_user_context: Optional[Dict[str, Any]] = None,
-):
-    """Streaming variant of route_query with explicit mode separation."""
+) -> MesQueryStreamOutcome:
+    """Streaming route preserving additive WMS metadata."""
     ensure_query_services_ready()
+    if req.mode == "wms":
+        logger.info("Routing streaming query to isolated WMS service.")
+        wms_method = getattr(
+            mes_query_service,
+            "query_wms_stream_outcome",
+            None,
+        )
+        if not callable(wms_method):
+            raise HTTPException(
+                status_code=503,
+                detail="WMS streaming query service is not available.",
+            )
+        return await wms_method(
+            question=req.question,
+            model=req.model,
+            language=req.ui_language,
+        )
     if req.mode == "mes":
         routed_question = resolve_mes_context_question(req, req.question)
         logger.info("Routing streaming query to MES service.")
-        return await mes_query_service.query_stream(
-            question=routed_question,
-            model=req.model,
+        if hasattr(mes_query_service, "query_stream_outcome"):
+            return await mes_query_service.query_stream_outcome(
+                question=routed_question,
+                model=req.model,
+                language=req.ui_language,
+            )
+        stream, results, model, scope = await mes_query_service.query_stream(
+            **_mes_method_kwargs(
+                mes_query_service.query_stream,
+                req,
+                routed_question,
+            )
         )
+        return MesQueryStreamOutcome(stream, results, model, scope)
     if req.mode in {"mkac", "research"}:
         logger.info("Routing streaming query to %s RAG service.", req.mode)
-        return await rag_pipeline.query_stream(
+        stream, results, model, scope = await rag_pipeline.query_stream(
             session_id=req.session_id,
             question=req.question,
             model=req.model,
@@ -911,25 +1376,82 @@ async def route_query_stream(
             research_topic=validate_research_topic(req.research_topic),
             research_scope=req.research_scope,
         )
+        return MesQueryStreamOutcome(stream, results, model, scope)
     raise HTTPException(status_code=400, detail=f"Unsupported query mode: {req.mode}")
 
 
-async def store_report_artifact(report: Dict[str, Any]) -> None:
-    """Render + lưu HTML artifact; payload SSE chỉ mang metadata và bảng nhỏ."""
+async def route_query_stream(
+    req: QueryRequest,
+    *,
+    current_user_context: Optional[Dict[str, Any]] = None,
+):
+    return (
+        await route_query_stream_outcome(
+            req, current_user_context=current_user_context
+        )
+    ).as_tuple()
+
+
+async def store_report_artifact(
+    report: Dict[str, Any],
+    req: Optional[QueryRequest] = None,
+) -> None:
+    """Persist full HTML while keeping SSE payloads metadata-only."""
     report_id = str(report["id"])
+    html_content = report.get("html_content")
+    has_inline_html = isinstance(html_content, str) and bool(html_content.strip())
+    content = html_content if has_inline_html else render_html(report)
+    report_type = str(report.get("report_type") or "mes_report")
+    filename_prefix = (
+        "wms-report" if report_type == "wms_executive_report"
+        else "hr-report" if report_type == "hr_executive_report"
+        else "mes-report"
+    )
+    session_id = req.session_id if req else ""
+    employee_id = req.employee_id or "" if req else ""
     await artifact_store.put(
         StoredArtifact(
             id=report_id,
             kind="report_html",
-            content=render_html(report),
+            content=content,
             media_type="text/html; charset=utf-8",
-            filename=f"mes-report-{report_id[:8]}.html",
+            filename=f"{filename_prefix}-{report_id[:8]}.html",
             meta={
+                "session_id": session_id,
+                "employee_id": employee_id,
+                "report_type": report_type,
                 "title": report["title"],
-                "period_label": report["period_label"],
             },
+            session_id=session_id,
+            employee_id=employee_id,
         )
     )
+
+
+def report_artifact_payload(report: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the small allowlisted report card contract sent over SSE."""
+    allowed = (
+        "id",
+        "report_type",
+        "title",
+        "generated_at",
+        "period_label",
+        "kpis",
+        "charts",
+        "matrices",
+        "observations",
+        "governance",
+        "limitations",
+        "sections",
+    )
+    payload = {key: report[key] for key in allowed if key in report}
+    if "charts" in payload:
+        payload["charts"] = [
+            {key: value for key, value in chart.items() if key != "svg"}
+            for chart in payload["charts"]
+        ]
+    payload["download_url"] = f"/reports/{report['id']}"
+    return payload
 
 
 async def handle_calendar_action_query(
@@ -982,7 +1504,58 @@ def report_refusal_response(
     capability: ReportCapability,
 ) -> QueryResponse:
     """Từ chối report ngoài capability như một câu trả lời có chủ đích."""
-    if req.ui_language == "ja":
+    if capability.shape == "mode_mismatch":
+        expected_mode = {
+            "hr": "HCNS",
+            "mes": "MES",
+            "wms": "WMS",
+        }.get(capability.domain, "phù hợp")
+        answer = (
+            f"このレポートは{expected_mode}モードでのみ作成できます。"
+            f"現在の{req.mode.upper()}モードでは別領域のレポートを実行しません。"
+            if req.ui_language == "ja"
+            else (
+                f"Báo cáo này chỉ được tạo trong chế độ {expected_mode}. "
+                f"Hệ thống không chạy báo cáo khác lĩnh vực trong tab "
+                f"{req.mode.upper()}; vui lòng chuyển đúng chế độ rồi thử lại."
+            )
+        )
+    elif not capability.domain:
+        answer = (
+            "レポートの対象領域が不明です。人事（HR）、MES品質・エラー、"
+            "またはWMS工程在庫のいずれかを明示してください。\n\n"
+            "例: 「WMS工程在庫の概要レポートを作成」「MESエラーレポートを作成」"
+            if req.ui_language == "ja"
+            else (
+                "Yêu cầu chưa nêu rõ lĩnh vực báo cáo nên tôi không tự chọn nguồn "
+                "dữ liệu để tránh trả sai. Bạn hãy nêu kèm lĩnh vực:\n\n"
+                "- Nhân sự: \"Báo cáo tổng quan nhân sự\"\n"
+                "- Chất lượng MES: \"Báo cáo tổng hợp lỗi MES\"\n"
+                "- Tồn kho WMS: \"Báo cáo tổng quan tồn kho WMS\""
+            )
+        )
+    elif capability.domain == "hr":
+        answer = (
+            "現在のHR Reportでは、現行人事ディレクトリの組織概要のみ対応しています。"
+            "期間別、比較、給与・個人KPI・採用・勤怠などのレポートはサポートされていません。"
+            if req.ui_language == "ja"
+            else (
+                "HR Report hiện chỉ hỗ trợ tổng quan danh bạ nhân sự hiện tại. "
+                "Hệ thống chưa hỗ trợ báo cáo theo kỳ, so sánh, chi phí lương, "
+                "KPI cá nhân, tuyển dụng hay chấm công."
+            )
+        )
+    elif capability.domain == "wms":
+        answer = (
+            "現在のWMS contract v4では、現行残高（current balance）の概要レポートのみ対応しています。"
+            "KPI集計、期間比較、またはカスタムフィルター付きのレポートはサポートされていません。"
+            if req.ui_language == "ja"
+            else (
+                "WMS contract v4 hiện chỉ hỗ trợ báo cáo tổng quan current balance. "
+                "Hệ thống chưa hỗ trợ báo cáo KPI, so sánh theo kỳ hoặc bộ lọc tùy biến."
+            )
+        )
+    elif req.ui_language == "ja":
         answer = (
             "現在のReport Agentでは、この形式のレポートを正確に作成できません。"
             "対応しているのは、1期間のMESエラー標準集計レポート、またはTop Nエラー種類"
@@ -995,7 +1568,12 @@ def report_refusal_response(
             "thời chỉ hỗ trợ báo cáo tổng hợp lỗi MES chuẩn hoặc báo cáo Top N loại lỗi "
             "trong một kỳ. Tôi không tự đổi yêu cầu sang mẫu mặc định để tránh trả sai."
         )
-    if capability.reason and req.ui_language != "ja":
+    if (
+        capability.reason
+        and req.ui_language != "ja"
+        and capability.shape != "mode_mismatch"
+        and capability.domain not in {"", "hr", "wms"}
+    ):
         answer += f"\n\nLý do: {capability.reason}"
     return QueryResponse(
         answer=answer,
@@ -1009,20 +1587,60 @@ def report_refusal_response(
 
 async def handle_report_query(req: QueryRequest) -> Optional[QueryResponse]:
     """Non-streaming report path với capability gate fail-closed."""
-    if req.mode != "mes":
-        return None
-    capability = report_capability(req.question)
+    capability = report_capability_for_mode(req.question, req.mode)
     if not capability.is_report:
         return None
     if not capability.supported:
         return report_refusal_response(req, capability)
+    if capability.shape == "hr_executive":
+        if hr_report_agent is None or not hr_report_agent.available:
+            raise HTTPException(
+                status_code=503,
+                detail="HR Report Agent chưa sẵn sàng vì danh bạ nhân sự chưa khả dụng.",
+            )
+        report, summary = await hr_report_agent.build_report(
+            req.question,
+            language=req.ui_language,
+        )
+        await store_report_artifact(report, req)
+        return QueryResponse(
+            answer=summary,
+            sources=[],
+            session_id=req.session_id,
+            model="report-agent",
+            mode=req.mode,
+            answer_scope="hr_executive_report",
+            artifact=report_artifact_payload(report),
+        )
+    if capability.shape == "wms_executive":
+        if mes_wms_report_agent is None or not mes_wms_report_agent.available:
+            raise HTTPException(
+                status_code=503,
+                detail="WMS Report Agent chưa sẵn sàng vì WMS snapshot chưa khả dụng.",
+            )
+        report, summary = await mes_wms_report_agent.generate_report(
+            req.question,
+            language=req.ui_language,
+        )
+        await store_report_artifact(report, req)
+        return QueryResponse(
+            answer=summary,
+            sources=[],
+            session_id=req.session_id,
+            model="report-agent",
+            mode=req.mode,
+            answer_scope="wms_executive_report",
+            artifact=report_artifact_payload(report),
+        )
     if mes_report_agent is None or not mes_report_agent.available:
         raise HTTPException(
             status_code=503,
             detail="Report Agent chưa sẵn sàng vì MES snapshot/SQL Agent chưa khả dụng.",
         )
-    report, summary = await mes_report_agent.build_report(req.question)
-    await store_report_artifact(report)
+    report, summary = await mes_report_agent.build_report(
+        req.question, language=req.ui_language
+    )
+    await store_report_artifact(report, req)
     return QueryResponse(
         answer=f"{summary}\n\n{report['markdown']}",
         sources=[],
@@ -1030,6 +1648,7 @@ async def handle_report_query(req: QueryRequest) -> Optional[QueryResponse]:
         model="report-agent",
         mode=req.mode,
         answer_scope="mes_report",
+        artifact=report_artifact_payload(report),
     )
 
 
@@ -1042,6 +1661,142 @@ async def handle_email_send_query(
     # vận hành chính như HR/MES để tránh bắt nhầm intent trong bộ tài liệu.
     if req.mode == "research":
         return None
+
+    japanese = req.ui_language == "ja"
+
+    if is_email_confirm_request(req.question):
+        if gmail_sender is None or not gmail_sender.available:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Gmail send chưa sẵn sàng. Hãy kiểm tra GMAIL_SEND_ENABLED, "
+                    "GMAIL_CREDENTIALS_PATH và token OAuth."
+                ),
+            )
+        draft, claimed = await email_draft_store.claim_for_send(
+            req.session_id,
+            req.employee_id or "",
+        )
+        if draft is None:
+            answer = (
+                "送信待ちのメール下書きがありません。先に「...へメールを送信」と指示してください。"
+                if japanese
+                else (
+                    "Chưa có bản nháp email nào đang chờ gửi. Bạn hãy nhập câu lệnh "
+                    "gửi email trước, ví dụ: gửi email báo cáo này cho a@mkac.vn ..."
+                )
+            )
+            return QueryResponse(
+                answer=answer,
+                sources=[],
+                session_id=req.session_id,
+                model=req.model,
+                mode=req.mode,
+                answer_scope="email_action",
+            )
+        if draft.employee_id != (req.employee_id or ""):
+            raise HTTPException(status_code=403, detail="Bản nháp email không thuộc về phiên làm việc này.")
+        if draft.status == "sent":
+            answer = (
+                f"メールは送信済みです（{draft.to_email}）。"
+                if japanese
+                else f"Email này đã được gửi trước đó tới {draft.to_email}."
+            )
+            return QueryResponse(
+                answer=answer,
+                sources=[],
+                session_id=req.session_id,
+                model=req.model,
+                mode=req.mode,
+                answer_scope="email_action",
+            )
+        if not claimed:
+            answer = (
+                "メール送信を処理中です。重複送信は行いません。"
+                if japanese
+                else "Email đang được gửi. Hệ thống sẽ không gửi trùng."
+            )
+            return QueryResponse(
+                answer=answer,
+                sources=[],
+                session_id=req.session_id,
+                model=req.model,
+                mode=req.mode,
+                answer_scope="email_action",
+            )
+
+        attachments = []
+        if draft.artifact_id:
+            artifact = await artifact_store.get(draft.artifact_id)
+            if artifact is None:
+                await email_draft_store.update_status(req.session_id, status="pending")
+                raise GmailSenderError(
+                    "Báo cáo HTML gắn kèm đã hết hạn hoặc không tồn tại. Vui lòng tạo lại báo cáo."
+                )
+            if (
+                artifact.session_id != req.session_id
+                or artifact.employee_id != (req.employee_id or "")
+            ):
+                await email_draft_store.update_status(req.session_id, status="pending")
+                raise HTTPException(status_code=403, detail="Báo cáo không thuộc quyền sở hữu của người dùng hiện tại.")
+            attachments.append(
+                {
+                    "filename": artifact.filename,
+                    "content": artifact.content,
+                    "media_type": artifact.media_type,
+                }
+            )
+
+        try:
+            send_result = await asyncio.to_thread(
+                gmail_sender.send_email,
+                draft.to_email,
+                draft.subject,
+                draft.body_text,
+                attachments=attachments,
+            )
+        except Exception:
+            await email_draft_store.update_status(req.session_id, status="pending")
+            raise
+        await email_draft_store.update_status(
+            req.session_id,
+            status="sent",
+            message_id=send_result.message_id,
+        )
+        attachment_note = (
+            f" (添付: {draft.filename})" if draft.filename and japanese
+            else f" (đã đính kèm file {draft.filename})" if draft.filename
+            else ""
+        )
+        answer = (
+            f"メールを {send_result.to_email} へ送信しました{attachment_note}。"
+            if japanese
+            else f"Đã gửi email tới {send_result.to_email} với tiêu đề \"{send_result.subject}\"{attachment_note}."
+        )
+        return QueryResponse(
+            answer=answer,
+            sources=[],
+            session_id=req.session_id,
+            model=req.model,
+            mode=req.mode,
+            answer_scope="email_action",
+        )
+
+    if is_email_cancel_request(req.question):
+        draft = await email_draft_store.discard(req.session_id)
+        answer = (
+            "メール下書きをキャンセルしました。"
+            if japanese
+            else "Đã hủy bản nháp email."
+        )
+        return QueryResponse(
+            answer=answer,
+            sources=[],
+            session_id=req.session_id,
+            model=req.model,
+            mode=req.mode,
+            answer_scope="email_action",
+        )
 
     try:
         command = parse_email_send_command(req.question)
@@ -1072,110 +1827,110 @@ async def handle_email_send_query(
             ),
         )
 
-    if command.has_explicit_body:
-        body = build_direct_email_body(
+    artifact_id = ""
+    filename = ""
+    media_type = ""
+    previous_context = latest_assistant_context(req.conversation_context)
+
+    if is_context_reference(command.data_question):
+        if previous_context is None:
+            raise GmailSenderError(
+                "Chưa có nội dung trước đó để gửi. Hãy hỏi lấy kết quả hoặc lập báo cáo trước."
+            )
+        target_artifact_id = str(previous_context.get("artifact_id") or "")
+        target_artifact_type = str(previous_context.get("artifact_type") or "")
+        if target_artifact_type in {
+            "mes_report",
+            "wms_executive_report",
+            "hr_executive_report",
+        } and not target_artifact_id:
+            raise GmailSenderError(
+                "Báo cáo HTML đã hết ngữ cảnh hoặc không có mã artifact. Vui lòng tạo lại báo cáo."
+            )
+        if target_artifact_id:
+            artifact = await artifact_store.get(target_artifact_id)
+            if artifact is None:
+                raise GmailSenderError(
+                    "Báo cáo HTML đã hết hạn hoặc không tồn tại. Vui lòng tạo lại báo cáo."
+                )
+            if (
+                artifact.session_id != req.session_id
+                or artifact.employee_id != (req.employee_id or "")
+            ):
+                raise HTTPException(status_code=403, detail="Báo cáo không thuộc về phiên hiện tại.")
+            artifact_id = artifact.id
+            filename = artifact.filename
+            media_type = artifact.media_type
+            subject = f"Báo cáo Meibook - {artifact.meta.get('title', 'Executive Report')}"
+            body_text = build_direct_email_body(
+                original_question=req.question,
+                body=f"Đính kèm báo cáo HTML {artifact.meta.get('title', '')}."
+            )
+        else:
+            body_text = build_email_body(
+                original_question=req.question,
+                data_question=command.data_question,
+                answer=previous_context["content"],
+                answer_scope=previous_context["answer_scope"],
+            )
+            subject = command.subject
+    elif command.has_explicit_body:
+        subject = command.subject
+        body_text = build_direct_email_body(
             original_question=req.question,
             body=command.explicit_body,
         )
-        send_result = await asyncio.to_thread(
-            gmail_sender.send_email,
-            command.to_email,
-            command.subject,
-            body,
+    else:
+        answer, results, routed_model, answer_scope = await route_query(
+            req,
+            question=command.data_question,
+            current_user_context=current_user_context,
         )
-        logger.info(
-            "Sent Meibook explicit email action to=%s message_id=%s subject=%s",
-            send_result.to_email,
-            send_result.message_id,
-            send_result.subject,
-        )
-        status_answer = (
-            f"Đã gửi email tới {send_result.to_email} với tiêu đề "
-            f"\"{send_result.subject}\".\n\n"
-            f"Nội dung chính:\n{command.explicit_body}"
-        )
-        return QueryResponse(
-            answer=status_answer,
-            sources=[],
-            session_id=req.session_id,
-            model=req.model,
-            mode=req.mode,
-            answer_scope="email_action",
-        )
-
-    if is_context_reference(command.data_question):
-        previous_answer = latest_assistant_context(req.conversation_context)
-        if previous_answer is None:
-            raise GmailSenderError(
-                "Chưa có nội dung trước đó để gửi. Hãy hỏi lấy kết quả trước, "
-                "hoặc viết rõ nội dung cần gửi trong câu lệnh email."
-            )
-
-        body = build_email_body(
+        subject = command.subject
+        body_text = build_email_body(
             original_question=req.question,
-            data_question="Nội dung từ câu trả lời gần nhất trong cuộc hội thoại",
-            answer=previous_answer["content"],
-            answer_scope=previous_answer["answer_scope"],
-        )
-        send_result = await asyncio.to_thread(
-            gmail_sender.send_email,
-            command.to_email,
-            command.subject,
-            body,
-        )
-        logger.info(
-            "Sent Meibook contextual email action to=%s message_id=%s subject=%s",
-            send_result.to_email,
-            send_result.message_id,
-            send_result.subject,
-        )
-        status_answer = (
-            f"Đã gửi email tới {send_result.to_email} với tiêu đề "
-            f"\"{send_result.subject}\".\n\n"
-            f"Nội dung chính:\n{previous_answer['content']}"
-        )
-        return QueryResponse(
-            answer=status_answer,
-            sources=[],
-            session_id=req.session_id,
-            model=previous_answer["model"] or req.model,
-            mode=req.mode,
-            answer_scope="email_action",
+            data_question=command.data_question,
+            answer=answer,
+            answer_scope=answer_scope,
         )
 
-    answer, results, routed_model, answer_scope = await route_query(
-        req,
-        question=command.data_question,
-        current_user_context=current_user_context,
-    )
-    body = build_email_body(
-        original_question=req.question,
-        data_question=command.data_question,
-        answer=answer,
-        answer_scope=answer_scope,
-    )
-    send_result = await asyncio.to_thread(
-        gmail_sender.send_email,
-        command.to_email,
-        command.subject,
-        body,
-    )
-    logger.info(
-        "Sent Meibook email action to=%s message_id=%s subject=%s",
-        send_result.to_email,
-        send_result.message_id,
-        send_result.subject,
-    )
-    status_answer = (
-        f"Đã gửi email tới {send_result.to_email} với tiêu đề "
-        f"\"{send_result.subject}\".\n\n"
-        f"Nội dung chính:\n{answer}"
-    )
-    return QueryResponse(
-        answer=status_answer,
-        sources=rag_pipeline.format_sources(results),
+    draft_id = str(uuid.uuid4())
+    draft = EmailDraft(
+        id=draft_id,
         session_id=req.session_id,
-        model=routed_model,
+        employee_id=req.employee_id or "",
+        to_email=command.to_email,
+        subject=subject,
+        body_text=body_text,
+        artifact_id=artifact_id,
+        filename=filename,
+        media_type=media_type,
+        status="pending",
+    )
+    await email_draft_store.put(draft)
+
+    attachment_line = f"\n- File đính kèm: {filename}" if filename else ""
+    if japanese:
+        answer = (
+            f"**メール下書きを作成しました**\n\n"
+            f"- 送信先: `{command.to_email}`\n"
+            f"- 件名: {subject}\n"
+            f"{f'- 添付: {filename}' if filename else ''}\n"
+            f"送信するには **「送信を確定」** と入力し、中止するには **「送信をキャンセル」** と入力してください。"
+        )
+    else:
+        answer = (
+            f"**Đã chuẩn bị bản nháp email**\n\n"
+            f"- Người nhận: `{command.to_email}`\n"
+            f"- Tiêu đề: {subject}"
+            f"{attachment_line}\n\n"
+            f"Nhập **\"Xác nhận gửi email\"** để gửi đi, hoặc **\"Hủy gửi email\"** để hủy."
+        )
+    return QueryResponse(
+        answer=answer,
+        sources=[],
+        session_id=req.session_id,
+        model=req.model,
         mode=req.mode,
         answer_scope="email_action",
     )
@@ -1230,6 +1985,66 @@ async def metrics():
             },
             "by_mode": dict(query_metrics["by_mode"]),
             "by_scope": dict(query_metrics["by_scope"]),
+            "wms_verification": {
+                "by_source_kind": dict(
+                    query_metrics["wms_verification"]["by_source_kind"]
+                ),
+                "by_outcome": dict(query_metrics["wms_verification"]["by_outcome"]),
+                "duration_ms": {
+                    "count": len(query_metrics["wms_verification"]["duration_ms"]),
+                    "p50": _percentile(
+                        list(query_metrics["wms_verification"]["duration_ms"]),
+                        50,
+                    ),
+                    "p95": _percentile(
+                        list(query_metrics["wms_verification"]["duration_ms"]),
+                        95,
+                    ),
+                },
+                "snapshot_validation_ms": {
+                    "count": len(query_metrics["wms_verification"]["snapshot_validation_ms"]),
+                    "p50": _percentile(
+                        list(query_metrics["wms_verification"]["snapshot_validation_ms"]),
+                        50,
+                    ),
+                    "p95": _percentile(
+                        list(query_metrics["wms_verification"]["snapshot_validation_ms"]),
+                        95,
+                    ),
+                },
+                "answer_validation_ms": {
+                    "count": len(query_metrics["wms_verification"]["answer_validation_ms"]),
+                    "p50": _percentile(
+                        list(query_metrics["wms_verification"]["answer_validation_ms"]),
+                        50,
+                    ),
+                    "p95": _percentile(
+                        list(query_metrics["wms_verification"]["answer_validation_ms"]),
+                        95,
+                    ),
+                },
+                "presentation_pacing_ms": {
+                    "count": len(
+                        query_metrics["wms_verification"]["presentation_pacing_ms"]
+                    ),
+                    "p50": _percentile(
+                        list(
+                            query_metrics["wms_verification"][
+                                "presentation_pacing_ms"
+                            ]
+                        ),
+                        50,
+                    ),
+                    "p95": _percentile(
+                        list(
+                            query_metrics["wms_verification"][
+                                "presentation_pacing_ms"
+                            ]
+                        ),
+                        95,
+                    ),
+                },
+            },
         }
     return payload
 
@@ -1263,6 +2078,11 @@ async def health():
                 ),
             }
             if mes_database is not None
+            else {"available": False, "enabled": False}
+        ),
+        "mes_wms_database": (
+            mes_wms_database.status()
+            if mes_wms_database is not None
             else {"available": False, "enabled": False}
         ),
         "gmail_send": (
@@ -1597,6 +2417,113 @@ def prepared_query_response(req: QueryRequest) -> Optional[QueryResponse]:
     return None
 
 
+def _wms_prepared_candidates(item: dict[str, Any], language: str) -> list[str]:
+    question_field = "question_ja" if language == "ja" else "question"
+    aliases_field = "aliases_ja" if language == "ja" else "aliases"
+    candidates = [str(item.get(question_field) or "")]
+    aliases = item.get(aliases_field, [])
+    if isinstance(aliases, list):
+        candidates.extend(str(alias) for alias in aliases)
+    return [candidate for candidate in candidates if candidate]
+
+
+def resolve_wms_prepared_response(req: QueryRequest) -> Optional[MesQueryOutcome]:
+    """Resolve a server-prepared WMS answer only after API authorization.
+
+    ``quick_answer_id`` is an untrusted browser hint. An entry is accepted only
+    when it is explicitly server-prepared, has a revision/provenance declaration,
+    and its canonical localized question still matches the request. The same
+    canonical-question match supports older clients that do not send the ID.
+    """
+    if req.mode != "wms":
+        return None
+
+    question_key = normalize_prepared_question(req.question)
+    for item in _load_quick_answers().get("wms", []):
+        if item.get("hidden") or item.get("execution") != "server_prepared":
+            continue
+        item_id = str(item.get("id") or "")
+        if req.quick_answer_id and req.quick_answer_id != item_id:
+            continue
+        if not item_id or not str(item.get("revision") or "").strip():
+            continue
+        provenance = item.get("provenance")
+        if not isinstance(provenance, dict):
+            continue
+        if not all(
+            str(provenance.get(field) or "").strip()
+            for field in ("data_contract_version", "semantic_contract_version")
+        ):
+            continue
+        candidates = _wms_prepared_candidates(item, req.ui_language)
+        if not any(
+            normalize_prepared_question(candidate) == question_key
+            for candidate in candidates
+        ):
+            continue
+        answer_field = "answer_ja" if req.ui_language == "ja" else "answer"
+        answer = str(item.get(answer_field) or "").strip()
+        if not answer:
+            continue
+        return MesQueryOutcome(
+            answer=answer,
+            results=[],
+            routed_model="wms-prepared",
+            answer_scope="wms_database",
+            wms_metadata={
+                "contract_version": str(provenance.get("contract_version") or ""),
+                "data_contract_version": str(
+                    provenance.get("data_contract_version") or ""
+                ),
+                "semantic_contract_version": str(
+                    provenance.get("semantic_contract_version") or ""
+                ),
+                "intent": "wms_server_prepared",
+                "domain": "CURRENT_BALANCE",
+                "status": "PARTIAL",
+                "reason_codes": ["UOM_MASTER_UNAVAILABLE"],
+                "imported_at": "",
+                "source_as_of": "",
+                "source_as_of_state": "UNAVAILABLE",
+                "source_as_of_basis": "",
+                "source_timezone": "unverified",
+                "semantic_epoch": str(provenance.get("semantic_epoch") or ""),
+                "dataset_evidence": [],
+                "grain": "process_id,item_code",
+                "pagination": None,
+            },
+        )
+    return None
+
+
+def wms_prepared_validation_failure(req: QueryRequest) -> Optional[MesQueryOutcome]:
+    """Fail closed when a caller supplies an invalid WMS prepared-answer ID."""
+    if req.mode != "wms" or not req.quick_answer_id:
+        return None
+    answer = (
+        "準備済みのWMS回答を検証できないため、在庫情報は表示しません。"
+        if req.ui_language == "ja"
+        else (
+            "Không thể xác minh gợi ý WMS đã chuẩn bị nên tôi không hiển thị "
+            "thông tin tồn kho. Vui lòng chọn lại gợi ý hoặc đặt câu hỏi WMS cụ thể."
+        )
+    )
+    return MesQueryOutcome(
+        answer=answer,
+        results=[],
+        routed_model="wms-prepared",
+        answer_scope="wms_database",
+        wms_metadata={
+            "intent": "wms_prepared_validation_suppressed",
+            "domain": "SUPPRESSED",
+            "status": "SUPPRESSED",
+            "reason_codes": ["WMS_PREPARED_VALIDATION_FAILED"],
+            "source_as_of_state": "UNAVAILABLE",
+            "source_timezone": "unverified",
+        },
+    )
+
+
 @app.get("/quick-answers")
 async def quick_answers(mode: str = "mkac", language: Literal["vi", "ja"] = "vi"):
     """Trả về danh sách câu hỏi gợi ý theo chế độ."""
@@ -1606,16 +2533,44 @@ async def quick_answers(mode: str = "mkac", language: Literal["vi", "ja"] = "vi"
     for item in items:
         if item.get("hidden"):
             continue
+        execution = str(item.get("execution") or "")
         is_live = bool(item.get("live"))
         question = item.get("question", "")
         answer = item.get("answer", "")
         if language == "ja":
             question = item.get("question_ja", "")
             answer = item.get("answer_ja", "")
-        # Câu hỏi "live" chỉ cần question; đáp án lấy từ pipeline thật khi bấm.
-        # Câu tĩnh phải có sẵn cả câu hỏi lẫn đáp án đóng hộp.
         if not question:
             continue
+        if mode == "wms":
+            if execution == "server_prepared":
+                item_id = str(item.get("id") or "")
+                if not item_id:
+                    continue
+                suggestions.append(
+                    {
+                        "id": item_id,
+                        "question": question,
+                        "keywords": item.get("keywords", []),
+                        "execution": execution,
+                        "live": False,
+                    }
+                )
+                continue
+            if execution != "query" and not is_live:
+                continue
+            suggestions.append(
+                {
+                    "id": str(item.get("id") or ""),
+                    "question": question,
+                    "keywords": item.get("keywords", []),
+                    "execution": "query",
+                    "live": True,
+                }
+            )
+            continue
+        # Câu hỏi "live" chỉ cần question; đáp án lấy từ pipeline thật khi bấm.
+        # Câu tĩnh phải có sẵn cả câu hỏi lẫn đáp án đóng hộp.
         if not is_live and not answer:
             continue
         suggestions.append(
@@ -1747,7 +2702,11 @@ async def upload_document(
         raise HTTPException(status_code=500, detail=f"Indexing failed: {str(e)}")
 
 
-@app.post("/query", response_model=QueryResponse)
+@app.post(
+    "/query",
+    response_model=QueryResponse,
+    response_model_exclude_none=True,
+)
 async def query_documents(req: QueryRequest, request: Request):
     """
     Hỏi đáp dựa trên tài liệu (non-streaming).
@@ -1757,6 +2716,16 @@ async def query_documents(req: QueryRequest, request: Request):
     normalize_session_id(req.session_id)
     req = normalize_research_request(req)
     current_employee = await asyncio.to_thread(authorize_query, req)
+    if req.mode == "wms" and (
+        req.quick_answer_id or resolve_wms_prepared_response(req) is not None
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "WMS_STREAM_REQUIRED: server-prepared WMS answers require "
+                "/query/stream."
+            ),
+        )
     research_cached_response = research_cached_query_response(req)
     if research_cached_response is not None:
         logger.info(
@@ -1796,89 +2765,23 @@ async def query_documents(req: QueryRequest, request: Request):
             await wait_for_min_query_latency(request_started_at)
             return guard_response
 
-        contextual_question = resolve_employee_context_question(req, req.question)
-        directory_response = await asyncio.to_thread(
-            employee_directory_query_response,
-            req,
-            current_employee,
-            question=contextual_question,
-        )
-        if directory_response is not None:
+        prepared_response = prepared_query_response(req)
+        if prepared_response is not None:
             logger.info(
-                "Employee directory answer hit mode=%s language=%s",
+                "Prepared REST query answer hit mode=%s language=%s",
                 req.mode,
                 req.ui_language,
             )
-            await set_cached_query_response(cache_key, directory_response)
-            await wait_for_min_query_latency(request_started_at)
-            return directory_response
-
-        prepared_response = prepared_query_response(req)
-        if prepared_response is not None:
-            logger.info("Prepared query answer hit mode=%s language=%s", req.mode, req.ui_language)
             await set_cached_query_response(cache_key, prepared_response)
             await wait_for_min_query_latency(request_started_at)
             return prepared_response
 
         localized_req = await localize_query_request(req)
-        localized_contextual_question = resolve_employee_context_question(
-            localized_req,
-            localized_req.question,
-        )
-        if localized_contextual_question != localized_req.question:
-            localized_req = localized_req.model_copy(
-                update={"question": localized_contextual_question}
-            )
         current_user_context = await asyncio.to_thread(
             employee_context_for_query,
             localized_req,
             current_employee,
         )
-        directory_response = await asyncio.to_thread(
-            employee_directory_query_response,
-            req,
-            current_employee,
-            question=localized_contextual_question,
-        )
-        if directory_response is not None:
-            logger.info(
-                "Localized employee directory answer hit mode=%s language=%s",
-                req.mode,
-                req.ui_language,
-            )
-            await set_cached_query_response(cache_key, directory_response)
-            await wait_for_min_query_latency(request_started_at)
-            return directory_response
-
-        calendar_response = await handle_calendar_action_query(
-            localized_req,
-            current_employee,
-        )
-        if calendar_response is not None:
-            translated_calendar_answer = await translate_answer_for_ui(
-                calendar_response.answer,
-                req,
-            )
-            await wait_for_min_query_latency(request_started_at)
-            return calendar_response.model_copy(
-                update={"answer": translated_calendar_answer}
-            )
-
-        report_response = await handle_report_query(localized_req)
-        if report_response is not None:
-            # Report deterministic có thể hoàn thành gần như tức thì. Giữ cùng
-            # minimum latency với quick answer/cache để UI có thời gian hiển thị
-            # trạng thái đang lập báo cáo; không cộng thêm nếu xử lý đã đủ lâu.
-            await wait_for_min_query_latency(request_started_at)
-            translated_report_answer = await translate_answer_for_ui(
-                report_response.answer,
-                req,
-            )
-            if translated_report_answer != report_response.answer:
-                return report_response.model_copy(
-                    update={"answer": translated_report_answer}
-                )
-            return report_response
 
         email_response = await handle_email_send_query(localized_req, current_user_context)
         if email_response is not None:
@@ -1901,11 +2804,66 @@ async def query_documents(req: QueryRequest, request: Request):
                 update={"sources": translated_email_sources}
             )
 
-        answer, results, routed_model, answer_scope = await route_query(
+        calendar_response = await handle_calendar_action_query(
+            localized_req,
+            current_employee,
+        )
+        if calendar_response is not None:
+            translated_calendar_answer = await translate_answer_for_ui(
+                calendar_response.answer,
+                req,
+                answer_scope=calendar_response.answer_scope,
+            )
+            await wait_for_min_query_latency(request_started_at)
+            return calendar_response.model_copy(
+                update={"answer": translated_calendar_answer}
+            )
+
+        report_response = await handle_report_query(localized_req)
+        if report_response is not None:
+            # Report agents own localization and receive the requested UI language.
+            # Translating their summary again adds latency and can alter numbers or
+            # technical identifiers in an already-localized deterministic artifact.
+            await wait_for_min_query_latency(request_started_at)
+            return report_response
+
+        contextual_question = resolve_employee_context_question(req, req.question)
+        directory_response = await asyncio.to_thread(
+            employee_directory_query_response,
+            req,
+            current_employee,
+            question=contextual_question,
+        )
+        if directory_response is not None:
+            logger.info(
+                "Employee directory answer hit mode=%s language=%s",
+                req.mode,
+                req.ui_language,
+            )
+            await set_cached_query_response(cache_key, directory_response)
+            await wait_for_min_query_latency(request_started_at)
+            return directory_response
+
+        query_outcome = await route_query_outcome(
             localized_req,
             current_user_context=current_user_context,
         )
-        answer = await translate_answer_for_ui(answer, req)
+        if req.mode == "wms":
+            query_outcome, wms_metadata = validated_wms_metadata_or_none(
+                req,
+                query_outcome,
+            )
+        else:
+            wms_metadata = safe_wms_metadata_model(query_outcome.wms_metadata)
+        answer = query_outcome.answer
+        results = query_outcome.results
+        routed_model = query_outcome.routed_model
+        answer_scope = query_outcome.answer_scope
+        answer = await translate_answer_for_ui(
+            answer,
+            req,
+            answer_scope=answer_scope,
+        )
         sources = await translate_sources_for_ui(
             rag_pipeline.format_sources(
                 results,
@@ -1920,6 +2878,11 @@ async def query_documents(req: QueryRequest, request: Request):
             model=routed_model,
             mode=req.mode,
             answer_scope=answer_scope,
+            wms_metadata=(
+                WmsAnswerMetadata.model_validate(wms_metadata)
+                if isinstance(wms_metadata, dict)
+                else wms_metadata
+            ),
         )
         await set_cached_query_response(cache_key, response)
         await record_query_metric(
@@ -1935,6 +2898,8 @@ async def query_documents(req: QueryRequest, request: Request):
         raise HTTPException(status_code=502, detail=str(e)) from e
     except TranslationError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"RAG query error: {e}", exc_info=True)
         await record_query_metric(
@@ -2086,6 +3051,22 @@ async def query_stream(req: QueryRequest, request: Request):
                 },
             )
 
+        if (
+            req.mode == "wms"
+            and not report_capability_for_mode(req.question, req.mode).is_report
+        ):
+            return StreamingResponse(
+                wms_verification_event_generator(
+                    req,
+                    request_started_at=request_started_at,
+                ),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                },
+            )
+
         contextual_question = resolve_employee_context_question(req, req.question)
         directory_response = await asyncio.to_thread(
             employee_directory_query_response,
@@ -2173,6 +3154,35 @@ async def query_stream(req: QueryRequest, request: Request):
         try:
             yield sse_status(req, "received")
             yield sse_status(req, "routing")
+            if (
+                localized_req.mode != "research"
+                and (
+                    is_email_confirm_request(localized_req.question)
+                    or is_email_cancel_request(localized_req.question)
+                    or try_parse_email_send_command(localized_req.question) is not None
+                )
+            ):
+                yield sse_status(req, "email")
+            email_response = await handle_email_send_query(
+                localized_req,
+                current_user_context,
+            )
+            if email_response is not None:
+                translated_email_answer = await translate_answer_for_ui(
+                    email_response.answer,
+                    req,
+                )
+                translated_email_sources = await translate_sources_for_ui(
+                    email_response.sources,
+                    req,
+                )
+                yield sse_status(req, "finalizing")
+                yield sse_event({"type": "sources", "sources": translated_email_sources})
+                yield sse_event({"type": "meta", "model": email_response.model, "mode": email_response.mode, "answer_scope": email_response.answer_scope})
+                yield sse_event({"type": "token", "content": translated_email_answer})
+                yield sse_event({"type": "done"})
+                return
+
             calendar_response = await handle_calendar_action_query(
                 localized_req,
                 current_employee,
@@ -2207,10 +3217,9 @@ async def query_stream(req: QueryRequest, request: Request):
                 )
                 return
 
-            report_capability_result = (
-                report_capability(localized_req.question)
-                if localized_req.mode == "mes"
-                else ReportCapability(status="not_report")
+            report_capability_result = report_capability_for_mode(
+                localized_req.question,
+                localized_req.mode,
             )
             if report_capability_result.is_report:
                 if not report_capability_result.supported:
@@ -2230,13 +3239,223 @@ async def query_stream(req: QueryRequest, request: Request):
                     yield sse_event({"type": "token", "content": refusal.answer})
                     yield sse_event({"type": "done"})
                     return
+                if report_capability_result.shape == "hr_executive":
+                    if localized_req.mode != "mkac":
+                        yield sse_event({"type": "done"})
+                        return
+                    if hr_report_agent is None or not hr_report_agent.available:
+                        raise RuntimeError("HR Report Agent chưa sẵn sàng.")
+                    yield sse_status(req, "report")
+                    yield sse_event(
+                        {
+                            "type": "agent_plan",
+                            "title": "Báo cáo Tổng quan Nhân sự Cấp Điều hành",
+                            "period_label": "Danh bạ nhân sự hiện tại",
+                            "steps": [
+                                {"id": "hr_aggregate", "title": "Tổng hợp headcount theo phòng ban"},
+                                {"id": "hr_artifact", "title": "Dựng báo cáo HTML"},
+                            ],
+                        }
+                    )
+                    await pace_report_step(0.6)
+                    yield sse_event(
+                        {
+                            "type": "tool_start",
+                            "step_id": "hr_aggregate",
+                            "tool": "query_hr_directory",
+                            "title": "Tổng hợp headcount theo phòng ban",
+                        }
+                    )
+                    report, summary = await hr_report_agent.build_report(
+                        localized_req.question,
+                        language=req.ui_language,
+                    )
+                    await pace_report_step()
+                    yield sse_event(
+                        {
+                            "type": "tool_result",
+                            "step_id": "hr_aggregate",
+                            "status": "done",
+                            "summary": "Đã tổng hợp headcount theo phòng ban",
+                        }
+                    )
+                    await pace_report_step(0.4)
+                    yield sse_event(
+                        {
+                            "type": "tool_start",
+                            "step_id": "hr_artifact",
+                            "tool": "render_hr_report",
+                            "title": "Dựng báo cáo HTML",
+                        }
+                    )
+                    await store_report_artifact(report, req)
+                    await pace_report_step()
+                    yield sse_event(
+                        {
+                            "type": "tool_result",
+                            "step_id": "hr_artifact",
+                            "status": "done",
+                            "summary": "Báo cáo HTML đã sẵn sàng",
+                        }
+                    )
+                    await wait_for_min_query_latency(request_started_at)
+                    await pace_report_step(0.7)
+                    yield sse_event(
+                        {
+                            "type": "artifact",
+                            "artifact_type": "hr_executive_report",
+                            "artifact": report_artifact_payload(report),
+                        }
+                    )
+                    yield sse_event({"type": "sources", "sources": []})
+                    yield sse_event(
+                        {
+                            "type": "meta",
+                            "model": "report-agent",
+                            "mode": req.mode,
+                            "answer_scope": "hr_executive_report",
+                        }
+                    )
+                    yield sse_event({"type": "token", "content": summary})
+                    yield sse_event({"type": "agent_done"})
+                    yield sse_event({"type": "done"})
+                    await record_query_metric(
+                        mode=req.mode,
+                        ui_language=req.ui_language,
+                        answer_scope="hr_executive_report",
+                        cache_hit=False,
+                        latency_ms=(time.monotonic() - request_started_at) * 1000,
+                    )
+                    return
+                if report_capability_result.shape == "wms_executive":
+                    if mes_wms_report_agent is None or not mes_wms_report_agent.available:
+                        raise RuntimeError("WMS Report Agent chưa sẵn sàng.")
+                    yield sse_status(req, "report")
+                    yield sse_event(
+                        {
+                            "type": "agent_plan",
+                            "title": (
+                                "WMS工程倉庫 在庫エグゼクティブレポート"
+                                if req.ui_language == "ja"
+                                else "Báo cáo Tồn kho WMS Cấp Điều hành"
+                            ),
+                            "period_label": "Current balance snapshot",
+                            "steps": [
+                                {
+                                    "id": "wms_current_balance",
+                                    "title": (
+                                        "WMS current balanceを検証"
+                                        if req.ui_language == "ja"
+                                        else "Kiểm tra current balance WMS"
+                                    ),
+                                },
+                                {
+                                    "id": "wms_artifact",
+                                    "title": (
+                                        "HTMLレポートを作成"
+                                        if req.ui_language == "ja"
+                                        else "Dựng báo cáo HTML"
+                                    ),
+                                },
+                            ],
+                        }
+                    )
+                    await pace_report_step(0.6)
+                    yield sse_event(
+                        {
+                            "type": "tool_start",
+                            "step_id": "wms_current_balance",
+                            "tool": "query_wms",
+                            "title": (
+                                "WMS current balanceを検証"
+                                if req.ui_language == "ja"
+                                else "Kiểm tra current balance WMS"
+                            ),
+                        }
+                    )
+                    report, summary = await mes_wms_report_agent.generate_report(
+                        localized_req.question,
+                        language=req.ui_language,
+                    )
+                    await pace_report_step()
+                    yield sse_event(
+                        {
+                            "type": "tool_result",
+                            "step_id": "wms_current_balance",
+                            "status": "done",
+                            "summary": (
+                                "Contract v4 compatible"
+                                if req.ui_language == "ja"
+                                else "Snapshot tương thích contract v4"
+                            ),
+                        }
+                    )
+                    await pace_report_step(0.4)
+                    yield sse_event(
+                        {
+                            "type": "tool_start",
+                            "step_id": "wms_artifact",
+                            "tool": "render_wms_report",
+                            "title": (
+                                "HTMLレポートを作成"
+                                if req.ui_language == "ja"
+                                else "Dựng báo cáo HTML"
+                            ),
+                        }
+                    )
+                    await store_report_artifact(report, req)
+                    await pace_report_step()
+                    yield sse_event(
+                        {
+                            "type": "tool_result",
+                            "step_id": "wms_artifact",
+                            "status": "done",
+                            "summary": (
+                                "HTMLレポートの準備が完了"
+                                if req.ui_language == "ja"
+                                else "Báo cáo HTML đã sẵn sàng"
+                            ),
+                        }
+                    )
+                    await wait_for_min_query_latency(request_started_at)
+                    await pace_report_step(0.7)
+                    artifact_payload = report_artifact_payload(report)
+                    yield sse_event(
+                        {
+                            "type": "artifact",
+                            "artifact_type": "wms_executive_report",
+                            "artifact": artifact_payload,
+                        }
+                    )
+                    yield sse_event({"type": "sources", "sources": []})
+                    yield sse_event(
+                        {
+                            "type": "meta",
+                            "model": "report-agent",
+                            "mode": req.mode,
+                            "answer_scope": "wms_executive_report",
+                        }
+                    )
+                    yield sse_event({"type": "token", "content": summary})
+                    yield sse_event({"type": "agent_done"})
+                    yield sse_event({"type": "done"})
+                    await record_query_metric(
+                        mode=req.mode,
+                        ui_language=req.ui_language,
+                        answer_scope="wms_executive_report",
+                        cache_hit=False,
+                        latency_ms=(time.monotonic() - request_started_at) * 1000,
+                    )
+                    return
                 if mes_report_agent is None or not mes_report_agent.available:
                     raise RuntimeError(
                         "Report Agent chưa sẵn sàng vì MES snapshot/SQL Agent "
                         "chưa khả dụng."
                     )
                 yield sse_status(req, "report")
-                async for agent_event in mes_report_agent.run(localized_req.question):
+                async for agent_event in mes_report_agent.run(
+                    localized_req.question, language=req.ui_language
+                ):
                     event_kind = agent_event["event"]
                     if event_kind == "plan":
                         yield sse_event(
@@ -2248,6 +3467,7 @@ async def query_stream(req: QueryRequest, request: Request):
                             }
                         )
                     elif event_kind == "step_start":
+                        await pace_report_step(0.4)
                         yield sse_event(
                             {
                                 "type": "tool_start",
@@ -2257,6 +3477,7 @@ async def query_stream(req: QueryRequest, request: Request):
                             }
                         )
                     elif event_kind == "step_result":
+                        await pace_report_step()
                         yield sse_event(
                             {
                                 "type": "tool_result",
@@ -2267,17 +3488,13 @@ async def query_stream(req: QueryRequest, request: Request):
                         )
                     elif event_kind == "report":
                         report = agent_event["report"]
-                        await store_report_artifact(report)
+                        await store_report_artifact(report, req)
                         # Đừng để báo cáo deterministic chớp lên tức thì: chờ
                         # tới ngưỡng latency chung (~2s), nhưng chỉ phần thời gian
                         # còn thiếu nên truy vấn chậm không bị cộng thêm delay.
                         await wait_for_min_query_latency(request_started_at)
-                        artifact_payload = {
-                            key: value
-                            for key, value in report.items()
-                            if key != "markdown"
-                        }
-                        artifact_payload["download_url"] = f"/reports/{report['id']}"
+                        await pace_report_step(0.7)
+                        artifact_payload = report_artifact_payload(report)
                         yield sse_event(
                             {
                                 "type": "artifact",
@@ -2311,39 +3528,22 @@ async def query_stream(req: QueryRequest, request: Request):
                 )
                 return
 
-            if (
-                localized_req.mode != "research"
-                and try_parse_email_send_command(localized_req.question) is not None
-            ):
-                yield sse_status(req, "email")
-            email_response = await handle_email_send_query(
-                localized_req,
-                current_user_context,
-            )
-            if email_response is not None:
-                translated_email_answer = await translate_answer_for_ui(
-                    email_response.answer,
-                    req,
-                )
-                translated_email_sources = await translate_sources_for_ui(
-                    email_response.sources,
-                    req,
-                )
-                yield sse_status(req, "finalizing")
-                yield sse_event({"type": "sources", "sources": translated_email_sources})
-                yield sse_event({"type": "meta", "model": email_response.model, "mode": email_response.mode, "answer_scope": email_response.answer_scope})
-                yield sse_event({"type": "token", "content": translated_email_answer})
-                yield sse_event({"type": "done"})
-                return
-
             if req.ui_language == "ja" and req.mode != "research":
                 yield sse_status(req, query_processing_status_key(localized_req))
-                answer, results, routed_model, answer_scope = await route_query(
+                query_outcome = await route_query_outcome(
                     localized_req,
                     current_user_context=current_user_context,
                 )
+                answer = query_outcome.answer
+                results = query_outcome.results
+                routed_model = query_outcome.routed_model
+                answer_scope = query_outcome.answer_scope
                 yield sse_status(req, "translation")
-                translated_answer = await translate_answer_for_ui(answer, req)
+                translated_answer = await translate_answer_for_ui(
+                    answer,
+                    req,
+                    answer_scope=answer_scope,
+                )
                 sources = await translate_sources_for_ui(
                     rag_pipeline.format_sources(results),
                     req,
@@ -2351,7 +3551,17 @@ async def query_stream(req: QueryRequest, request: Request):
                 await wait_for_min_query_latency(request_started_at)
                 yield sse_status(req, "finalizing")
                 yield sse_event({"type": "sources", "sources": sources})
-                yield sse_event({"type": "meta", "model": routed_model, "mode": req.mode, "answer_scope": answer_scope})
+                meta_event = {
+                    "type": "meta",
+                    "model": routed_model,
+                    "mode": req.mode,
+                    "answer_scope": answer_scope,
+                }
+                if query_outcome.wms_metadata:
+                    meta_event["wms_metadata"] = safe_wms_metadata(
+                        query_outcome.wms_metadata
+                    )
+                yield sse_event(meta_event)
                 yield sse_event({"type": "token", "content": translated_answer})
                 yield sse_event({"type": "done"})
                 await set_cached_query_response(
@@ -2363,6 +3573,11 @@ async def query_stream(req: QueryRequest, request: Request):
                         model=routed_model,
                         mode=req.mode,
                         answer_scope=answer_scope,
+                        wms_metadata=(
+                            WmsAnswerMetadata(**safe_wms_metadata(query_outcome.wms_metadata))
+                            if query_outcome.wms_metadata
+                            else None
+                        ),
                     ),
                 )
                 await record_query_metric(
@@ -2375,12 +3590,14 @@ async def query_stream(req: QueryRequest, request: Request):
                 return
 
             yield sse_status(req, query_processing_status_key(localized_req))
-            token_stream, results, routed_model, answer_scope = (
-                await route_query_stream(
-                    localized_req,
-                    current_user_context=current_user_context,
-                )
+            stream_outcome = await route_query_stream_outcome(
+                localized_req,
+                current_user_context=current_user_context,
             )
+            token_stream = stream_outcome.token_stream
+            results = stream_outcome.results
+            routed_model = stream_outcome.routed_model
+            answer_scope = stream_outcome.answer_scope
             
             # Gửi nguồn trích dẫn (sources) trước
             sources = rag_pipeline.format_sources(
@@ -2390,7 +3607,18 @@ async def query_stream(req: QueryRequest, request: Request):
             await wait_for_min_query_latency(request_started_at)
             yield sse_status(req, "finalizing")
             yield sse_event({"type": "sources", "sources": sources})
-            yield sse_event({"type": "meta", "model": routed_model, "mode": req.mode, "answer_scope": answer_scope, "research_scope": req.research_scope})
+            meta_event = {
+                "type": "meta",
+                "model": routed_model,
+                "mode": req.mode,
+                "answer_scope": answer_scope,
+                "research_scope": req.research_scope,
+            }
+            if stream_outcome.wms_metadata:
+                meta_event["wms_metadata"] = safe_wms_metadata(
+                    stream_outcome.wms_metadata
+                )
+            yield sse_event(meta_event)
 
             # Stream từng token câu trả lời. Generator phát tuple (kind, text):
             # 'token' = delta để hiển thị dần; 'replace' = bản đã hậu xử lý,
@@ -2418,6 +3646,11 @@ async def query_stream(req: QueryRequest, request: Request):
                     model=routed_model,
                     mode=req.mode,
                     answer_scope=answer_scope,
+                    wms_metadata=(
+                        WmsAnswerMetadata(**safe_wms_metadata(stream_outcome.wms_metadata))
+                        if stream_outcome.wms_metadata
+                        else None
+                    ),
                 ),
             )
             await record_query_metric(

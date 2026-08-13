@@ -2,7 +2,13 @@
 
 Meibook là ứng dụng hỏi đáp nội bộ chạy trên repository `VLLM-PD`. Hệ thống phục
 vụ giao diện React, API FastAPI, Qdrant, LiteLLM, dữ liệu nhân sự MKAC, dữ liệu
-MES snapshot, Gmail send action và lớp dịch giao diện Việt/Nhật.
+MES/WMS snapshot, Gmail send action và lớp dịch giao diện Việt/Nhật.
+
+Runtime Dev của thay đổi WMS nằm tại `/home/jkl/Code/VLLM-PD-dev`, branch `dev`,
+với `docker-compose.dev.yml` và cổng `8002/4001/6334`. Không dùng hướng dẫn này
+để thao tác Production nếu chưa preflight checkout và Compose thực tế.
+
+**Không commit/push hoặc chạy import/reindex trong khi chỉ kiểm tra code.**
 
 Trạng thái tài liệu này được cập nhật theo kiến trúc đang chạy tại
 `/home/jkl/Code/VLLM-PD`.
@@ -15,10 +21,51 @@ Trạng thái tài liệu này được cập nhật theo kiến trúc đang ch�
 - Qdrant: chạy nội bộ cổng `6333`, lưu vector tài liệu.
 - Ollama local trên Máy 2: chạy bằng `systemd`, dùng cho model phụ
   `qwen2.5:3b-instruct`.
-- Giao diện đang hiển thị 3 chế độ:
+- Giao diện đang hiển thị 4 chế độ:
   - `Hỏi đáp hành chính nhân sự MKAC` (`mode=mkac`).
   - `Quản lý MES` (`mode=mes`).
+  - `Quản lý Kho WMS` (`mode=wms`), truy vấn riêng snapshot current balance.
   - `Nghiên cứu tài liệu` (`mode=research`).
+- WMS dùng xác thực `employee_id` giống MKAC/MES, giữ nguyên câu hỏi tiếng Nhật,
+  và không fallback sang MES snapshot, MES SQL Agent hoặc MES API.
+- WMS contract v4 chỉ trả lời các intent current balance đã được kiểm chứng;
+  KPI, xu hướng, cộng gộp khác đơn vị và truy vấn current lot bị suppression.
+
+### Thay đổi gần đây: tách WMS thành mode thứ 4
+
+Client gửi `mode="wms"` tới `/query` hoặc `/query/stream`. Backend route trực tiếp
+qua `MesQueryService.query_wms_outcome`, chỉ đọc `data/mes_wms.sqlite` ở chế độ
+read-only và trả `answer_scope="wms_database"` cùng metadata contract allowlist.
+Báo cáo tổng quan WMS dùng `answer_scope="wms_executive_report"` và artifact HTML
+private theo session/employee. Khi snapshot không khả dụng, hệ thống trả trạng thái
+suppressed/unavailable thay vì suy đoán từ dữ liệu MES.
+
+Quick answers WMS được nạp từ `config/quick_answers.json` bằng endpoint
+`/quick-answers?mode=wms&language=vi|ja`. Entry `server_prepared` chỉ trả ID,
+câu hỏi và execution cho browser; nội dung chuẩn bị chỉ được backend resolve sau
+employee gate, đối chiếu canonical question và kiểm tra revision/provenance.
+Mọi WMS quick answer đi qua `/query/stream`, không cache và không bypass snapshot
+contract/freshness validation.
+
+SSE WMS biểu đạt các mốc kiểm chứng deterministic đã thực thi (snapshot/data
+contract, rồi phạm vi/căn cứ trả lời) trước token cuối. `WMS_VERIFICATION_STEP_PACING_SECONDS`
+mặc định là `0.55` giây để giãn nhịp trình bày các mốc đã hoàn tất; đặt `0` để tắt.
+Nó chỉ thay đổi thời điểm phát SSE, không đổi verification, dữ liệu hay kết quả.
+Đây không phải chain of thought; nếu contract, metadata hoặc prepared entry không
+hợp lệ, backend trả `SUPPRESSED` và không fallback sang MES/SQL Agent/RAG/LLM.
+Metrics WMS chỉ có số đếm aggregate theo nguồn/outcome, validation latency và
+presentation pacing; không chứa câu hỏi, câu trả lời, SQL, session hoặc employee ID.
+
+Kiểm tra phần thay đổi bằng:
+
+```bash
+cd /home/jkl/Code/VLLM-PD-dev
+scripts/meibook-python -m pytest tests/test_wms_api.py tests/test_mes_integration.py -q
+npm --prefix frontend run build
+```
+
+Không chạy lệnh import WMS hoặc `--reindex` nếu chưa xác nhận rõ mục tiêu dữ liệu.
+
 - Chế độ Research đã được bật lại trên UI. Luồng mới ưu tiên bộ tài liệu nội
   bộ Nhật `DocJP` trong collection `docjp_knowledge`, chia theo các topic cố
   định. Luồng demo/upload cũ vẫn còn qua `docmind_documents`.
@@ -63,6 +110,12 @@ FastAPI + React SPA
         |     |-- SQL Agent an toàn qua semantic model nếu câu hỏi phức tạp
         |     |-- Live MES API fallback cho case cần API trực tiếp
         |
+        |-- mode=wms
+        |     |-- deterministic current balance từ data/mes_wms.sqlite
+        |     |-- WMS Executive Report contract v4
+        |     |-- metadata freshness/evidence/suppression allowlist
+        |     |-- fail-closed, không fallback sang MES/SQL Agent/live API
+        |
         |-- mode=research
               |-- chọn topic tài liệu DocJP từ /research/topics
               |-- RAG DocJP: Qdrant collection docjp_knowledge
@@ -74,12 +127,13 @@ FastAPI
         v
 LiteLLM :4000
         |
-        |-- auto-model        -> Qwen3 14B qua IP tĩnh, fallback ngrok/OpenAI
+        |-- auto-model        -> Qwen3 14B qua IP tĩnh, fallback ngrok/Azure/OpenAI
         |-- local-qwen-chat   -> Qwen3 14B qua LiteLLM ollama_chat
         |-- local-qwen-small  -> Qwen2.5 3B Instruct trên Ollama system service
-        |-- local-qwen-coder  -> Qwen2.5 Coder 14B qua llama.cpp/OpenAI API
-        |-- coding-model      -> Qwen2.5 Coder, fallback Qwen3
-        |-- openai-model      -> route cloud fallback kỹ thuật
+        |-- local-qwen-coder  -> Qwen2.5 Coder 14B qua OpenAI-compatible LAN API
+        |-- coding-model      -> Qwen2.5 Coder, fallback cùng role
+        |-- azure-*-fallback  -> cloud Azure theo role Chat / Small / Coder
+        |-- openai-*-fallback -> cloud OpenAI theo role Chat / Small / Coder
         |-- grok-model        -> route vision/dự phòng cũ
 ```
 
@@ -174,7 +228,7 @@ documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html
 
 Vai trò:
 
-- Kiểm tra `employee_id` khi vào `mkac` hoặc `mes`.
+- Kiểm tra `employee_id` khi vào `mkac`, `mes` hoặc `wms`.
 - Trả lời trực tiếp các câu hỏi có cấu trúc về nhân sự/phòng ban.
 - Cung cấp context người dùng hiện tại cho RAG MKAC.
 - ID khách demo `000000` được dùng cho khách không có mã nhân viên.
@@ -420,51 +474,58 @@ LiteLLM aliases trong `litellm_config.yaml`:
 | `local-qwen-coder` | Ollama OpenAI-compatible Qwen2.5 Coder 14B Q4 trên LAN | SQL Agent/Coding chính |
 | `local-qwen-coder-ngrok` | llama.cpp Qwen2.5 Coder 14B Q5 qua ngrok | Coder fallback |
 | `coding-model` | Qwen2.5 Coder 14B Q4 trên LAN | LangGraph Coding Agent |
-| `openai-model` | OpenAI-compatible cloud fallback | Dự phòng kỹ thuật |
+| `azure-chat-fallback` / `openai-chat-fallback` | Cloud theo vai trò Chat | Dự phòng HR/MES/Research text |
+| `azure-small-fallback` / `openai-small-fallback` | Cloud theo vai trò Small | Dự phòng dịch/intent/rewrite |
+| `azure-coder-fallback` / `openai-coder-fallback` | Cloud theo vai trò Coder | Dự phòng MES SQL Agent/Coding |
 | `grok-model` | Azure/OpenAI-compatible Grok route | Vision/dự phòng cũ |
 
-Fallback hiện tại:
+Fallback hiện tại (giữ model local là primary; Azure đứng trước OpenAI):
 
 ```yaml
 auto-model:
   - local-qwen-chat-ngrok
-  - openai-model
+  - azure-chat-fallback
+  - openai-chat-fallback
 local-qwen-chat:
   - local-qwen-chat-ngrok
-  - openai-model
+  - azure-chat-fallback
+  - openai-chat-fallback
 local-qwen-small:
   - local-qwen-chat
-  - openai-model
+  - azure-small-fallback
+  - openai-small-fallback
 local-qwen-coder:
   - local-qwen-coder-ngrok
-  - local-qwen-chat
-  - openai-model
+  - azure-coder-fallback
+  - openai-coder-fallback
 coding-model:
   - local-qwen-coder-ngrok
-  - local-qwen-chat
-  - openai-model
+  - azure-coder-fallback
+  - openai-coder-fallback
 ```
+
+Các fallback cloud tự động có thể nhận prompt cùng context HR, MES và Research
+khi toàn bộ route local trước đó không dùng được. Chỉ bật khi chính sách dữ liệu
+của tổ chức cho phép gửi ngữ cảnh đó tới cả Azure và OpenAI.
 
 Lưu ý với Qwen3: phải gọi qua LiteLLM provider `ollama_chat` tới root Ollama
 URL, không dùng trực tiếp endpoint `/v1`, vì một số Qwen3/Ollama OpenAI-compatible
 responses có thể trả reasoning nhưng rỗng `message.content`.
 
-Trạng thái kiểm tra gần nhất:
+Kiểm tra route phải thực hiện trên đúng môi trường mục tiêu. Với Dev hiện tại,
+LiteLLM chỉ xác nhận alias bằng `/v1/models`; chỉ chạy một smoke request tuần tự
+mỗi route sau khi xác minh upstream tương ứng đang truy cập được.
 
-| Route | Kết quả |
+| Route | Mục đích kiểm tra |
 |---|---|
-| LiteLLM `auto-model` | OK |
-| LiteLLM `local-qwen-chat` | OK |
-| LiteLLM `local-qwen-chat-ngrok` | OK |
-| LiteLLM `local-qwen-small` | OK |
-| LiteLLM `local-qwen-coder` | OK |
-| LiteLLM `coding-model` | OK |
-| LiteLLM `openai-model` | OK |
-| LiteLLM `grok-model` | OK |
-| Endpoint gốc Qwen chat IP tĩnh `192.168.10.124:11434` | route chính |
-| Endpoint gốc Qwen chat ngrok | OK |
-| Endpoint gốc Qwen small qua `host.docker.internal:11435` từ container | OK |
-| Endpoint gốc Qwen coder ngrok `/v1/chat/completions` | OK |
+| `auto-model`, `local-qwen-chat`, `local-qwen-chat-ngrok` | Chat/RAG local và fallback tunnel |
+| `local-qwen-small` | Dịch/intent/rewrite local |
+| `local-qwen-coder`, `local-qwen-coder-ngrok`, `coding-model` | MES SQL/Coding local |
+| `azure-*-fallback`, `openai-*-fallback` | Cloud fallback đúng role |
+| `grok-model` | Vision/dự phòng cũ |
+
+Không suy luận rằng alias đã phục vụ request chỉ vì proxy healthy: cần kiểm tra
+lần lượt endpoint upstream, rồi gọi một request ngắn có xác thực qua LiteLLM.
 
 Nghĩa là app vẫn gọi model được, nhưng Qwen chat IP tĩnh hiện đang chết; route
 chat chính đang sống nhờ fallback qua ngrok, sau đó mới tới OpenAI fallback.
