@@ -22,6 +22,8 @@ class StoredArtifact:
     media_type: str
     filename: str
     meta: dict[str, Any]
+    session_id: str = ""
+    employee_id: str = ""
 
 
 class ArtifactStore:

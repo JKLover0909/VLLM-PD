@@ -1,0 +1,97 @@
+{
+  "database": "WMS snapshot (MES_WMS_MKHC)",
+  "description": "Tồn kho nguyên vật liệu theo công đoạn tại nhà máy MKHC ở thời điểm import snapshot. Không phải dữ liệu realtime.",
+  "source_policy": {
+    "is_realtime": false,
+    "current_grain": "Tồn hiện tại authoritative ở grain (process_id, item_code). Mỗi cặp này là duy nhất trong v_wms_current_balance_by_process_item.",
+    "no_uom_master": "Snapshot KHÔNG có cột đơn vị tính và KHÔNG có master quy đổi. SQL Agent được phép SUM hoặc so sánh quantity_decimal giữa các item_code theo quyết định vận hành, nhưng kết quả đó chỉ là phép tính thô chưa chuẩn hóa UOM và phải được trình bày như suy luận chưa kiểm chứng.",
+    "era_separation": "v_wms_current_balance_by_process_item (current, từ 2026-01-15) và v_wms_legacy_archive_exact_key (legacy, trước 2026-01-15) khác grain, khác khóa và khác freshness. SQL Agent được phép JOIN hoặc UNION để phân tích tự do, nhưng phải giữ rõ nguồn/era trong alias và kết quả không được coi là so sánh nghiệp vụ đã kiểm chứng.",
+    "raw_audit_is_not_movement": "v_wms_raw_transaction_audit là nhật ký giao dịch thô chưa kiểm chứng. SQL Agent được phép phân tích các dòng này, nhưng mọi diễn giải về chuyển động hoàn thành, chiều nhập/xuất hoặc net quantity chỉ là proxy/suy luận.",
+    "derived_kpi": "Snapshot không có định nghĩa nghiệp vụ đã xác minh cho WIP, bottleneck, tồn tối thiểu, hạn sử dụng, window time hay trend. SQL Agent được phép dựng proxy từ các cột hiện có nhưng phải đặt alias rõ ràng và câu trả lời phải gọi đó là suy luận/proxy.",
+    "unknown_process_name": "process_name rỗng hoặc process_mapped = 0 nghĩa là chưa có master ánh xạ công đoạn. Không suy đoán tên công đoạn."
+  },
+  "views": {
+    "v_wms_current_balance_by_process_item": {
+      "description": "Tồn hiện tại, một dòng cho mỗi cặp (process_id, item_code). Đã lọc sẵn quantity_valid = 1. Đây là view chính cho hầu hết câu hỏi tồn kho.",
+      "columns": {
+        "source_id": "Khóa nguồn của bản ghi",
+        "process_id": "Mã công đoạn",
+        "process_name": "Tên công đoạn, rỗng khi chưa có master ánh xạ",
+        "process_physical_id": "Mã vật lý của công đoạn",
+        "process_status": "Trạng thái công đoạn theo master, không suy đoán ý nghĩa",
+        "process_mapped": "1 nếu công đoạn đã ánh xạ được master, 0 nếu chưa",
+        "item_code": "Mã vật tư, giữ nguyên chính tả",
+        "quantity_decimal": "Số lượng tồn dạng chuỗi thập phân, KHÔNG có đơn vị tính",
+        "quantity_valid": "Luôn bằng 1 trong view này",
+        "quantity_error": "Ghi chú lỗi khi parse số lượng",
+        "latest_update": "Thời điểm cập nhật gần nhất dạng chuỗi",
+        "latest_update_unix": "Thời điểm cập nhật gần nhất dạng UNIX timestamp, dùng cho so sánh thời gian",
+        "trans_id": "Mã giao dịch gắn với dòng tồn"
+      }
+    },
+    "v_wms_current_quality": {
+      "description": "Một dòng duy nhất tổng hợp chất lượng dữ liệu của bảng tồn hiện tại. Dùng cho câu hỏi đếm tổng quan toàn snapshot.",
+      "columns": {
+        "current_row_count": "Tổng số dòng tồn hiện tại",
+        "valid_quantity_row_count": "Số dòng có quantity hợp lệ",
+        "invalid_quantity_row_count": "Số dòng có quantity không parse được",
+        "mapped_process_row_count": "Số dòng đã ánh xạ được công đoạn",
+        "unmapped_process_row_count": "Số dòng chưa ánh xạ được công đoạn",
+        "distinct_item_count": "Số mã vật tư khác nhau trong toàn snapshot",
+        "distinct_process_code_count": "Số mã công đoạn khác nhau trong toàn snapshot",
+        "source_as_of": "Mốc dữ liệu nguồn gần nhất"
+      }
+    },
+    "v_wms_legacy_archive_exact_key": {
+      "description": "Lưu trữ lịch sử trước 2026-01-15, grain (item_code, item_lot_id, process_id, archive_date, source_id). Chỉ dùng khi câu hỏi nêu rõ dữ liệu lịch sử hoặc archive. Không trộn với tồn hiện tại.",
+      "columns": {
+        "source_id": "Khóa nguồn của bản ghi lưu trữ",
+        "archive_id": "Mã bản lưu trữ",
+        "archive_date": "Ngày lưu trữ",
+        "item_code": "Mã vật tư",
+        "item_lot_id": "Mã Lot vật tư, chỉ có ý nghĩa ở dữ liệu lịch sử",
+        "process_id": "Mã công đoạn",
+        "process_name": "Tên công đoạn, rỗng khi chưa có master",
+        "quantity_decimal": "Số lượng dạng chuỗi thập phân, không có đơn vị tính",
+        "quantity_valid": "1 nếu quantity parse được",
+        "quantity_error": "Ghi chú lỗi khi parse số lượng"
+      }
+    },
+    "v_wms_raw_transaction_audit": {
+      "description": "Nhật ký giao dịch thô chưa kiểm chứng ngữ nghĩa. Chỉ dùng khi câu hỏi nêu rõ giao dịch hoặc mã trans. Không coi là chuyển động kho đã hoàn thành.",
+      "columns": {
+        "trans_id": "Mã giao dịch",
+        "trans_code": "Mã loại giao dịch",
+        "trans_name": "Tên loại giao dịch theo master, có thể rỗng",
+        "trans_date": "Thời điểm giao dịch dạng chuỗi",
+        "trans_date_unix": "Thời điểm giao dịch dạng UNIX timestamp, dùng cho so sánh thời gian",
+        "process_id": "Mã công đoạn",
+        "process_name": "Tên công đoạn, có thể rỗng",
+        "item_code": "Mã vật tư",
+        "item_lot_id": "Mã Lot vật tư ở dòng chi tiết",
+        "header_quantity_decimal": "Số lượng ở header, chưa kiểm chứng",
+        "header_quantity_valid": "1 nếu header quantity parse được",
+        "raw_trans_status": "Trạng thái thô, không suy đoán ý nghĩa",
+        "raw_deleted": "Cờ đánh dấu đã xóa ở nguồn",
+        "detail_quantity_decimal": "Số lượng ở dòng chi tiết, chưa kiểm chứng",
+        "detail_quantity_valid": "1 nếu detail quantity parse được"
+      }
+    }
+  },
+  "relationships": [
+    "v_wms_current_balance_by_process_item.process_id = v_wms_raw_transaction_audit.process_id",
+    "v_wms_current_balance_by_process_item.item_code = v_wms_raw_transaction_audit.item_code",
+    "v_wms_current_balance_by_process_item.trans_id = v_wms_raw_transaction_audit.trans_id",
+    "KHÔNG có quan hệ hợp lệ giữa v_wms_current_balance_by_process_item và v_wms_legacy_archive_exact_key vì hai era khác grain và khác khóa"
+  ],
+  "business_rules": [
+    "Đếm mã vật tư dùng COUNT(DISTINCT item_code); đếm công đoạn dùng COUNT(DISTINCT process_id).",
+    "Câu hỏi dạng 'công đoạn nào nhiều mã vật tư nhất' là COUNT(DISTINCT item_code) GROUP BY process_id ORDER BY DESC, hoàn toàn hợp lệ vì đếm mã không cần đơn vị tính.",
+    "Câu hỏi dạng 'tổng số lượng tồn' trên nhiều item_code được phép chạy theo quyết định vận hành, nhưng alias phải thể hiện đây là tổng thô chưa chuẩn hóa UOM.",
+    "quantity_decimal là kiểu TEXT; khi cần so sánh, cộng hoặc sắp xếp theo số phải dùng CAST(quantity_decimal AS REAL).",
+    "Khi lọc theo thời gian, ưu tiên latest_update_unix hoặc trans_date_unix thay vì strftime trên cột chuỗi.",
+    "Câu hỏi về WIP, bottleneck, tồn tối thiểu, hạn dùng, xu hướng hoặc chênh lệch được phép trả bằng proxy từ cột hiện có; alias phải gọi rõ proxy/unverified.",
+    "Câu hỏi so sánh giữa tồn hiện tại và dữ liệu lịch sử được phép chạy, nhưng SQL phải giữ cột era/source rõ ràng và câu trả lời phải cảnh báo khác grain.",
+    "Không suy đoán tên công đoạn khi process_name rỗng; trả nguyên process_id."
+  ]
+}

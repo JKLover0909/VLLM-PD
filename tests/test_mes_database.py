@@ -154,6 +154,53 @@ def test_process_step_intents_are_deterministic_and_privacy_safe(mes_database):
     assert "Private" not in history.fallback_answer
 
 
+def test_process_metrics_keep_units_separate_and_unknown_values(mes_database):
+    result = mes_database.query_question(
+        "Số liệu P_OK, P_NG ở công đoạn của Lot 000001-01-000 là bao nhiêu?"
+    )
+
+    assert result is not None
+    assert result.intent == "lot_process_metrics"
+    assert len(result.rows) == 2
+    assert "P[OK=100, NG defect=2" in result.fallback_answer
+    assert "output max=chưa rõ" in result.fallback_answer
+    assert "không phải tổng lỗi" in result.fallback_answer
+    assert "tỷ lệ yield" in result.fallback_answer
+
+
+def test_process_intents_accept_flexible_count_and_metric_wording(mes_database):
+    count_questions = (
+        "Lot 000001-01-000 công đoạn bao nhiêu?",
+        "Lot 000001-01-000 đã qua mấy công đoạn?",
+        "Lot 000001-01-000 process step count",
+        "Lot 000001-01-000 工程はいくつ",
+    )
+    for question in count_questions:
+        result = mes_database.query_question(question)
+        assert result is not None
+        assert result.intent == "lot_process_step_count"
+        assert result.rows[0]["step_count"] == 2
+
+    for question in (
+        "P_OK P_NG Lot 000001-01-000",
+        "P-OK P-NG Lot 000001-01-000",
+        "process metrics Lot 000001-01-000",
+    ):
+        result = mes_database.query_question(question)
+        assert result is not None
+        assert result.intent == "lot_process_metrics"
+
+
+def test_process_metrics_include_output_max_values(mes_database):
+    result = mes_database.query_question(
+        "Output max P/S/B của công đoạn Lot 000001-01-000?"
+    )
+
+    assert result is not None
+    assert result.intent == "lot_process_metrics"
+    assert "output max=" in result.fallback_answer
+
+
 def test_process_question_for_unknown_lot_returns_explicit_empty_result(mes_database):
     result = mes_database.query_question(
         "Lot 999999-01-999 đang ở công đoạn nào?"

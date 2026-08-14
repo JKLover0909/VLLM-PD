@@ -1,0 +1,136 @@
+# Dev stack — chạy song song với bản deploy (docker-compose.web.yml).
+# Port: web 8002 | litellm 4001 | qdrant 6334
+# Container: meibook-*-dev  |  Project: meibook-dev
+# Không chạy ollama-proxy riêng — dùng chung proxy của bản deploy (host:11435).
+name: meibook-dev
+
+services:
+  app:
+    image: meibook-web:latest
+    container_name: meibook-web-dev
+    gpus: all
+    env_file:
+      - ${MEIBOOK_ENV_FILE:-.env.docker}
+    environment:
+      ENABLE_AGENT: "false"
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      LITELLM_URL: http://litellm:4000/v1
+      UPLOAD_DIR: /app/uploads
+      MKAC_SOURCE_DIR: /app/documents/MKAC
+      MKAC_TEXT_SOURCE_DIR: /app/documents/MKAC-md
+      MKAC_MANIFEST_PATH: /app/config/mkac_manifest.json
+      MKAC_PAGE_IMAGE_DIR: /app/mkac_processed/pages
+      MKAC_INDEX_REPORT: /app/logs/mkac_index_report.json
+      RESEARCH_DEMO_DIR: /app/documents/Research
+      RESEARCH_DEMO_SESSION_ID: 00000000-0000-4000-8000-000000000001
+      RESEARCH_DEMO_INDEX_REPORT: /app/logs/research_demo_index_report.json
+      EMPLOYEE_DIRECTORY_SOURCE_DIR: /app/documents/MKAC
+      EMPLOYEE_DIRECTORY_SOURCE_GLOB: "3. DANH SÁCH KHÁM SỨC KHOẺ 2026.pdf"
+      EMPLOYEE_DIRECTORY_DB_PATH: /app/data/employee_directory.sqlite
+      EMPLOYEE_DIRECTORY_SUMMARY_PATH: "/app/documents/MKAC/0. Thong tin nhan su va lanh dao MKAC.html"
+      MES_DATABASE_ENABLED: "true"
+      MES_DATABASE_PATH: /app/data/mes.sqlite
+      MES_WMS_DATABASE_ENABLED: "true"
+      MES_WMS_DATABASE_PATH: /app/data/mes_wms.sqlite
+      MES_SQL_AGENT_ENABLED: "true"
+      MES_SEMANTIC_MODEL_PATH: /app/config/mes_semantic_model.json
+      MES_SQL_AGENT_MAX_ROWS: "100"
+      MES_SQL_AGENT_TIMEOUT: "2"
+      MES_SQL_AGENT_MAX_ATTEMPTS: "2"
+      MES_SQL_AGENT_MODEL: local-qwen-coder
+      WMS_SQL_AGENT_ENABLED: "true"
+      WMS_SEMANTIC_MODEL_PATH: /app/config/wms_semantic_model.json
+      WMS_SQL_AGENT_MAX_ROWS: "50"
+      WMS_SQL_AGENT_TIMEOUT: "2"
+      WMS_SQL_AGENT_MAX_ATTEMPTS: "2"
+      WMS_SQL_AGENT_MODEL: local-qwen-coder
+      WMS_SQL_PLANNER_MAX_TOKENS: "1200"
+      WMS_SQL_ANSWER_MAX_TOKENS: "384"
+      LOCAL_CHAT_NUM_CTX: "16384"
+      LOCAL_AUX_NUM_CTX: "4096"
+      TRANSLATION_MODEL: local-qwen-small
+      TRANSLATION_TEMPERATURE: "0.1"
+      MKAC_GENERAL_MAX_TOKENS: "256"
+      MKAC_SIMPLE_MAX_TOKENS: "512"
+      MKAC_EXTENDED_MAX_TOKENS: "768"
+      MES_GENERAL_MAX_TOKENS: "256"
+      MES_LIVE_API_MAX_TOKENS: "192"
+      MES_DATABASE_MAX_TOKENS: "384"
+      MES_SQL_PLANNER_MAX_TOKENS: "1200"
+      MES_SQL_ANSWER_MAX_TOKENS: "384"
+      RESEARCH_TOP_K: "6"
+      RESEARCH_MAX_TOKENS: "768"
+      RESEARCH_SCORE_THRESHOLD: "0.35"
+      DOCJP_COLLECTION_NAME: docjp_knowledge
+      DOCJP_SESSION_ID: docjp
+      RESEARCH_TOPICS_PATH: /app/config/research_topics.json
+    ports:
+      - "8002:8001"
+    volumes:
+      - easyocr_cache:/root/.EasyOCR
+      - ./documents/MKAC:/app/documents/MKAC
+      - ./documents/MKAC-md:/app/documents/MKAC-md
+      - ./documents/Research:/app/documents/Research:ro
+      - ./config:/app/config
+      - ./uploads:/app/uploads
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./mkac_processed:/app/mkac_processed
+      - ./docjp_processed:/app/docjp_processed
+      - ./src:/app/src:ro
+      # Dùng cùng tài khoản demo với Production qua bản sao credential/token trong data Dev.
+      - ./data/gmail_credentials.json:/app/src/agent/node_modules/mcp-server-google-calendar/credentials.json:ro
+      - ./data/calendar_token.json:/app/src/agent/node_modules/mcp-server-google-calendar/token.json:ro
+      - ./scripts:/app/scripts:ro
+      - ./frontend/dist:/app/frontend/dist:ro
+      - hf_cache:/root/.cache/huggingface
+      - torch_cache:/root/.cache/torch
+    depends_on:
+      - qdrant
+      - litellm
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: meibook-qdrant-dev
+    ports:
+      - "127.0.0.1:6334:6333"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+  litellm:
+    image: meibook-litellm:latest
+    container_name: meibook-litellm-dev
+    env_file:
+      - ${MEIBOOK_ENV_FILE:-.env.docker}
+    environment:
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      QWEN_CHAT_API_BASE: http://192.84.106.78:11434
+      QWEN_CHAT_NGROK_API_BASE: https://carless-overarch-establish.ngrok-free.dev
+      QWEN_SMALL_API_BASE: http://host.docker.internal:11435
+      QWEN_CODER_LAN_API_BASE: http://192.84.106.77:11434/v1
+      QWEN_CODER_LAN_API_KEY: sk-local
+      QWEN_CODER_NGROK_API_BASE: https://36b4-2405-4803-f160-2090-b282-e2ff-fe05-dfe9.ngrok-free.app/v1
+      QWEN_CODER_NGROK_API_KEY: sk-local
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["--local", "--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
+    ports:
+      - "127.0.0.1:4001:4000"
+    volumes:
+      - ./litellm_config.yaml:/app/config.yaml:ro
+    restart: unless-stopped
+
+# Dùng chung cache model với bản deploy → không tải lại bge-m3 / EasyOCR.
+volumes:
+  hf_cache:
+    external: true
+    name: vllm-pd_hf_cache
+  torch_cache:
+    external: true
+    name: vllm-pd_torch_cache
+  easyocr_cache:
+    external: true
+    name: vllm-pd_easyocr_cache

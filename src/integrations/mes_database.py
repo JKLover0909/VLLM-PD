@@ -277,7 +277,9 @@ class MesDatabase:
         ):
             return self._list_lots()
         if lot_id and self._is_lot_process_question(normalized):
-            if self._asks_count(normalized):
+            if self._asks_process_metrics(normalized):
+                return self._lot_process_metrics(lot_id)
+            if self._asks_process_step_count(normalized):
                 return self._lot_process_step_count(lot_id)
             if self._asks_process_history(normalized):
                 return self._lot_process_steps(lot_id)
@@ -686,13 +688,88 @@ class MesDatabase:
             (lot_id, str(rows[0]["process_id"]), str(rows[-1]["process_id"])),
         )
 
+    def _lot_process_metrics(self, lot_id: str) -> MesDatabaseResult:
+        rows = self._fetch_all(
+            """
+            SELECT lot_id, product_id, process_id, process_order,
+                   p_ok, p_ng_defect, p_ng_scrap,
+                   s_ok, s_ng_defect, s_ng_scrap,
+                   b_ok, b_ng_defect, b_ng_scrap,
+                   output_max_p, output_max_s, output_max_b
+            FROM v_lot_process_steps
+            WHERE lot_id = ?
+            ORDER BY process_order, process_step_pk
+            """,
+            (lot_id,),
+        )
+        if not rows:
+            return self._result(
+                "lot_process_metrics",
+                [],
+                f"Không tìm thấy số liệu công đoạn của Lot {lot_id} "
+                "trong MES snapshot.",
+                (lot_id,),
+            )
+        descriptions = format_item_list(
+            [
+                self._format_process_metrics(row)
+                for row in rows
+            ]
+        )
+        answer = (
+            f"Theo MES snapshot, số liệu P/S/B đã ghi nhận của Lot {lot_id} là: "
+            f"{descriptions}. Giá trị chưa rõ không được tính là 0; các nhóm P/S/B "
+            "được giữ riêng và không phải tổng lỗi D_ERROR hay tỷ lệ yield."
+        )
+        return self._result(
+            "lot_process_metrics",
+            rows,
+            answer,
+            (lot_id, str(rows[0]["process_id"])),
+        )
+
+    @classmethod
+    def _format_process_metrics(cls, row: dict[str, Any]) -> str:
+        values = (
+            (
+                "P",
+                row.get("p_ok"),
+                row.get("p_ng_defect"),
+                row.get("p_ng_scrap"),
+                row.get("output_max_p"),
+            ),
+            (
+                "S",
+                row.get("s_ok"),
+                row.get("s_ng_defect"),
+                row.get("s_ng_scrap"),
+                row.get("output_max_s"),
+            ),
+            (
+                "B",
+                row.get("b_ok"),
+                row.get("b_ng_defect"),
+                row.get("b_ng_scrap"),
+                row.get("output_max_b"),
+            ),
+        )
+        groups = ", ".join(
+            f"{name}[OK={cls._number(ok)}, NG defect={cls._number(defect)}, "
+            f"NG scrap={cls._number(scrap)}, output max={cls._number(output_max)}]"
+            for name, ok, defect, scrap, output_max in values
+        )
+        return (
+            f"bước {cls._number(row['process_order'])} process "
+            f"{row['process_id']}: {groups}"
+        )
+
     def _lot_process_step_count(self, lot_id: str) -> MesDatabaseResult:
         rows = self._fetch_all(
             """
-            SELECT lot_id, product_id, step_count, latest_process_id,
-                   latest_process_order
-            FROM v_lot_process_progress
+            SELECT lot_id, product_id, COUNT(*) AS step_count
+            FROM v_lot_process_steps
             WHERE lot_id = ?
+            GROUP BY lot_id, product_id
             LIMIT 1
             """,
             (lot_id,),
@@ -1502,9 +1579,9 @@ class MesDatabase:
 
     @staticmethod
     def _asks_count(normalized: str) -> bool:
-        return "bao nhieu" in normalized or "tong so" in normalized or bool(
-            re.search(r"\b(how many|total|number of)\b", normalized)
-        )
+        return any(
+            marker in normalized for marker in ("bao nhieu", "may", "tong so")
+        ) or bool(re.search(r"\b(how many|total|number of)\b", normalized))
 
     @staticmethod
     def _asks_quantity(normalized: str) -> bool:
@@ -1551,6 +1628,8 @@ class MesDatabase:
 
     @staticmethod
     def _is_lot_process_question(normalized: str) -> bool:
+        if MesDatabase._asks_process_metrics(normalized):
+            return True
         has_process = any(
             marker in normalized
             for marker in (
@@ -1576,14 +1655,13 @@ class MesDatabase:
                 "lich su",
                 "liet ke",
                 "danh sach",
-                "bao nhieu",
                 "step count",
                 "latest",
                 "current",
                 "history",
                 "list",
             )
-        )
+        ) or MesDatabase._asks_process_step_count(normalized)
         return has_process and has_progress
 
     @staticmethod
@@ -1601,6 +1679,42 @@ class MesDatabase:
                 "工程一覧",
             )
         )
+
+    @staticmethod
+    def _asks_process_metrics(normalized: str) -> bool:
+        metric_text = normalized.replace("_", " ").replace("-", " ")
+        return any(
+            marker in metric_text
+            for marker in (
+                "p ok",
+                "p ng",
+                "s ok",
+                "s ng",
+                "b ok",
+                "b ng",
+                "ok ng",
+                "ng defect",
+                "ng scrap",
+                "output max",
+                "so lieu p s b",
+                "process metrics",
+            )
+        )
+
+    @staticmethod
+    def _asks_process_step_count(normalized: str) -> bool:
+        asks_count = MesDatabase._asks_count(normalized) or bool(
+            re.search(r"\b(may|step count|process step count)\b", normalized)
+        )
+        has_step = any(
+            marker in normalized
+            for marker in (
+                "cong doan",
+                "process step",
+                "process steps",
+            )
+        )
+        return asks_count and has_step
 
     @staticmethod
     def _is_lot_error_record_count_question(normalized: str) -> bool:

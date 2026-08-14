@@ -220,5 +220,36 @@
       "question_ja": "MESスナップショットのデータはどこから取得されますか？",
       "answer_ja": "アプリ内のMESデータは、インポート時点のMESシステムの静的スナップショット（SQLite）から抽出されたものであり、リアルタイムデータではありません。"
     }
+  ],
+  "wms": [
+    {
+      "id": "wms-executive-overview",
+      "execution": "query",
+      "question": "Cho xem báo cáo tồn kho công đoạn WMS",
+      "live": true,
+      "question_ja": "WMS工程倉庫の在庫レポートを表示してください"
+    },
+    {
+      "id": "wms-item-count",
+      "execution": "query",
+      "question": "Kho công đoạn WMS hiện có bao nhiêu mã vật tư?",
+      "live": true,
+      "question_ja": "WMS工程倉庫には現在いくつの資材コードがありますか？"
+    },
+    {
+      "id": "wms-snapshot-explainer",
+      "execution": "server_prepared",
+      "revision": "2026-08-01",
+      "provenance": {
+        "contract_version": "4",
+        "data_contract_version": "wms-current-balance-v1",
+        "semantic_contract_version": "wms-phase2c-v1",
+        "semantic_epoch": "CURRENT_POST_2026_01_15"
+      },
+      "question": "Dữ liệu tồn kho WMS có phải thời gian thực không?",
+      "answer": "Không. Dữ liệu WMS trong Meibook được truy vấn từ bản snapshot tĩnh cuối ngày (Current Balance), không phải tồn kho thời gian thực. Hệ thống chỉ hỗ trợ xem số lượng tồn theo mã vật tư, chưa thể cộng gộp vì thiếu Master Đơn vị tính (UOM).",
+      "question_ja": "WMS在庫データはリアルタイムですか？",
+      "answer_ja": "いいえ。MeibookのWMSデータはリアルタイムではなく、1日の終わりの静的スナップショット（現行残高）から照会されます。また、単位マスター（UOM）がないため、異なる資材コードの数量を合算することはできません。"
+    }
   ]
 }

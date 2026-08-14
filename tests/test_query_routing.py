@@ -1,10 +1,14 @@
+import asyncio
 import sqlite3
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 
+from src.api import main
+from src.api.schemas import QueryRequest
 from src.auth.employee_directory import EmployeeDirectory
-from src.integrations.mes_query_service import MesQueryService
+from src.integrations.mes_query_service import MesQueryOutcome, MesQueryService
 from src.rag.rag_pipeline import RAGPipeline
 
 
@@ -43,6 +47,74 @@ def employee_directory(tmp_path: Path) -> EmployeeDirectory:
             ],
         )
     return EmployeeDirectory(db_path)
+
+
+def wms_request() -> QueryRequest:
+    return QueryRequest(
+        session_id="00000000-0000-4000-8000-000000000310",
+        question="Kho công đoạn hiện có bao nhiêu mã vật tư?",
+        mode="wms",
+        model="local",
+        ui_language="vi",
+        employee_id="000000",
+    )
+
+
+def test_wms_mode_routes_only_to_isolated_service(monkeypatch):
+    class WmsOnlyService:
+        def __init__(self):
+            self.calls = []
+
+        async def query_wms_outcome(self, *, question, model, language):
+            self.calls.append((question, model, language))
+            return MesQueryOutcome(
+                answer="WMS only",
+                results=[],
+                routed_model="local-qwen-chat",
+                answer_scope="wms_database",
+                wms_metadata={"domain": "CURRENT_BALANCE"},
+            )
+
+        async def query_outcome(self, **kwargs):  # pragma: no cover
+            raise AssertionError("WMS không được gọi route MES chung")
+
+    service = WmsOnlyService()
+    monkeypatch.setattr(main, "mes_query_service", service)
+    monkeypatch.setattr(main, "rag_pipeline", object())
+
+    outcome = asyncio.run(main.route_query_outcome(wms_request()))
+
+    assert outcome.answer_scope == "wms_database"
+    assert outcome.wms_metadata == {"domain": "CURRENT_BALANCE"}
+    assert service.calls == [(wms_request().question, "local", "vi")]
+
+
+def test_wms_mode_fails_closed_without_isolated_service(monkeypatch):
+    class MesOnlyService:
+        async def query_outcome(self, **kwargs):  # pragma: no cover
+            raise AssertionError("WMS không được fallback sang MES")
+
+    monkeypatch.setattr(main, "mes_query_service", MesOnlyService())
+    monkeypatch.setattr(main, "rag_pipeline", object())
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(main.route_query_outcome(wms_request()))
+
+    assert exc_info.value.status_code == 503
+    assert "WMS query service" in exc_info.value.detail
+
+
+def test_invalid_employee_error_has_stable_code(monkeypatch, employee_directory):
+    monkeypatch.setattr(main, "employee_directory", employee_directory)
+
+    with pytest.raises(HTTPException) as exc_info:
+        main.verify_mkac_employee("999999")
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == {
+        "code": "INVALID_EMPLOYEE_ID",
+        "message": "Mã nhân viên không hợp lệ.",
+    }
 
 
 def test_hr_structured_question_uses_employee_database(employee_directory):

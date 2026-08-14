@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: Meibook Production UI
-description: Implementation-derived visual identity for the Production MKAC, MES, and Research interface.
+description: Implementation-derived visual identity for the Production MKAC, MES, WMS, and Research interface.
 colors:
   canvas-light: "#f4f6f8"
   surface-light: "#ffffff"
@@ -15,6 +15,7 @@ colors:
   accent-dark: "#8ce2d8"
   mes: "#185b91"
   research: "#8a5a0a"
+  wms: "#b45309"
   success: "#285e43"
   danger: "#b42318"
   canvas-dark: "#15191f"
@@ -81,6 +82,13 @@ components:
     rounded: "{rounded.md}"
     padding: 12px
     height: 44px
+  mode-tab-wms:
+    backgroundColor: "#fef3c7"
+    textColor: "{colors.wms}"
+    typography: "{typography.label}"
+    rounded: "{rounded.md}"
+    padding: 12px
+    height: 44px
   card:
     backgroundColor: "{colors.surface-light}"
     textColor: "{colors.text-light}"
@@ -95,6 +103,11 @@ components:
     backgroundColor: "{colors.sidebar}"
     textColor: "{colors.sidebar-text}"
     width: 304px
+  report-card:
+    backgroundColor: "{colors.surface-light}"
+    textColor: "{colors.text-light}"
+    rounded: "{rounded.md}"
+    padding: 16px
   status-success:
     backgroundColor: "{colors.surface-light}"
     textColor: "{colors.success}"
@@ -116,7 +129,7 @@ components:
 
 ## Overview
 
-Meibook is a restrained bilingual internal-tool interface for MKAC. The Production UI supports MKAC/HR, MES, and Research. It favors dense, verifiable information over decorative presentation: a pale neutral canvas, white working surfaces, a dark document sidebar, and teal as the default interaction accent.
+Meibook is a restrained bilingual internal-tool interface for MKAC. The Production UI supports MKAC/HR, MES, and Research as active modes. WMS code has been merged and the WMS tab appears only when a validated Production snapshot is available. The interface favors dense, verifiable information over decorative presentation: a pale neutral canvas, white working surfaces, a dark document sidebar, and teal as the default interaction accent.
 
 This file records a stable, implementation-derived subset of the visual system. It does not replace `frontend/src/styles.css`, which remains the source of truth. Many selectors still use literal colors and component-specific dark overrides, so the token inventory above must not be treated as proof that the CSS is fully tokenized.
 
@@ -124,7 +137,7 @@ Use the MKAC logo from `frontend/public/mkac-logo.png` and Lucide React for inte
 
 ## Colors
 
-Use teal for default actions and MKAC context, blue for MES, and amber for Research. Reserve green and red for semantic success and error/destructive states. Do not use status colors as decoration.
+Use teal for default actions and MKAC context, blue for MES, amber for Research, and orange/amber for WMS. Reserve green and red for semantic success and error/destructive states. Do not use status colors as decoration.
 
 Light mode uses the neutral canvas and white surfaces. Dark mode uses the dark canvas and component-level surface overrides. Every UI change must be checked in both themes; changing a light selector alone is incomplete.
 
@@ -151,7 +164,7 @@ Support viewports down to approximately `320px`. Preserve at least `44px` touch 
 
 ## Elevation & Depth
 
-Use thin borders and restrained shadows. Cards and the composer receive subtle lift; menus and dialogs receive stronger separation. Dark mode should reduce or remove bright shadows and rely more on borders and surface contrast.
+Use thin borders and restrained shadows. Cards and the composer receive subtle lift; menus and dialogs receive stronger separation. Dark mode should reduce or remove bright shadows and rely more on borders and surface contrast. Report artifacts use component-scoped `--report-*` surface, border, text, muted, and accent roles.
 
 Avoid stacked shadows, glass effects, and ornamental depth. Elevation communicates containment, focus, or temporary overlay state only.
 
@@ -168,10 +181,10 @@ Reuse the established React boundaries before creating a parallel pattern:
 - `EmployeeLogin` for the employee-code gate.
 - `ResearchSidebar` for topic/upload scope and document operations.
 - `ChatInput` for compose, send, stop, and Research attachment actions.
-- `MessageList` for streaming messages, metadata, citations, and suggestions.
+- `MessageList` for streaming messages, WMS metadata, citations, and suggestions.
 - `SourcePreviewDialog` for source inspection.
 
-Shared patterns also include mode tabs, model selection, source panel, confirmation dialogs, agent timelines, report artifact cards, loading skeletons, upload progress, error banners, and empty states.
+Shared patterns also include mode tabs, model selection, source panel, confirmation dialogs, agent timelines, report artifact cards, loading skeletons, upload progress, error banners, and empty states. WMS-specific patterns include mode-tab-wms styling, WMS metadata chips, verification timeline, and report cards; these are visible only when WMS is enabled.
 
 Use native controls and semantic elements first. Keep the shared `:focus-visible` outline. Mark decorative icons as hidden from assistive technology, label icon-only controls, expose asynchronous state through the existing polite live regions, and preserve Escape-to-close behavior. These are implementation conventions, not a declaration of complete accessibility compliance.
 
@@ -184,11 +197,12 @@ Use native controls and semantic elements first. Keep the shared `:focus-visible
 - Preserve reduced-motion behavior for loading and streaming feedback.
 - Add named semantic CSS variables when a visual role becomes reusable.
 - Keep citations, tables, metadata, and operational codes legible.
+- Keep WMS status, reason, freshness, and limitations explicit in text when WMS is enabled.
 
 **Don't**
 
 - Do not invent a new palette, icon family, radius, or shadow per feature.
-- Do not use animation as the only indication of progress or state.
+- Do not use animation or color as the only indication of progress or state.
 - Do not make light-only styling changes.
 - Do not interpret this document as authorization to refactor all CSS tokens.
-- Do not describe Dev-only WMS or advanced report UI as Production capability.
+- Do not describe WMS as a fully active Production capability unless snapshot and configuration are verified.

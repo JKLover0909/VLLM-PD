@@ -113,13 +113,13 @@ def normalize_query_cache_text(value: str) -> str:
 
 
 def query_cache_key(req: QueryRequest, *, snapshot_version: str = "") -> Optional[str]:
-    if config.QUERY_RESPONSE_CACHE_SIZE <= 0 or req.mode not in {"mkac", "mes", "research"}:
+    if config.QUERY_RESPONSE_CACHE_SIZE <= 0 or req.mode not in {"mkac", "mes", "wms", "research"}:
         return None
     if try_parse_email_send_command(req.question) is not None:
         return None
     # Mọi yêu cầu tạo report đều bỏ cache: report được hỗ trợ tạo artifact mới,
     # còn report ngoài capability phải đi qua refusal mới thay vì lấy fallback cũ.
-    if req.mode == "mes" and is_report_request(req.question):
+    if is_report_request(req.question):
         return None
     # Uploaded Research documents are private to a mutable session. Until the
     # cache has corpus-version invalidation, disabling it is safer than risking
@@ -130,9 +130,9 @@ def query_cache_key(req: QueryRequest, *, snapshot_version: str = "") -> Optiona
     # conversation_context — cache theo câu chữ sẽ trả nhầm ngữ cảnh người khác.
     if is_followup_question(req.question):
         return None
-    # TTL áp dụng theo mode: MES dùng TTL dài riêng vì snapshot tĩnh.
+    # TTL áp dụng theo mode: MES/WMS dùng TTL dài riêng vì snapshot tĩnh.
     # Research dùng TTL riêng vì tài liệu DocJP gần như tĩnh (chỉ đổi khi reindex).
-    if req.mode == "mes":
+    if req.mode in {"mes", "wms"}:
         ttl = config.MES_QUERY_CACHE_TTL_SECONDS
     elif req.mode == "research":
         ttl = config.RESEARCH_QUERY_CACHE_TTL_SECONDS
@@ -182,10 +182,18 @@ def is_context_reference(value: str) -> bool:
         "noi dung nay",
         "ket qua nay",
         "cau tra loi nay",
+        "bao cao nay",
+        "report nay",
+        "ban bao cao nay",
         "phan tren",
         "o tren",
         "vua roi",
         "ben tren",
+        "this report",
+        "このレポート",
+        "この報告書",
+        "この内容",
+        "上記のレポート",
     )
     return any(marker in normalized for marker in reference_markers)
 
@@ -234,11 +242,15 @@ def latest_assistant_context(
         if item.get("role") != "assistant":
             continue
         content = str(item.get("content") or "").strip()
-        if content:
+        artifact_id = str(item.get("artifact_id") or "").strip()
+        if content or artifact_id:
             return {
                 "content": content,
                 "answer_scope": str(item.get("answer_scope") or "conversation_context"),
                 "model": str(item.get("model") or ""),
+                "artifact_id": artifact_id,
+                "artifact_type": str(item.get("artifact_type") or ""),
+                "artifact_title": str(item.get("artifact_title") or ""),
             }
     return None
 

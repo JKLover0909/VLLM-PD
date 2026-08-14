@@ -12,6 +12,7 @@ import {
   Activity,
   AlertCircle,
   Bot,
+  Boxes,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -28,6 +29,7 @@ import {
   Layers3,
   Loader2,
   LogOut,
+  Mail,
   Menu,
   PanelRightClose,
   PanelRightOpen,
@@ -52,7 +54,13 @@ import { EmployeeLogin } from "./components/EmployeeLogin";
 import { SourcePreviewDialog } from "./components/SourcePreviewDialog";
 import { ResearchSidebar } from "./components/ResearchSidebar";
 import { MessageList } from "./components/MessageList";
-import { ChatInput } from "./components/ChatInput";
+import { ChatInput, pushStoredPromptHistory } from "./components/ChatInput";
+import { quickAnswerRequestOptions } from "./quick-answer-request";
+import {
+  getModeTabScrollLeft,
+  shouldClearEmployeeAuth,
+  visibleModeKeys,
+} from "./mode-tabs";
 import "./styles.css";
 
 // Icon theo loại file để người dùng phân biệt nhanh PDF/Word/Excel/ảnh trong
@@ -75,19 +83,41 @@ const FILE_TYPE_ICONS = {
 function AgentTimeline({ timeline, language }) {
   if (!timeline?.steps?.length) return null;
   const complete = timeline.status === "done";
+  const cancelled = timeline.status === "cancelled";
+  const isWmsVerification = timeline.workflow === "wms_verification";
   const labels = language === "ja"
-    ? { title: "Agentの実行手順", completed: "完了", running: "実行中", queued: "待機中" }
-    : { title: "Các bước Report Agent", completed: "Hoàn tất", running: "Đang chạy", queued: "Chờ thực hiện" };
+    ? {
+        title: isWmsVerification ? "WMS検証ステップ" : "Agentの実行手順",
+        completed: "完了",
+        running: "実行中",
+        queued: "待機中",
+        cancelled: "中止",
+      }
+    : {
+        title: isWmsVerification ? "Các bước kiểm chứng WMS" : "Các bước Report Agent",
+        completed: "Hoàn tất",
+        running: "Đang chạy",
+        queued: "Chờ thực hiện",
+        cancelled: "Đã dừng",
+      };
 
   return (
-    <details className="agent-timeline" open={!complete}>
+    <details
+      className={`agent-timeline${isWmsVerification ? " wms-verification" : ""}`}
+      open={!complete}
+      aria-live="off"
+    >
       <summary>
         <span className="agent-timeline-heading">
           <Sparkles size={15} aria-hidden="true" />
           {labels.title}
         </span>
-        <span className={`agent-timeline-state ${complete ? "done" : "running"}`}>
-          {complete ? labels.completed : labels.running}
+        <span
+          className={`agent-timeline-state ${
+            complete ? "done" : cancelled ? "cancelled" : "running"
+          }`}
+        >
+          {complete ? labels.completed : cancelled ? labels.cancelled : labels.running}
         </span>
       </summary>
       <ol>
@@ -102,6 +132,8 @@ function AgentTimeline({ timeline, language }) {
                   <Check size={14} />
                 ) : state === "error" ? (
                   <AlertCircle size={14} />
+                ) : state === "cancelled" ? (
+                  <X size={14} />
                 ) : (
                   <span className="agent-step-dot" />
                 )}
@@ -111,7 +143,13 @@ function AgentTimeline({ timeline, language }) {
                 {step.summary && <small>{step.summary}</small>}
               </span>
               <span className="sr-only">
-                {state === "done" ? labels.completed : state === "running" ? labels.running : labels.queued}
+                {state === "done"
+                  ? labels.completed
+                  : state === "running"
+                    ? labels.running
+                    : state === "cancelled"
+                      ? labels.cancelled
+                      : labels.queued}
               </span>
             </li>
           );
@@ -130,26 +168,86 @@ function formatReportValue(value, language) {
   return value ?? "—";
 }
 
-function ReportArtifactCard({ artifact, language }) {
+// Các phần của thẻ báo cáo, theo đúng thứ tự người đọc quét mắt. Hook bên dưới
+// mở dần từng phần để dữ liệu deterministic không bật ra cùng một khung hình.
+const REPORT_SECTION_ORDER = [
+  "header",
+  "kpis",
+  "charts",
+  "matrices",
+  "governance",
+  "observations",
+  "tables",
+  "limitations",
+  "actions",
+];
+const REPORT_SECTION_REVEAL_MS = 260;
+
+function useStagedReportReveal(artifactId, enabled, onStageChange) {
+  const [stage, setStage] = useState(enabled ? 0 : REPORT_SECTION_ORDER.length);
+
+  useEffect(() => {
+    if (!enabled) {
+      setStage(REPORT_SECTION_ORDER.length);
+      return undefined;
+    }
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    ) {
+      setStage(REPORT_SECTION_ORDER.length);
+      return undefined;
+    }
+    setStage(0);
+    const timers = REPORT_SECTION_ORDER.map((_, index) =>
+      window.setTimeout(() => {
+        setStage((current) => {
+          const next = Math.max(current, index + 1);
+          onStageChange?.(next);
+          return next;
+        });
+      }, index * REPORT_SECTION_REVEAL_MS),
+    );
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [artifactId, enabled, onStageChange]);
+
+  return (section) => stage > REPORT_SECTION_ORDER.indexOf(section);
+}
+
+function ReportArtifactCard({ artifact, language, onEmail, onRevealStage, animate = false }) {
+  const revealed = useStagedReportReveal(artifact?.id, Boolean(artifact) && animate, onRevealStage);
   if (!artifact) return null;
+  const isWms = artifact.report_type === "wms_executive_report";
+  const isHr = artifact.report_type === "hr_executive_report";
   const labels = language === "ja"
     ? {
-        badge: "MESレポート",
+        badge: isWms ? "WMSレポート" : isHr ? "HRレポート" : "MESレポート",
+        governance: "ガバナンス上の注意",
         observations: "数値からの所見",
         limitations: "データの制限",
         details: "データ表を表示",
         download: "HTMLをダウンロード",
+        emailAction: "メールで共有",
       }
     : {
-        badge: "Báo cáo MES",
+        badge: isWms ? "Báo cáo WMS" : isHr ? "Báo cáo HR" : "Báo cáo MES",
+        governance: "Quy tắc Governance & Data Contract",
         observations: "Nhận xét từ số liệu",
         limitations: "Giới hạn dữ liệu",
         details: "Xem các bảng số liệu",
         download: "Tải báo cáo HTML",
+        emailAction: "Gửi qua email",
       };
+  const charts = Array.isArray(artifact.charts)
+    ? artifact.charts.filter((chart) => Array.isArray(chart.rows) && chart.rows.length > 0)
+    : [];
+  const matrices = Array.isArray(artifact.matrices)
+    ? artifact.matrices.filter((matrix) => Array.isArray(matrix.rows) && matrix.rows.length > 0)
+    : [];
 
   return (
     <section className="report-artifact" aria-labelledby={`report-title-${artifact.id}`}>
+      {revealed("header") && (
       <header className="report-artifact-header">
         <span className="report-artifact-icon" aria-hidden="true">
           <TableProperties size={18} />
@@ -160,8 +258,9 @@ function ReportArtifactCard({ artifact, language }) {
           <p>{artifact.generated_at} · {artifact.period_label}</p>
         </div>
       </header>
+      )}
 
-      {artifact.kpis?.length > 0 && (
+      {revealed("kpis") && artifact.kpis?.length > 0 && (
         <div className="report-kpis" aria-label={labels.badge}>
           {artifact.kpis.map((item) => (
             <div className="report-kpi" key={item.key}>
@@ -172,14 +271,104 @@ function ReportArtifactCard({ artifact, language }) {
         </div>
       )}
 
-      {artifact.observations?.length > 0 && (
+      {revealed("charts") && charts.length > 0 && (
+        <div className="report-charts" aria-label="Report charts">
+          {charts.map((chart) => {
+            const labelKey = chart.label_key || "label";
+            const valueKey = chart.value_key || "value";
+            const maxValue = Math.max(...chart.rows.map((row) => Number(row[valueKey]) || 0), 1);
+            return (
+              <figure className="report-chart" key={chart.id || chart.title}>
+                <figcaption>{chart.title}</figcaption>
+                <div className="report-bars">
+                  {chart.rows.map((row, index) => {
+                    const value = Number(row[valueKey]) || 0;
+                    const width = value > 0
+                      ? `${Math.max(2, Math.round((value * 100) / maxValue))}%`
+                      : "0%";
+                    const label = row[labelKey] || "—";
+                    return (
+                      <div className="report-bar-row" key={`${label}-${index}`}>
+                        <span className="report-bar-label" title={label}>{label}</span>
+                        <span
+                          className="report-bar-track"
+                          role="img"
+                          aria-label={`${label}: ${formatReportValue(value, language)}`}
+                        >
+                          <span className="report-bar-fill" style={{ width }} />
+                        </span>
+                        <strong>{formatReportValue(value, language)}</strong>
+                      </div>
+                    );
+                  })}
+                </div>
+              </figure>
+            );
+          })}
+        </div>
+      )}
+
+      {revealed("matrices") && matrices.length > 0 && (
+        <details className="report-matrices" open>
+          <summary>{language === "ja" ? "マトリクス" : "Ma trận điều hành"}</summary>
+          {matrices.map((matrix) => {
+            const columns = Array.isArray(matrix.columns) ? matrix.columns : [];
+            const maxValue = Number(matrix.max_value) || 0;
+            const useHeatmap = matrix.heatmap !== false;
+            return (
+              <div className="report-table-block" key={matrix.id || matrix.title}>
+                <h4>{matrix.title}</h4>
+                <div className="report-table-scroll">
+                  <table>
+                    <caption>{matrix.title}</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">{matrix.row_label || ""}</th>
+                        {columns.map((column) => <th scope="col" key={column}>{column}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {matrix.rows.map((row, rowIndex) => {
+                        const values = Array.isArray(row.values) ? row.values : [];
+                        return (
+                          <tr key={rowIndex}>
+                            <th scope="row">{row.label}</th>
+                            {columns.map((column, valueIndex) => {
+                              const value = values[valueIndex];
+                              const ratio = useHeatmap && maxValue && typeof value === "number"
+                                ? Math.min(1, Math.max(0.12, value / maxValue))
+                                : 0;
+                              const className = ratio ? "matrix-heat-cell" : undefined;
+                              const style = ratio ? { "--heat": ratio } : undefined;
+                              return <td key={column} className={className} style={style}>{formatReportValue(value, language)}</td>;
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
+        </details>
+      )}
+
+      {revealed("governance") && artifact.governance?.length > 0 && (
+        <div className="report-insights report-governance">
+          <strong>{labels.governance}</strong>
+          <ul>{artifact.governance.map((note, index) => <li key={index}>{note}</li>)}</ul>
+        </div>
+      )}
+
+      {revealed("observations") && artifact.observations?.length > 0 && (
         <div className="report-insights">
           <strong>{labels.observations}</strong>
           <ul>{artifact.observations.map((note, index) => <li key={index}>{note}</li>)}</ul>
         </div>
       )}
 
-      {artifact.sections?.some((section) => section.rows?.length > 0) && (
+      {revealed("tables") && artifact.sections?.some((section) => section.rows?.length > 0) && (
         <details className="report-tables">
           <summary>{labels.details}</summary>
           {artifact.sections.map((section) => section.rows?.length > 0 && (
@@ -187,8 +376,9 @@ function ReportArtifactCard({ artifact, language }) {
               <h4>{section.title}</h4>
               <div className="report-table-scroll">
                 <table>
+                  <caption>{section.title}</caption>
                   <thead>
-                    <tr>{section.columns.map((column) => <th key={column}>{column}</th>)}</tr>
+                    <tr>{section.columns.map((column) => <th scope="col" key={column}>{column}</th>)}</tr>
                   </thead>
                   <tbody>
                     {section.rows.map((row, rowIndex) => (
@@ -206,18 +396,34 @@ function ReportArtifactCard({ artifact, language }) {
         </details>
       )}
 
-      {artifact.limitations?.length > 0 && (
+      {revealed("limitations") && artifact.limitations?.length > 0 && (
         <details className="report-limitations">
           <summary>{labels.limitations}</summary>
           <ul>{artifact.limitations.map((note, index) => <li key={index}>{note}</li>)}</ul>
         </details>
       )}
 
-      {artifact.download_url && (
-        <a className="report-download" href={artifact.download_url} download>
-          <Download size={16} aria-hidden="true" />
-          {labels.download}
-        </a>
+      {revealed("actions") && (
+      <div className="report-actions">
+        {artifact.download_url && (
+          <a className="report-download" href={artifact.download_url} download>
+            <Download size={16} aria-hidden="true" />
+            {labels.download}
+          </a>
+        )}
+        <button
+          className="report-email-action"
+          type="button"
+          onClick={() => onEmail?.(
+            language === "ja"
+              ? "このレポートを メールで送信: "
+              : "Gửi báo cáo này cho ",
+          )}
+        >
+          <Mail size={16} aria-hidden="true" />
+          {labels.emailAction}
+        </button>
+      </div>
       )}
     </section>
   );
@@ -242,6 +448,11 @@ const QUICK_PROMPTS = {
       "Trong Lot lỗi nhiều nhất, loại lỗi nào phổ biến nhất?",
       "Hãy liệt kê 10 mã hàng có số lượng lỗi nhiều nhất",
     ],
+    wms: [
+      "Kho công đoạn WMS hiện có bao nhiêu mã vật tư?",
+      "Mã vật tư nào có số lượng tồn kho nhiều nhất?",
+      "Tình hình tồn kho WMS hiện tại thế nào?",
+    ],
     research: [
       "Lập báo cáo nghiên cứu tổng hợp từ các tài liệu",
       "So sánh các quan điểm và chỉ ra điểm mâu thuẫn",
@@ -259,6 +470,11 @@ const QUICK_PROMPTS = {
       "エラー数が最も多いLotで、最も多いエラー種類は何ですか？",
       "総エラー数が多い製品を上位10件挙げてください",
     ],
+    wms: [
+      "WMS工程倉庫には現在いくつの資材コードがありますか？",
+      "在庫数量が最も多い資材コードは何ですか？",
+      "現在のWMS在庫状況はどうなっていますか？",
+    ],
     research: [
       "資料から総合的な調査レポートを作成してください",
       "各見解を比較し、矛盾点を示してください",
@@ -267,7 +483,7 @@ const QUICK_PROMPTS = {
   },
 };
 
-const ACTIVE_MODE_KEYS = ["mkac", "mes", "research"];
+const ACTIVE_MODE_KEYS = ["mkac", "mes", "wms", "research"];
 
 const MODE_OPTIONS = {
   mkac: {
@@ -276,11 +492,13 @@ const MODE_OPTIONS = {
   mes: {
     icon: Activity,
   },
+  wms: {
+    icon: Boxes,
+  },
   research: {
     icon: FlaskConical,
   },
 };
-const VISIBLE_MODE_KEYS = ACTIVE_MODE_KEYS;
 
 const MODEL_ACCENTS = {
   auto: "accent-auto",
@@ -292,6 +510,7 @@ const MODEL_ACCENTS = {
 const LEGACY_MODE_SESSION_STORAGE_KEYS = {
   mkac: "meibook-session-mkac",
   mes: "meibook-session-mes",
+  wms: "meibook-session-wms",
   research: "meibook-session-research",
 };
 const SESSION_STORAGE_PREFIX = "meibook-session";
@@ -317,7 +536,7 @@ const UI_TEXT = {
     modes: {
       mkac: {
         label: "Hành chính nhân sự",
-        shortLabel: "HCNS",
+        shortLabel: "Nhân sự",
         title: "Hỏi đáp hành chính nhân sự MKAC",
         empty: "Tra cứu quy định hành chính, thông tin nội bộ và nhân sự MKAC.",
         metric: "Tài liệu MKAC",
@@ -327,18 +546,31 @@ const UI_TEXT = {
       },
       mes: {
         label: "Quản lý MES",
-        shortLabel: "MES",
+        shortLabel: "Sản xuất",
         title: "Quản lý MES",
-        empty: "Tra cứu Lot, mã hàng, mã lỗi và thống kê sản xuất từ MES.",
-        metric: "Lot MES",
-        authHint: "Nhập mã nhân viên để truy cập dữ liệu sản xuất MES.",
+        empty: "Tra cứu Lot, mã hàng và lỗi sản xuất MES.",
+        metric: "Dữ liệu MES",
+        authHint: "Nhập mã nhân viên để truy cập dữ liệu MES.",
         inputLabel: "Câu hỏi về MES",
-        placeholder: "Hỏi về Lot, mã hàng hoặc lỗi sản xuất...",
+        placeholder: "Hỏi về Lot, mã hàng hoặc lỗi sản xuất MES...",
         unavailable: "MES snapshot chưa sẵn sàng",
+      },
+      wms: {
+        label: "Quản lý Kho (WMS)",
+        shortLabel: "Kho",
+        title: "Quản lý Kho WMS MKHC",
+        empty: "Tra cứu tồn kho nguyên vật liệu tại kho công đoạn WMS.",
+        metric: "Dữ liệu WMS",
+        itemCount: "{count} mã vật tư",
+        processCount: "{count} mã công đoạn",
+        authHint: "Nhập mã nhân viên để truy cập dữ liệu WMS.",
+        inputLabel: "Câu hỏi về WMS",
+        placeholder: "Hỏi về tồn kho vật tư, công đoạn WMS...",
+        unavailable: "WMS snapshot chưa sẵn sàng",
       },
       research: {
         label: "Nghiên cứu tài liệu",
-        shortLabel: "NC",
+        shortLabel: "Nghiên cứu",
         title: "Nghiên cứu tài liệu nội bộ",
         emptyReady: "Sẵn sàng nghiên cứu trong nhóm tài liệu đã chọn.",
         empty: "Chọn nhóm tài liệu bạn muốn tra cứu. Câu trả lời sẽ chỉ dựa trên các tài liệu trong nhóm đã chọn.",
@@ -383,6 +615,7 @@ const UI_TEXT = {
     defaultTitles: {
       mkac: "Hành chính nhân sự mới",
       mes: "Phiên MES mới",
+      wms: "Phiên WMS mới",
       research: "Phiên nghiên cứu mới",
       researchDemo: "Tài liệu nghiên cứu demo",
     },
@@ -428,7 +661,7 @@ const UI_TEXT = {
       employeeCode: "Mã nhân viên",
       invalidEmployee: "Mã nhân viên không hợp lệ.",
       employeeRequired: "Vui lòng nhập mã nhân viên hợp lệ trước khi tiếp tục.",
-      guestWelcome: "Chào mừng đến với hệ thống Meibook,",
+      guestWelcome: "Chào mừng đến với hệ thống Meibook.",
       languageConverting: "Đang chuyển đổi ngôn ngữ...",
       continue: "Tiếp tục",
       verifying: "Đang kiểm tra",
@@ -445,7 +678,84 @@ const UI_TEXT = {
       webSearch: "Tìm kiếm web",
       mesData: "Dữ liệu MES",
       mesSnapshot: "MES snapshot",
-      mesReport: "Report Agent",
+      wmsSnapshot: "Tồn kho WMS snapshot",
+      wmsHealth: {
+        READY: "WMS sẵn sàng",
+        INCOMPATIBLE: "WMS không tương thích",
+        UNAVAILABLE: "WMS chưa khả dụng",
+        QUERY_ERROR: "WMS lỗi truy vấn",
+        DISABLED: "WMS đang tắt",
+      },
+      wmsDomain: {
+        CURRENT_BALANCE: "Tồn hiện tại",
+        LEGACY_ARCHIVE: "Lưu trữ lịch sử",
+        RAW_TRANSACTION_AUDIT: "Nhật ký giao dịch thô",
+        SUPPRESSED: "Nghiệp vụ bị khóa",
+        fallback: "WMS",
+      },
+      wmsStatus: {
+        AVAILABLE: "Khả dụng",
+        PARTIAL: "Một phần",
+        SUPPRESSED: "Bị khóa",
+        fallback: "Chưa xác định",
+      },
+      wmsFreshnessValue: {
+        DERIVED_UNVERIFIED: "Được suy ra, chưa xác minh",
+        UNAVAILABLE: "Không khả dụng",
+        fallback: "Chưa xác định",
+      },
+      wmsTimezoneValue: {
+        unverified: "Chưa xác minh",
+        fallback: "Chưa xác định",
+      },
+      wmsEpochValue: {
+        CURRENT_POST_2026_01_15: "Current sau 15/01/2026",
+        LEGACY_PRE_2026_01_15: "Legacy trước 15/01/2026",
+        RAW_SOURCE_AUDIT: "Audit nguồn thô",
+        fallback: "Chưa xác định",
+      },
+      wmsReason: {
+        WMS_DISABLED: "WMS đang tắt",
+        WMS_SNAPSHOT_UNAVAILABLE: "Snapshot WMS chưa khả dụng",
+        WMS_SNAPSHOT_INCOMPATIBLE: "Snapshot WMS không tương thích",
+        WMS_SNAPSHOT_QUERY_ERROR: "Không thể truy vấn snapshot WMS",
+        WMS_SOURCE_AS_OF_UNCONFIRMED: "Mốc dữ liệu nguồn chưa xác nhận",
+        UOM_MASTER_UNAVAILABLE: "Chưa có master đơn vị tính",
+        MIN_STOCK_CONTRACT_UNVERIFIED: "Chưa xác minh contract tồn tối thiểu",
+        EXPIRY_SOURCE_UNAVAILABLE: "Chưa có nguồn hạn dùng",
+        WINDOW_TIME_SOURCE_UNAVAILABLE: "Chưa có nguồn window-time",
+        SNAPSHOT_HISTORY_NOT_COMPARABLE: "Lịch sử snapshot không thể so sánh",
+        PRODUCTION_WIP_SOURCE_UNAVAILABLE: "Chưa có nguồn WIP sản xuất",
+        BOTTLENECK_DEFINITION_UNAVAILABLE: "Chưa có định nghĩa bottleneck",
+        SNAPSHOT_DELTA_NOT_IN_SCOPE: "Không hỗ trợ delta snapshot",
+        TRANSACTION_SEMANTICS_NOT_IN_SCOPE: "Chưa xác minh semantics giao dịch",
+        CURRENT_GRAIN_HAS_NO_MEANINGFUL_LOT: "Current không có lot nghiệp vụ",
+        CROSS_ERA_KEYS_NOT_COMPARABLE: "Không thể so sánh khóa khác thời kỳ",
+        COMPLETED_MOVEMENTS_NOT_VERIFIED: "Chưa xác minh giao dịch hoàn thành",
+        DATASET_NOT_OBSERVED_IN_EXPORT: "Dataset chưa được quan sát trong export",
+        CURRENT_BALANCE_GRAIN_DUPLICATE: "Current balance trùng grain",
+        QUANTITY_EVIDENCE_INCOMPLETE: "Bằng chứng quantity chưa đầy đủ",
+        RAW_TRANSACTION_HEADER_NOT_OBSERVED: "Chưa quan sát header giao dịch thô",
+        SQL_AGENT_ANSWER_UNVERIFIED: "SQL do LLM lập kế hoạch, chưa kiểm chứng deterministic",
+        WMS_METADATA_VALIDATION_FAILED: "Metadata WMS không hợp lệ",
+        fallback: "Lý do kỹ thuật chưa xác định",
+      },
+      wmsAsOf: "Mốc dữ liệu nguồn",
+      wmsImportedAt: "Thời điểm nhập",
+      wmsFreshnessState: "Trạng thái freshness",
+      wmsBasis: "Cơ sở freshness",
+      wmsTimezone: "Múi giờ nguồn",
+      wmsEpoch: "Thời kỳ ngữ nghĩa",
+      wmsEvidence: "Freshness theo miền",
+      wmsReasons: "Mã lý do",
+      wmsPagination: "Phân trang",
+      wmsPerPage: "mỗi trang",
+      wmsHasMore: "Còn trang sau",
+      wmsNoMore: "Đã hết dữ liệu",
+      wmsPage: "Trang {page} · {total} bản ghi",
+      mesReport: "Báo cáo MES",
+      wmsReport: "Báo cáo WMS",
+      hrReport: "Báo cáo HR",
       mesReportUnsupported: "Ngoài mẫu Report Agent",
       research: "Nghiên cứu",
       mkacSource: "Nguồn MKAC",
@@ -491,7 +801,10 @@ const UI_TEXT = {
       web: "Tổng hợp từ nguồn web",
       mes: "Dựa trên dữ liệu MES trực tiếp",
       mes_database: "Dựa trên MES snapshot cục bộ",
+      wms_database: "Dựa trên tồn nguyên vật liệu tại kho công đoạn WMS MKHC",
       mes_report: "Báo cáo được tổng hợp từ MES snapshot",
+      wms_executive_report: "Báo cáo được tổng hợp từ current balance WMS",
+      hr_executive_report: "Báo cáo được tổng hợp từ danh bạ nhân sự MKAC",
       mes_report_unsupported: "Yêu cầu chưa thuộc các mẫu báo cáo đã được kiểm chứng",
       research: "Dựa trên tài liệu nghiên cứu",
       mkac: "Dựa trên kho MKAC",
@@ -525,15 +838,28 @@ const UI_TEXT = {
         placeholder: "総務、規程、人事について質問してください...",
       },
       mes: {
-        label: "MES管理",
-        shortLabel: "MES",
-        title: "MES管理",
-        empty: "Lot、品番、エラーコード、生産統計をMESから検索します。",
-        metric: "MES Lot",
-        authHint: "MES生産データにアクセスするには社員番号を入力してください。",
+        label: "MES生産管理",
+        shortLabel: "生産",
+        title: "MES生産管理",
+        empty: "MESのLot・品番・生産エラーを検索します。",
+        metric: "MESデータ",
+        authHint: "MESデータにアクセスするには社員番号を入力してください。",
         inputLabel: "MESに関する質問",
         placeholder: "Lot、品番、生産エラーについて質問してください...",
         unavailable: "MESスナップショットはまだ利用できません",
+      },
+      wms: {
+        label: "在庫管理 (WMS)",
+        shortLabel: "在庫",
+        title: "MKHC WMS工程倉庫",
+        empty: "WMS工程倉庫の資材在庫を検索します。",
+        metric: "WMSデータ",
+        itemCount: "資材コード {count}件",
+        processCount: "工程コード {count}件",
+        authHint: "WMS在庫データにアクセスするには社員番号を入力してください。",
+        inputLabel: "WMSに関する質問",
+        placeholder: "WMS在庫、工程、資材について質問...",
+        unavailable: "WMSスナップショットはまだ利用できません",
       },
       research: {
         label: "資料調査",
@@ -582,6 +908,7 @@ const UI_TEXT = {
     defaultTitles: {
       mkac: "新しい人事・総務セッション",
       mes: "新しいMESセッション",
+      wms: "新しいWMSセッション",
       research: "新しい資料調査セッション",
       researchDemo: "サンプル調査資料",
     },
@@ -644,7 +971,84 @@ const UI_TEXT = {
       webSearch: "Web検索",
       mesData: "MESデータ",
       mesSnapshot: "MESスナップショット",
-      mesReport: "Report Agent",
+      wmsSnapshot: "WMS在庫スナップショット",
+      wmsHealth: {
+        READY: "WMS利用可能",
+        INCOMPATIBLE: "WMS互換性なし",
+        UNAVAILABLE: "WMS未利用",
+        QUERY_ERROR: "WMS照会エラー",
+        DISABLED: "WMS無効",
+      },
+      wmsDomain: {
+        CURRENT_BALANCE: "現行残高",
+        LEGACY_ARCHIVE: "レガシーアーカイブ",
+        RAW_TRANSACTION_AUDIT: "生トランザクション監査",
+        SUPPRESSED: "抑止された機能",
+        fallback: "WMS",
+      },
+      wmsStatus: {
+        AVAILABLE: "利用可能",
+        PARTIAL: "一部利用",
+        SUPPRESSED: "抑止中",
+        fallback: "未確認",
+      },
+      wmsFreshnessValue: {
+        DERIVED_UNVERIFIED: "算出済み・未検証",
+        UNAVAILABLE: "利用不可",
+        fallback: "未確認",
+      },
+      wmsTimezoneValue: {
+        unverified: "未検証",
+        fallback: "未確認",
+      },
+      wmsEpochValue: {
+        CURRENT_POST_2026_01_15: "2026年1月15日以降の現行期間",
+        LEGACY_PRE_2026_01_15: "2026年1月15日以前の旧期間",
+        RAW_SOURCE_AUDIT: "生ソース監査期間",
+        fallback: "未確認",
+      },
+      wmsReason: {
+        WMS_DISABLED: "WMSは無効です",
+        WMS_SNAPSHOT_UNAVAILABLE: "WMSスナップショットは利用できません",
+        WMS_SNAPSHOT_INCOMPATIBLE: "WMSスナップショットに互換性がありません",
+        WMS_SNAPSHOT_QUERY_ERROR: "WMSスナップショットを照会できません",
+        WMS_SOURCE_AS_OF_UNCONFIRMED: "データ基準時点は未確認です",
+        UOM_MASTER_UNAVAILABLE: "単位マスターがありません",
+        MIN_STOCK_CONTRACT_UNVERIFIED: "最低在庫の契約は未検証です",
+        EXPIRY_SOURCE_UNAVAILABLE: "期限データソースがありません",
+        WINDOW_TIME_SOURCE_UNAVAILABLE: "ウィンドウタイムのデータソースがありません",
+        SNAPSHOT_HISTORY_NOT_COMPARABLE: "スナップショット履歴は比較できません",
+        PRODUCTION_WIP_SOURCE_UNAVAILABLE: "生産WIPデータソースがありません",
+        BOTTLENECK_DEFINITION_UNAVAILABLE: "ボトルネック定義がありません",
+        SNAPSHOT_DELTA_NOT_IN_SCOPE: "スナップショット差分は対象外です",
+        TRANSACTION_SEMANTICS_NOT_IN_SCOPE: "トランザクション意味は未検証です",
+        CURRENT_GRAIN_HAS_NO_MEANINGFUL_LOT: "現行残高に業務上のロットキーはありません",
+        CROSS_ERA_KEYS_NOT_COMPARABLE: "異なる期間のキーは比較できません",
+        COMPLETED_MOVEMENTS_NOT_VERIFIED: "完了済み移動は未検証です",
+        DATASET_NOT_OBSERVED_IN_EXPORT: "エクスポートでデータセットを確認できません",
+        CURRENT_BALANCE_GRAIN_DUPLICATE: "現行残高の粒度が重複しています",
+        QUANTITY_EVIDENCE_INCOMPLETE: "数量の根拠が不完全です",
+        RAW_TRANSACTION_HEADER_NOT_OBSERVED: "生トランザクションヘッダーを確認できません",
+        SQL_AGENT_ANSWER_UNVERIFIED: "LLMが計画したSQLであり、決定論的検証は未実施です",
+        WMS_METADATA_VALIDATION_FAILED: "WMSメタデータが無効です",
+        fallback: "未確認の技術的理由",
+      },
+      wmsAsOf: "データ基準時点",
+      wmsImportedAt: "取込日時",
+      wmsFreshnessState: "鮮度の状態",
+      wmsBasis: "鮮度の算出根拠",
+      wmsTimezone: "ソースのタイムゾーン",
+      wmsEpoch: "セマンティック期間",
+      wmsEvidence: "ドメイン別の鮮度",
+      wmsReasons: "理由コード",
+      wmsPagination: "ページ情報",
+      wmsPerPage: "件/ページ",
+      wmsHasMore: "次のページあり",
+      wmsNoMore: "これで全件",
+      wmsPage: "{page}ページ · 全{total}件",
+      mesReport: "MESレポート",
+      wmsReport: "WMSレポート",
+      hrReport: "HRレポート",
       mesReportUnsupported: "Report Agent対象外",
       research: "調査",
       mkacSource: "MKACソース",
@@ -690,7 +1094,10 @@ const UI_TEXT = {
       web: "Webソースに基づく要約",
       mes: "MESリアルタイムデータに基づく",
       mes_database: "ローカルMESスナップショットに基づく",
+      wms_database: "MKHC WMS工程倉庫の資材在庫に基づく",
       mes_report: "MESスナップショットから作成したレポート",
+      wms_executive_report: "WMS現行残高から作成したレポート",
+      hr_executive_report: "MKAC人事ディレクトリから作成したレポート",
       mes_report_unsupported: "検証済みのレポート形式には含まれていないリクエスト",
       research: "調査資料に基づく",
       mkac: "MKACナレッジベースに基づく",
@@ -782,14 +1189,22 @@ async function api(path, options = {}) {
   const response = await fetch(path, options);
   if (!response.ok) {
     let message = `HTTP ${response.status}`;
+    let errorCode = "";
     try {
       const body = await response.json();
-      message = body.detail || body.message || message;
+      if (body.detail && typeof body.detail === "object") {
+        message = body.detail.message || body.message || message;
+        errorCode = body.detail.code || "";
+      } else {
+        message = body.detail || body.message || message;
+        errorCode = body.code || "";
+      }
     } catch {
       message = (await response.text()) || message;
     }
     const error = new Error(message);
     error.status = response.status;
+    error.code = errorCode;
     throw error;
   }
   return response;
@@ -855,14 +1270,21 @@ async function streamQuery(payload, onEvent, signal) {
 function buildConversationContext(messages, limit = 16) {
   return messages
     .filter((message) => message.role === "user" || message.role === "assistant")
-    .filter((message) => message.content?.trim())
+    .filter((message) => message.content?.trim() || message.artifact?.id)
     .slice(-limit)
     .map((message) => ({
       role: message.role,
-      content: message.content,
+      content: message.content || "",
       model: message.model || "",
       mode: message.mode || "",
       answer_scope: message.answerScope || "",
+      ...(message.artifact?.id
+        ? {
+            artifact_id: message.artifact.id,
+            artifact_type: message.artifact.report_type || "",
+            artifact_title: message.artifact.title || "",
+          }
+        : {}),
     }));
 }
 
@@ -1032,7 +1454,13 @@ function App() {
   const [theme, setTheme] = useState(storedTheme);
   const [language, setLanguage] = useState(storedLanguage);
   const initialLanguageRef = useRef(storedLanguage());
-  const [quickAnswersConfig, setQuickAnswersConfig] = useState({ mkac: [], mes: [], threshold: 300, max: 3 });
+  const [quickAnswersConfig, setQuickAnswersConfig] = useState({
+    mkac: [],
+    mes: [],
+    wms: [],
+    threshold: 300,
+    max: 3,
+  });
   const [sessionIds, setSessionIds] = useState(() =>
     createLanguageScopedState(() => ""),
   );
@@ -1096,6 +1524,11 @@ function App() {
     lots: 0,
     error_events: 0,
   });
+  const [wmsStatus, setWmsStatus] = useState({
+    enabled: false,
+    available: false,
+    state: "UNAVAILABLE",
+  });
   const [model, setModel] = useState("auto");
   const [mode, setMode] = useState("mkac");
   const [question, setQuestion] = useState("");
@@ -1136,6 +1569,42 @@ function App() {
   const generationControllerRef = useRef(null);
   const endRef = useRef(null);
   const conversationScrollRef = useRef(null);
+  const modeTabsRef = useRef(null);
+
+  function revealActiveModeTab() {
+    const container = modeTabsRef.current;
+    const activeTab = container?.querySelector(`[data-mode="${mode}"]`);
+    if (!container || !activeTab) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const tabRect = activeTab.getBoundingClientRect();
+    const left = getModeTabScrollLeft({
+      scrollLeft: container.scrollLeft,
+      clientWidth: container.clientWidth,
+      scrollWidth: container.scrollWidth,
+      tabLeft: container.scrollLeft + tabRect.left - containerRect.left,
+      tabWidth: tabRect.width,
+    });
+    if (left === container.scrollLeft) return;
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    container.scrollTo({ left, behavior: reduceMotion ? "auto" : "smooth" });
+  }
+
+  // Cuộn trực tiếp trong container hội thoại thay vì endRef.scrollIntoView().
+  // scrollIntoView() có thể leo lên các ancestor scrolling box khác (kể cả
+  // những box overflow:hidden) và lệch scrollTop của document/window khi phần
+  // tử đích cao hơn viewport — khiến composer bị đẩy khỏi khung nhìn lúc thẻ
+  // báo cáo mở rộng dần theo từng phần.
+  function scrollConversationToEnd(smooth = true) {
+    const container = conversationScrollRef.current;
+    if (!container) return;
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: smooth ? "smooth" : "auto",
+    });
+  }
 
   const text = UI_TEXT[language] || UI_TEXT.vi;
   const t = (path, values = {}) => {
@@ -1155,6 +1624,7 @@ function App() {
     () => localizedModels.find((item) => item.id === model),
     [localizedModels, model],
   );
+  const visibleModes = visibleModeKeys(Boolean(wmsStatus.available));
   const requestModel = model;
   const mkacModels = useMemo(
     () => localizedModels.filter((item) => !item.hidden_in_mkac && item.id !== "grok"),
@@ -1177,7 +1647,9 @@ function App() {
     (researchScope === "upload"
       ? files.length > 0
       : Boolean(researchTopicId && selectedTopic?.ready));
-  const mkacAuthorized = (mode !== "mkac" && mode !== "mes") || Boolean(employee?.id && employee?.name);
+  const mkacAuthorized =
+    (mode !== "mkac" && mode !== "mes" && mode !== "wms") ||
+    Boolean(employee?.id && employee?.name);
   const canAsk =
     Boolean(question.trim()) &&
     !busy &&
@@ -1204,6 +1676,16 @@ function App() {
     return quickPromptsFor("research", language);
   }
 
+  function starterPromptEntries() {
+    if (mode === "wms") return quickAnswersConfig.wms || [];
+    const prompts = mode === "research"
+      ? researchScope === "topic"
+        ? researchQuickPrompts()
+        : quickPromptsFor("research", language)
+      : quickPromptsFor(mode, language);
+    return prompts.map((prompt) => ({ question: prompt }));
+  }
+
   const getSuggestions = (text, currentMode, msgId) => {
     const config = quickAnswersConfig;
     if (!config || !config[currentMode] || config[currentMode].length === 0) return [];
@@ -1221,8 +1703,12 @@ function App() {
   const handleQuickAnswerClick = (suggestion) => {
     if (busy) return;
 
-    // Câu hỏi "live" (số liệu MES động) phải chạy pipeline thật để lấy dữ liệu
-    // tươi, không dùng đáp án đóng hộp. Chỉ câu tĩnh mới hiện đáp án tức thì.
+    // Every WMS suggestion follows the authenticated SSE route. Only
+    // server-prepared entries may carry an allowlisted quick-answer ID.
+    if (mode === "wms") {
+      sendMessage(suggestion.question, quickAnswerRequestOptions(suggestion));
+      return;
+    }
     if (suggestion.live || !suggestion.answer) {
       sendMessage(suggestion.question);
       return;
@@ -1230,16 +1716,16 @@ function App() {
 
     const userMsgId = createClientId();
     const assistantMsgId = createClientId();
-    
+
     setBusy(true);
     setPendingAssistantId(assistantMsgId);
-    
+
     setModeMessages(mode, (current) => [
       ...current,
       { id: userMsgId, role: "user", content: suggestion.question },
-      { 
-        id: assistantMsgId, 
-        role: "assistant", 
+      {
+        id: assistantMsgId,
+        role: "assistant",
         content: "",
         model: selectedModel?.name || "Cache",
         mode: mode,
@@ -1247,19 +1733,19 @@ function App() {
         sources: []
       }
     ]);
-    
+
     setTimeout(() => {
-      endRef.current?.scrollIntoView({ behavior: "smooth" });
+      scrollConversationToEnd();
     }, 100);
 
     const fullAnswer = suggestion.answer;
     let i = 0;
-    
+
     setTimeout(() => {
       const interval = setInterval(() => {
         const charsToAppend = fullAnswer.slice(i, i + 3);
         i += 3;
-        
+
         setModeMessages(mode, (current) =>
           current.map((item) =>
             item.id === assistantMsgId
@@ -1267,7 +1753,7 @@ function App() {
               : item
           )
         );
-        
+
         if (i >= fullAnswer.length) {
           clearInterval(interval);
           setPendingAssistantId("");
@@ -1345,6 +1831,7 @@ function App() {
           );
         }
         setMesStatus(healthData.mes_database || {});
+        setWmsStatus(healthData.mes_wms_database || {});
         setModel((current) => {
           const nextDefault = modelData.default || "auto";
           return current === "auto" || current === "grok" ? nextDefault : current;
@@ -1415,26 +1902,29 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
-    setQuickAnswersConfig({ mkac: [], mes: [], threshold: 300, max: 3 });
+    setQuickAnswersConfig({ mkac: [], mes: [], wms: [], threshold: 300, max: 3 });
 
     async function loadQuickAnswers() {
       try {
-        const [qaMkacRes, qaMesRes] = await Promise.all([
+        const [qaMkacRes, qaMesRes, qaWmsRes] = await Promise.all([
           api(`/quick-answers?mode=mkac&language=${encodeURIComponent(language)}`),
           api(`/quick-answers?mode=mes&language=${encodeURIComponent(language)}`),
+          api(`/quick-answers?mode=wms&language=${encodeURIComponent(language)}`),
         ]);
         const qaMkacData = await qaMkacRes.json();
         const qaMesData = await qaMesRes.json();
+        const qaWmsData = await qaWmsRes.json();
         if (cancelled) return;
         setQuickAnswersConfig({
           mkac: qaMkacData.suggestions || [],
           mes: qaMesData.suggestions || [],
+          wms: qaWmsData.suggestions || [],
           threshold: qaMkacData.short_answer_threshold || 300,
           max: qaMkacData.max_suggestions || 3,
         });
       } catch {
         if (cancelled) return;
-        setQuickAnswersConfig({ mkac: [], mes: [], threshold: 300, max: 3 });
+        setQuickAnswersConfig({ mkac: [], mes: [], wms: [], threshold: 300, max: 3 });
       }
     }
 
@@ -1456,7 +1946,7 @@ function App() {
   }, [language]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrollConversationToEnd();
   }, [messages, busy]);
 
   useEffect(() => {
@@ -1512,6 +2002,15 @@ function App() {
   }, [language]);
 
   useEffect(() => {
+    if (mode === "wms" && !wmsStatus.available) {
+      setMode("mkac");
+      return;
+    }
+    const frame = window.requestAnimationFrame(revealActiveModeTab);
+    return () => window.cancelAnimationFrame(frame);
+  }, [mode, language, wmsStatus.available]);
+
+  useEffect(() => {
     try {
       const storedTopic = localStorage.getItem(researchTopicStorageKey(language)) || "";
       if (storedTopic === "all") {
@@ -1528,7 +2027,7 @@ function App() {
   useEffect(() => {
     setSessionTitles((current) => {
       const next = { ...current };
-      for (const workspaceMode of VISIBLE_MODE_KEYS) {
+      for (const workspaceMode of ACTIVE_MODE_KEYS) {
         for (const item of LANGUAGE_OPTIONS) {
           const scopedKey = workspaceKey(workspaceMode, item);
           const defaultTitles = LANGUAGE_OPTIONS.map(
@@ -1607,6 +2106,7 @@ function App() {
 
   useEffect(() => {
     if (!confirmClearOpen && !confirmDeleteFile && !confirmResearchUploadOpen) return undefined;
+
     function closeConfirm(event) {
       if (event.key === "Escape") {
         setConfirmClearOpen(false);
@@ -1614,8 +2114,26 @@ function App() {
         setConfirmResearchUploadOpen(false);
       }
     }
+
+    const blockedRoots = [
+      document.querySelector(".document-sidebar"),
+      document.querySelector("button.mobile-menu"),
+      document.querySelector("main.workspace"),
+    ].filter(Boolean);
+    for (const el of blockedRoots) {
+      el.setAttribute("inert", "");
+    }
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
     document.addEventListener("keydown", closeConfirm);
-    return () => document.removeEventListener("keydown", closeConfirm);
+    return () => {
+      document.removeEventListener("keydown", closeConfirm);
+      for (const el of blockedRoots) {
+        el.removeAttribute("inert");
+      }
+      document.body.style.overflow = previousOverflow;
+    };
   }, [confirmClearOpen, confirmDeleteFile, confirmResearchUploadOpen]);
 
   function setModeMessages(workspaceMode, updater, uiLanguage = language) {
@@ -1780,7 +2298,7 @@ function App() {
   }
 
   function switchMode(nextMode) {
-    if (!VISIBLE_MODE_KEYS.includes(nextMode)) return;
+    if (!visibleModes.includes(nextMode)) return;
     if (nextMode === mode || busy || uploading) return;
     setMode(nextMode);
     setQuestion("");
@@ -1835,7 +2353,7 @@ function App() {
   }
 
   function onModeTabKeyDown(event, currentModeKey) {
-    const modeKeys = VISIBLE_MODE_KEYS;
+    const modeKeys = visibleModes;
     const currentIndex = modeKeys.indexOf(currentModeKey);
     let nextIndex = currentIndex;
 
@@ -1849,7 +2367,7 @@ function App() {
     event.preventDefault();
     const nextMode = modeKeys[nextIndex];
     switchMode(nextMode);
-    document.querySelector(`[data-mode="${nextMode}"]`)?.focus();
+    modeTabsRef.current?.querySelector(`[data-mode="${nextMode}"]`)?.focus();
   }
 
   async function copyAnswer(message) {
@@ -1865,7 +2383,45 @@ function App() {
   }
 
   function stopGeneration() {
+    const stoppedMode = mode;
+    const stoppedLanguage = language;
+    const stoppedAssistantId = pendingAssistantId;
     generationControllerRef.current?.abort();
+    setPendingAssistantId("");
+    setBusy(false);
+    if (!stoppedAssistantId) return;
+    setModeMessages(
+      stoppedMode,
+      (current) =>
+        current.map((item) =>
+          item.id === stoppedAssistantId && item.agentTimeline
+            ? {
+                ...item,
+                agentTimeline: {
+                  ...item.agentTimeline,
+                  status: "cancelled",
+                  steps: item.agentTimeline.steps.map((step) =>
+                    ["running", "queued"].includes(step.status)
+                      ? { ...step, status: "cancelled" }
+                      : step,
+                  ),
+                },
+              }
+            : item,
+        ),
+      stoppedLanguage,
+    );
+  }
+
+  function prepareReportEmail(prefix) {
+    if (busy) return;
+    setQuestion(prefix);
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(prefix.length, prefix.length);
+    });
   }
 
   function cycleTheme() {
@@ -1970,9 +2526,9 @@ function App() {
     }
   }
 
-  async function sendMessage(prompt = question) {
+  async function sendMessage(prompt = question, { quickAnswerId } = {}) {
     const cleanQuestion = prompt.trim();
-    if ((mode === "mkac" || mode === "mes") && !mkacAuthorized) {
+    if (["mkac", "mes", "wms"].includes(mode) && !mkacAuthorized) {
       setEmployeeCodeError(t("common.employeeRequired"));
       return;
     }
@@ -1991,6 +2547,7 @@ function App() {
     const assistantId = createClientId();
     const controller = new AbortController();
     generationControllerRef.current = controller;
+    pushStoredPromptHistory(cleanQuestion);
     setQuestion("");
     setError("");
     setModeSources(requestMode, [], requestLanguage);
@@ -2010,7 +2567,9 @@ function App() {
             ? "mkac"
             : requestMode === "mes"
               ? "mes_database"
-              : "research",
+              : requestMode === "wms"
+                ? "wms_database"
+                : "research",
         researchScope: requestMode === "research" ? researchScope : undefined,
         sources: [],
         agentTimeline: null,
@@ -2030,7 +2589,10 @@ function App() {
           model: requestModel,
           mode: requestMode,
           ui_language: requestLanguage,
-          employee_id: (requestMode === "mkac" || requestMode === "mes") ? employee?.id : undefined,
+          employee_id: ["mkac", "mes", "wms"].includes(requestMode)
+            ? employee?.id
+            : undefined,
+          quick_answer_id: requestMode === "wms" ? quickAnswerId || null : null,
           conversation_context: conversationContext,
           research_topic:
             requestMode === "research" && researchScope === "topic"
@@ -2062,6 +2624,7 @@ function App() {
                         status: "",
                         agentTimeline: {
                           title: event.title || "Report Agent",
+                          workflow: event.workflow || "",
                           status: "running",
                           steps: (event.steps || []).map((step) => ({
                             ...step,
@@ -2127,7 +2690,10 @@ function App() {
               requestLanguage,
             );
           }
-          if (event.type === "artifact" && event.artifact_type === "mes_report") {
+          if (
+            event.type === "artifact" &&
+            ["mes_report", "wms_executive_report", "hr_executive_report"].includes(event.artifact_type)
+          ) {
             setModeMessages(
               requestMode,
               (current) =>
@@ -2177,6 +2743,10 @@ function App() {
                         mode: event.mode || item.mode,
                         answerScope: event.answer_scope || item.answerScope,
                         researchScope: event.research_scope || item.researchScope,
+                        workflow: event.workflow || item.workflow,
+                        wmsMetadata: event.wms_metadata || item.wmsMetadata,
+                        sourceKind: event.source_kind || item.sourceKind,
+                        cache: event.cache ?? item.cache,
                       }
                     : item,
                 ),
@@ -2228,9 +2798,16 @@ function App() {
       );
     } catch (queryError) {
       const wasStopped = queryError.name === "AbortError";
-      if (queryError.status === 403 && requestMode === "mkac") {
+      if (
+        shouldClearEmployeeAuth({
+          status: queryError.status,
+          errorCode: queryError.code,
+          mode: requestMode,
+        })
+      ) {
         setEmployee(null);
         setEmployeeCodeInput("");
+        setEmployeeCodeError(t("common.invalidEmployee"));
         try {
           localStorage.removeItem(EMPLOYEE_STORAGE_KEY);
         } catch {
@@ -2309,9 +2886,11 @@ function App() {
     setEmployeeCodeInput("");
     setEmployeeCodeError("");
     setQuestion("");
-    for (const item of LANGUAGE_OPTIONS) {
-      setModeMessages("mkac", [], item);
-      setModeSources("mkac", [], item);
+    for (const workspaceMode of ["mkac", "mes", "wms"]) {
+      for (const item of LANGUAGE_OPTIONS) {
+        setModeMessages(workspaceMode, [], item);
+        setModeSources(workspaceMode, [], item);
+      }
     }
     try {
       localStorage.removeItem(EMPLOYEE_STORAGE_KEY);
@@ -2400,20 +2979,33 @@ function App() {
                     ? mesStatus.available
                       ? `${mesStatus.lots || 0} Lot · ${mesStatus.error_events || 0} ${t("common.errorRecords")}`
                       : modeText("mes").unavailable
-                    : researchScope === "upload"
-                      ? `${files.length} ${t("common.sessionDocuments")}`
-                      : researchTopicId
-                      ? formatText(modeText("research").scopeLabel, {
-                          topic: researchTopicLabel(selectedResearchTopic()),
-                        })
-                      : modeText("research").chooseTopic}
+                    : mode === "wms"
+                      ? wmsStatus.available
+                        ? `${formatText(modeText("wms").itemCount, {
+                            count: wmsStatus.distinct_items || 0,
+                          })} · ${formatText(modeText("wms").processCount, {
+                            count: wmsStatus.distinct_process_codes || 0,
+                          })}`
+                        : modeText("wms").unavailable
+                      : researchScope === "upload"
+                        ? `${files.length} ${t("common.sessionDocuments")}`
+                        : researchTopicId
+                        ? formatText(modeText("research").scopeLabel, {
+                            topic: researchTopicLabel(selectedResearchTopic()),
+                          })
+                        : modeText("research").chooseTopic}
               </span>
             </div>
           </div>
 
           <div className="header-actions">
-            <div className="mode-tabs" role="tablist" aria-label={t("common.qaModes")}>
-              {VISIBLE_MODE_KEYS.map((key) => {
+            <div
+              className="mode-tabs"
+              ref={modeTabsRef}
+              role="tablist"
+              aria-label={t("common.qaModes")}
+            >
+              {visibleModes.map((key) => {
                 const option = MODE_OPTIONS[key];
                 const Icon = option.icon;
                 const optionText = modeText(key);
@@ -2429,6 +3021,7 @@ function App() {
                     role="tab"
                     aria-selected={mode === key}
                     aria-controls={`${key}-conversation`}
+                    aria-label={optionText.label}
                     tabIndex={mode === key ? 0 : -1}
                     title={optionText.title}
                   >
@@ -2462,8 +3055,8 @@ function App() {
               onClick={cycleLanguage}
               disabled={busy || uploading}
             >
-              <span className={language === "vi" ? "active" : ""}>VI</span>
-              <span className={language === "ja" ? "active" : ""}>日本語</span>
+              <span className={language === "vi" ? "lang-opt active" : "lang-opt"}>VI</span>
+              <span className={language === "ja" ? "lang-opt active" : "lang-opt"}>JA</span>
             </button>
 
             <button
@@ -2484,7 +3077,7 @@ function App() {
 
             <span className="header-divider" role="separator" aria-hidden="true" />
 
-            {mode === "mkac" && employee && (
+            {["mkac", "mes", "wms"].includes(mode) && employee && (
               <button
                 className="icon-button header-tool"
                 type="button"
@@ -2510,6 +3103,18 @@ function App() {
           </div>
         </header>
 
+        {mode === "wms" && !wmsStatus.available && (
+          <div className={`wms-health-banner ${String(
+            wmsStatus.state || (wmsStatus.enabled ? "UNAVAILABLE" : "DISABLED"),
+          ).toLowerCase()}`} role="status">
+            {t(
+              `common.wmsHealth.${
+                wmsStatus.state || (wmsStatus.enabled ? "UNAVAILABLE" : "DISABLED")
+              }`,
+            )}
+          </div>
+        )}
+
         <div className="workspace-body">
           <section
             id={`${mode}-conversation`}
@@ -2519,7 +3124,7 @@ function App() {
             aria-busy={busy}
           >
             <div className="conversation-scroll" ref={conversationScrollRef}>
-              {(mode === "mkac" || mode === "mes") && !mkacAuthorized ? (
+              {["mkac", "mes", "wms"].includes(mode) && !mkacAuthorized ? (
                 <EmployeeLogin
                   mode={mode}
                   modeText={modeText}
@@ -2636,20 +3241,19 @@ function App() {
                   {mode !== "research" || researchScope === "upload" || researchTopicId ? (
                     <div className="prompt-section">
                       <div className="prompt-grid">
-                        {(mode === "research"
-                          ? researchScope === "topic"
-                            ? researchQuickPrompts()
-                            : quickPromptsFor("research", language)
-                          : quickPromptsFor(mode, language)
-                        ).map((prompt) => (
+                        {starterPromptEntries().map((prompt) => (
                           <button
-                            key={prompt}
+                            key={prompt.id || prompt.question}
                             type="button"
-                            onClick={() => sendMessage(prompt)}
+                            onClick={() =>
+                              mode === "wms"
+                                ? handleQuickAnswerClick(prompt)
+                                : sendMessage(prompt.question)
+                            }
                             disabled={!researchReady || !mkacAuthorized}
                           >
                             <Search size={16} />
-                            <span>{prompt}</span>
+                            <span>{prompt.question}</span>
                           </button>
                         ))}
                       </div>
@@ -2669,7 +3273,13 @@ function App() {
                         ? `${mkacStatus.num_documents} ${modeText("mkac").metric}`
                         : mode === "mes"
                           ? `${mesStatus.lots || 0} ${modeText("mes").metric}`
-                          : researchScope === "upload"
+                          : mode === "wms"
+                            ? `${formatText(modeText("wms").itemCount, {
+                                count: wmsStatus.distinct_items || 0,
+                              })} · ${formatText(modeText("wms").processCount, {
+                                count: wmsStatus.distinct_process_codes || 0,
+                              })}`
+                            : researchScope === "upload"
                             ? `${files.length} ${modeText("research").metric}`
                             : researchTopicId
                               ? `${
@@ -2683,6 +3293,22 @@ function App() {
                                   },
                                 )}
                     </span>
+                    {mode === "wms" && (
+                      <>
+                        <span className="status-sep" aria-hidden="true">·</span>
+                        <span
+                          className={`wms-health-state ${String(
+                            wmsStatus.state || (wmsStatus.enabled ? "UNAVAILABLE" : "DISABLED"),
+                          ).toLowerCase()}`}
+                        >
+                          {t(
+                            `common.wmsHealth.${
+                              wmsStatus.state || (wmsStatus.enabled ? "UNAVAILABLE" : "DISABLED")
+                            }`,
+                          )}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -2702,10 +3328,12 @@ function App() {
                   getSuggestions={getSuggestions}
                   handleQuickAnswerClick={handleQuickAnswerClick}
                   endRef={endRef}
+                  onScrollToEnd={scrollConversationToEnd}
                   error={error}
                   MessageMarkdown={MessageMarkdown}
                   AgentTimeline={AgentTimeline}
                   ReportArtifactCard={ReportArtifactCard}
+                  onReportEmail={prepareReportEmail}
                   Bot={Bot}
                 />
               )}
@@ -2758,6 +3386,7 @@ function App() {
               Send={Send}
               Paperclip={Paperclip}
               Search={Search}
+              userPrompts={messages.filter((m) => m.role === "user").map((m) => m.content)}
             />
             )}
           </section>

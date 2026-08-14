@@ -6,6 +6,7 @@ import pytest
 from src.integrations.mes_client import MesApiError, MesClient, MesLotError
 from src.integrations.mes_database import MesDatabaseResult
 from src.integrations.mes_query_service import MesQueryService
+from src.integrations.mes_wms_database import MesWmsDatabaseResult
 from src.integrations.mes_sql_agent import MesSqlQueryResult
 from src.rag.rag_pipeline import RAGPipeline
 
@@ -58,6 +59,29 @@ class FakeEmptyMesDatabase(FakeMesDatabase):
     def query_question(self, question, *, allow_highest_lot=False):
         self.calls.append((question, allow_highest_lot))
         return None
+
+
+class FakeMesWmsDatabase:
+    available = True
+
+    def __init__(self):
+        self.calls = []
+
+    def is_wms_question(self, question):
+        return "tồn kho" in question.lower() or "在庫" in question
+
+    def query_question(self, question, *, language="vi"):
+        self.calls.append((question, language))
+        return MesWmsDatabaseResult(
+            intent="wms_executive_overview",
+            rows=[{"distinct_item_count": 2}],
+            imported_at="2026-07-28T12:00:00+00:00",
+            source_as_of="2026-07-27 23:49:17",
+            fallback_answer="Theo WMS MKHC, có 2 mã vật tư; KPI tổng bị khóa.",
+            required_terms=("2",),
+            status="PARTIAL",
+            reason_codes=("UOM_MASTER_UNAVAILABLE",),
+        )
 
 
 class FakeMesClient:
@@ -457,9 +481,80 @@ def test_mes_query_service_does_not_fallback_time_bound_lot_to_overall_snapshot(
     assert "SNAPSHOT-LOT" not in answer
     assert "Lot" in answer
     assert results == []
-    assert routed_model == "openai-model"
+    assert routed_model == "openai-chat-fallback"
     assert answer_scope == "mes_database"
     assert mes_database.calls == []
+
+
+def test_mes_query_does_not_preempt_to_wms_database():
+    wms_database = FakeMesWmsDatabase()
+    mes_database = FakeMesDatabase()
+    mes_client = FakeMesClient()
+    service = MesQueryService(
+        mes_client=mes_client,
+        mes_database=mes_database,
+        mes_sql_agent=UnavailableSqlAgent(),
+        mes_wms_database=wms_database,
+        openai_client=FailingOpenAIClient(),
+    )
+
+    outcome = asyncio.run(
+        service.query_outcome(
+            "Tình trạng tồn kho công đoạn?", "local", language="vi"
+        )
+    )
+
+    assert outcome.answer_scope != "wms_database"
+    assert outcome.wms_metadata is None
+    assert wms_database.calls == []
+
+
+def test_isolated_wms_query_fails_closed_when_disabled(monkeypatch):
+    monkeypatch.setenv("MES_WMS_DATABASE_ENABLED", "false")
+    mes_database = FakeMesDatabase()
+    mes_client = FakeMesClient()
+    service = MesQueryService(
+        mes_client=mes_client,
+        mes_database=mes_database,
+        mes_sql_agent=UnavailableSqlAgent(),
+        mes_wms_database=None,
+        openai_client=FailingOpenAIClient(),
+    )
+
+    outcome = asyncio.run(
+        service.query_wms_outcome(
+            "Tổng tồn kho WMS tại công đoạn P-01?",
+            "local",
+            language="vi",
+        )
+    )
+
+    assert outcome.answer_scope == "wms_database"
+    assert outcome.results == []
+    assert "không suy đoán" in outcome.answer
+    assert mes_database.calls == []
+    assert mes_client.calls == 0
+
+
+def test_non_wms_query_keeps_existing_mes_route():
+    wms_database = FakeMesWmsDatabase()
+    mes_database = FakeMesDatabase()
+    service = MesQueryService(
+        mes_client=FakeMesClient(),
+        mes_database=mes_database,
+        mes_sql_agent=UnavailableSqlAgent(),
+        mes_wms_database=wms_database,
+        openai_client=FailingOpenAIClient(),
+    )
+
+    answer, _, _, scope = asyncio.run(
+        service.query("Lot 000432-01-000 sản xuất mã hàng nào?", "local")
+    )
+
+    assert scope == "mes_database"
+    assert "3736-0008" in answer
+    assert wms_database.calls == []
+    assert mes_database.calls == [("Lot 000432-01-000 sản xuất mã hàng nào?", False)]
 
 
 def test_sql_answer_validation_checks_time_and_metric_values():
@@ -498,7 +593,7 @@ def test_mes_query_service_falls_back_compound_highest_lot_to_snapshot():
     )
 
     assert results == []
-    assert routed_model == "openai-model"
+    assert routed_model == "openai-chat-fallback"
     assert answer_scope == "mes_database"
     assert "Snapshot Lot" in answer
     assert mes_database.calls[-1] == (question, True)
