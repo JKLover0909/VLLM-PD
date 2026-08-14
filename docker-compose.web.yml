@@ -34,6 +34,10 @@ services:
       MES_SQL_AGENT_TIMEOUT: "2"
       MES_SQL_AGENT_MAX_ATTEMPTS: "2"
       MES_SQL_AGENT_MODEL: local-qwen-coder
+      MES_WMS_DATABASE_ENABLED: "false"
+      MES_WMS_DATABASE_PATH: /app/data/mes_wms.sqlite
+      WMS_SQL_AGENT_ENABLED: "false"
+      WMS_SEMANTIC_MODEL_PATH: /app/config/wms_semantic_model.json
       LOCAL_CHAT_NUM_CTX: "16384"
       LOCAL_AUX_NUM_CTX: "4096"
       TRANSLATION_MODEL: local-qwen-small
