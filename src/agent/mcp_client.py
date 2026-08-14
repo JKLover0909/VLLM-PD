@@ -19,13 +19,48 @@ from langchain_core.tools import BaseTool
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
+
+def _mcp_tool_load_timeout_seconds() -> float:
+    """Return the bounded per-server MCP discovery timeout."""
+    try:
+        timeout_seconds = float(
+            os.getenv("MCP_TOOL_LOAD_TIMEOUT_SECONDS", "8")
+        )
+    except ValueError:
+        timeout_seconds = 8.0
+    return max(1.0, timeout_seconds)
+
+
+def _resolve_command(
+    candidates: list[str | None],
+    env_path: str,
+) -> str | None:
+    """Resolve the first executable command from the provided candidates."""
+    for candidate in candidates:
+        if not candidate:
+            continue
+        resolved = shutil.which(candidate, path=env_path)
+        if resolved:
+            return resolved
+        candidate_path = Path(candidate)
+        if (
+            candidate_path.is_absolute()
+            and candidate_path.is_file()
+            and os.access(candidate_path, os.X_OK)
+        ):
+            return str(candidate_path)
+    return None
+
+
 try:
     from langchain_mcp_adapters.client import MultiServerMCPClient
 
     HAS_MCP_ADAPTER = True
 except ImportError:
     HAS_MCP_ADAPTER = False
-    logger.warning("langchain-mcp-adapters is unavailable; using local tools.")
+    logger.warning(
+        "langchain-mcp-adapters is unavailable; using local tools."
+    )
 
 
 def _run_async(coroutine: Coroutine[None, None, T]) -> T:
@@ -46,54 +81,101 @@ async def _load_mcp_tools(
     env = dict(os.environ)
     runtime_bin = str(Path(sys.executable).parent)
     env["PATH"] = os.pathsep.join(
-        filter(None, [runtime_bin, str(Path.home() / ".local" / "bin"), env.get("PATH")])
+        filter(
+            None,
+            [runtime_bin, str(Path.home() / ".local" / "bin"), env.get("PATH")],
+        )
     )
 
-    npx_path = str(Path(runtime_bin) / "npx")
-    uvx_path = shutil.which("uvx", path=env["PATH"]) or str(
-        Path.home() / ".local" / "bin" / "uvx"
+    npx_path = _resolve_command(
+        [str(Path(runtime_bin) / "npx"), "npx", "/usr/bin/npx"],
+        env["PATH"],
     )
-    connections = {
-        "filesystem": {
-            "transport": "stdio",
-            "command": npx_path,
-            "args": [
-                "-y",
-                "@modelcontextprotocol/server-filesystem",
-                str(workspace_dir),
-            ],
-            "env": env,
-        },
-        "git": {
-            "transport": "stdio",
-            "command": uvx_path,
-            "args": [
-                "mcp-server-git",
-                "--repository",
-                str(repository_dir),
-            ],
-            "env": env,
-        },
-        "google-calendar": {
-            "transport": "stdio",
-            "command": "node",
-            "args": [
-                str(Path(__file__).parent / "run_calendar_mcp.js"),
-            ],
-            "env": env,
-        },
-    }
+    uvx_path = _resolve_command(
+        ["uvx", str(Path.home() / ".local" / "bin" / "uvx")],
+        env["PATH"],
+    )
+    node_path = _resolve_command(["node"], env["PATH"])
+
+    connections = []
+    if npx_path:
+        connections.append(
+            (
+                "filesystem",
+                {
+                    "transport": "stdio",
+                    "command": npx_path,
+                    "args": [
+                        "-y",
+                        "@modelcontextprotocol/server-filesystem",
+                        str(workspace_dir),
+                    ],
+                    "env": env,
+                },
+            )
+        )
+    else:
+        logger.warning(
+            "Skipping filesystem MCP tools because npx is unavailable."
+        )
+
+    if uvx_path:
+        connections.append(
+            (
+                "git",
+                {
+                    "transport": "stdio",
+                    "command": uvx_path,
+                    "args": [
+                        "mcp-server-git",
+                        "--repository",
+                        str(repository_dir),
+                    ],
+                    "env": env,
+                },
+            )
+        )
+    else:
+        logger.warning("Skipping git MCP tools because uvx is unavailable.")
+
+    if node_path:
+        connections.append(
+            (
+                "google-calendar",
+                {
+                    "transport": "stdio",
+                    "command": node_path,
+                    "args": [
+                        str(Path(__file__).parent / "run_calendar_mcp.js"),
+                    ],
+                    "env": env,
+                },
+            )
+        )
+    else:
+        logger.warning(
+            "Skipping Google Calendar MCP tools because node is unavailable."
+        )
 
     tools: List[BaseTool] = []
-    for server_name, connection in connections.items():
+    timeout_seconds = _mcp_tool_load_timeout_seconds()
+    for server_name, connection in connections:
         try:
             client = MultiServerMCPClient({server_name: connection})
-            server_tools = await client.get_tools()
+            server_tools = await asyncio.wait_for(
+                client.get_tools(), timeout=timeout_seconds
+            )
             tools.extend(server_tools)
             logger.info(
                 "Loaded %s tools from the %s MCP server.",
                 len(server_tools),
                 server_name,
+            )
+        except asyncio.TimeoutError:
+            logger.error(
+                "Timed out loading %s MCP tools after %.1f seconds.",
+                server_name,
+                timeout_seconds,
             )
         except Exception as exc:
             logger.error("Unable to load %s MCP tools: %s", server_name, exc)
@@ -159,7 +241,8 @@ def _get_fallback_local_tools(workspace_dir: Path) -> List[BaseTool]:
     def list_dir(directory: str = ".") -> str:
         """List a directory inside the configured workspace."""
         try:
-            return "\n".join(sorted(item.name for item in resolve_path(directory).iterdir()))
+            names = sorted(item.name for item in resolve_path(directory).iterdir())
+            return "\n".join(names)
         except Exception as exc:
             return f"Error listing directory: {exc}"
 
