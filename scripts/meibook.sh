@@ -26,7 +26,8 @@ Usage:
   ./scripts/meibook.sh stop
   ./scripts/meibook.sh status
   ./scripts/meibook.sh logs
-  ./scripts/meibook.sh query-log [--env prod|dev|both] [--since 24h] [--tail 50]
+  ./scripts/meibook.sh query-log [--env dev|prod|both] [--allow-prod] [--since 24h] [--tail 50]
+      Default is --env dev; Production/both require --allow-prod.
 EOF
 }
 

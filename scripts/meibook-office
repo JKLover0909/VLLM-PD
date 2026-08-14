@@ -6,7 +6,7 @@ Uses the same OAuth token files as Meibook:
   - data/calendar_token.json   scope: calendar.events
   - config/calendar_rooms.json room-1 / room-3
 
-Mutating commands require --yes.
+Mutating commands require --yes and MEIBOOK_OFFICE_ALLOW_MUTATION=1.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ ROOT = Path(os.environ.get("MEIBOOK_ROOT", "/home/jkl/Code/VLLM-PD"))
 TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 OWNER = os.environ.get("CALENDAR_OWNER_EMAIL", "")
 EMPLOYEE_ID = os.environ.get("MEIBOOK_OWNER_EMPLOYEE_ID", "")
+MUTATION_ENV_VAR = "MEIBOOK_OFFICE_ALLOW_MUTATION"
 
 
 def _paths():
@@ -120,9 +121,21 @@ def parse_dt(value: str) -> datetime:
     raise SystemExit("Invalid datetime. Use YYYY-MM-DDTHH:MM.")
 
 
+def require_mutation_confirmation(confirmed: bool, action: str) -> None:
+    if confirmed and os.environ.get(MUTATION_ENV_VAR) == "1":
+        return
+    raise SystemExit(
+        f"Refusing to {action}: mutating office commands require both "
+        f"--yes and {MUTATION_ENV_VAR}=1."
+    )
+
+
 def room_matches(room: dict, key: str) -> bool:
-    candidates = [room.get("id"), room.get("name"), *(room.get("aliases") or [])]
-    return any(str(candidate).strip().lower() == key for candidate in candidates)
+    aliases = room.get("aliases") or []
+    candidates = [room.get("id"), room.get("name"), *aliases]
+    return any(
+        str(candidate).strip().lower() == key for candidate in candidates
+    )
 
 
 def cmd_availability(args: argparse.Namespace) -> int:
@@ -168,8 +181,12 @@ def cmd_availability(args: argparse.Namespace) -> int:
             for event in items[:5]:
                 event_start = event.get("start") or {}
                 event_end = event.get("end") or {}
-                start_label = event_start.get("dateTime") or event_start.get("date")
-                end_label = event_end.get("dateTime") or event_end.get("date")
+                start_label = event_start.get("dateTime") or event_start.get(
+                    "date"
+                )
+                end_label = event_end.get("dateTime") or event_end.get(
+                    "date"
+                )
                 print(
                     f"    * {event.get('summary') or '(no title)'} "
                     f"{start_label} -> {end_label}"
@@ -183,8 +200,7 @@ def cmd_availability(args: argparse.Namespace) -> int:
 
 
 def cmd_gmail_send(args: argparse.Namespace) -> int:
-    if not args.yes:
-        raise SystemExit("Refusing to send without --yes")
+    require_mutation_confirmation(args.yes, "send email")
     sys.path.insert(0, str(ROOT))
     os.environ.setdefault("GMAIL_SEND_ENABLED", "true")
     os.environ.setdefault(
@@ -223,8 +239,7 @@ def resolve_room(room_key: str | None):
 
 
 def cmd_calendar_create(args: argparse.Namespace) -> int:
-    if not args.yes:
-        raise SystemExit("Refusing to create calendar event without --yes")
+    require_mutation_confirmation(args.yes, "create calendar event")
     from googleapiclient.discovery import build
 
     start = parse_dt(args.start)
@@ -286,6 +301,7 @@ def main(argv=None) -> int:
 
     sub.add_parser("status", help="Token/rooms readiness")
     sub.add_parser("rooms", help="List MKAC meeting rooms")
+    mutation_help = f"Requires --yes and {MUTATION_ENV_VAR}=1."
 
     p_av = sub.add_parser(
         "availability", help="Check room free/busy via events.list"
@@ -295,23 +311,32 @@ def main(argv=None) -> int:
     p_av.add_argument("--room", help="room-1|room-3")
 
     p_gs = sub.add_parser(
-        "gmail-send", help="Send email as connected Gmail account"
+        "gmail-send",
+        help=f"Send email. {mutation_help}",
+        description=(
+            "Send email as connected Gmail account. "
+            f"{mutation_help}"
+        ),
     )
     p_gs.add_argument("--to", required=True)
     p_gs.add_argument("--subject", required=True)
     p_gs.add_argument("--body", required=True)
-    p_gs.add_argument("--yes", action="store_true")
+    p_gs.add_argument("--yes", action="store_true", help=mutation_help)
 
     p_cc = sub.add_parser(
         "calendar-create",
-        help="Create event on primary calendar (+ optional room)",
+        help=f"Create event. {mutation_help}",
+        description=(
+            "Create event on primary calendar (+ optional room). "
+            f"{mutation_help}"
+        ),
     )
     p_cc.add_argument("--title", required=True)
     p_cc.add_argument("--start", required=True, help="YYYY-MM-DDTHH:MM")
     p_cc.add_argument("--end", help="YYYY-MM-DDTHH:MM")
     p_cc.add_argument("--room", help="room-1|room-3")
     p_cc.add_argument("--description", default="")
-    p_cc.add_argument("--yes", action="store_true")
+    p_cc.add_argument("--yes", action="store_true", help=mutation_help)
 
     args = parser.parse_args(argv)
     if args.command == "status":

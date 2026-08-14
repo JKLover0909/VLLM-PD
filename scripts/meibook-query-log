@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """Pretty-print Meibook web-app user query traffic from container logs.
 
-Uvicorn access lines often appear *after* query_complete (access is logged when
-the response finishes). Pairing: buffer completes, attach to the next /query access.
+Default scope is Dev logs only. Production log reads require the
+per-command --allow-prod flag because access lines can include user IP
+and query metadata.
+
+Uvicorn access lines often appear *after* query_complete. Access is
+logged when the response finishes. Pairing: buffer completes, attach to
+the next /query access.
 """
 
 from __future__ import annotations
@@ -18,7 +23,8 @@ from zoneinfo import ZoneInfo
 
 ACCESS_RE = re.compile(
     r"INFO:\s+(?P<ip>\d+\.\d+\.\d+\.\d+):(?P<port>\d+)\s+-\s+"
-    r'"(?P<method>GET|POST|PUT|DELETE|PATCH)\s+(?P<path>/query(?:/stream)?)\b[^"]*"\s+'
+    r'"(?P<method>GET|POST|PUT|DELETE|PATCH)\s+'
+    r'(?P<path>/query(?:/stream)?)\b[^\"]*"\s+'
     r"(?P<status>\d{3})\s+(?P<status_text>\w+)",
 )
 COMPLETE_RE = re.compile(
@@ -73,7 +79,9 @@ def docker_logs(container: str, since: str) -> list[str]:
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         err = (result.stderr or result.stdout or "").strip()
-        raise RuntimeError(f"docker logs {container} failed: {err or result.returncode}")
+        raise RuntimeError(
+            f"docker logs {container} failed: {err or result.returncode}"
+        )
     return ((result.stdout or "") + (result.stderr or "")).splitlines()
 
 
@@ -112,7 +120,7 @@ def status_text(c: Complete) -> str:
 
 
 def parse_lines(lines: Iterable[str]) -> list[Row]:
-    """Pair each query_complete with the nearest prior /query access (handles overlap)."""
+    """Pair query_complete with the nearest prior /query access."""
     pending_accesses: list[Access] = []
     rows: list[Row] = []
 
@@ -125,7 +133,10 @@ def parse_lines(lines: Iterable[str]) -> list[Row]:
             if complete_ts is None or a.ts is None or a.ts <= complete_ts
         ]
         pool = prior or list(pending_accesses)
-        chosen = max(pool, key=lambda a: a.ts or datetime.min.replace(tzinfo=LOCAL_TZ))
+        chosen = max(
+            pool,
+            key=lambda a: a.ts or datetime.min.replace(tzinfo=LOCAL_TZ),
+        )
         pending_accesses.remove(chosen)
         return chosen
 
@@ -182,7 +193,10 @@ def parse_lines(lines: Iterable[str]) -> list[Row]:
                         scope=c.scope,
                         lang=c.lang,
                         latency=f"{c.latency_ms}ms",
-                        status=f"{status_text(c)} (không có access IP tương ứng)",
+                        status=(
+                            f"{status_text(c)} "
+                            "(không có access IP tương ứng)"
+                        ),
                     )
                 )
             continue
@@ -198,18 +212,59 @@ def parse_lines(lines: Iterable[str]) -> list[Row]:
                 scope="-",
                 lang="-",
                 latency="-",
-                status=f"{orphan_n} access chưa gắn query_complete (bỏ qua chi tiết)",
+                status=(
+                    f"{orphan_n} access chưa gắn query_complete "
+                    "(bỏ qua chi tiết)"
+                ),
             )
         )
     return rows
 
 
+def require_allowed_scope(env: str, allow_prod: bool) -> None:
+    if env not in {"prod", "both"} or allow_prod:
+        return
+    raise SystemExit(
+        "Refusing to read Production logs without --allow-prod. "
+        "Use --env dev for the default safe path."
+    )
+
+
+def parse_args(argv: list[str] | None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Meibook web user-query log viewer. Defaults to Dev logs; "
+            "Production/both require --allow-prod."
+        )
+    )
+    parser.add_argument(
+        "--env",
+        choices=["prod", "dev", "both"],
+        default="dev",
+        help="target logs: dev by default; prod/both require --allow-prod",
+    )
+    parser.add_argument(
+        "--allow-prod",
+        action="store_true",
+        help="allow this command to read Production logs for --env prod/both",
+    )
+    parser.add_argument(
+        "--since",
+        default="72h",
+        help="docker logs --since (default 72h)",
+    )
+    parser.add_argument(
+        "--tail",
+        type=int,
+        default=50,
+        help="show last N rows (default 50)",
+    )
+    return parser.parse_args(argv)
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Meibook web user-query log viewer")
-    parser.add_argument("--env", choices=["prod", "dev", "both"], default="both")
-    parser.add_argument("--since", default="72h", help="docker logs --since (default 72h)")
-    parser.add_argument("--tail", type=int, default=50, help="show last N rows (default 50)")
-    args = parser.parse_args(argv)
+    args = parse_args(argv)
+    require_allowed_scope(args.env, args.allow_prod)
 
     envs = ["prod", "dev"] if args.env == "both" else [args.env]
     for env in envs:
@@ -217,10 +272,13 @@ def main(argv: list[str] | None = None) -> int:
         try:
             lines = docker_logs(container, args.since)
         except RuntimeError as exc:
-            print(f"ERROR env={env} container={container}: {exc}", file=sys.stderr)
+            print(
+                f"ERROR env={env} container={container}: {exc}",
+                file=sys.stderr,
+            )
             continue
         rows = parse_lines(lines)
-        selected = rows[-args.tail :] if args.tail > 0 else rows
+        selected = rows[-args.tail:] if args.tail > 0 else rows
         print(
             f"=== Server Meibook / {env} ({container}) "
             f"since={args.since} shown={len(selected)}/{len(rows)} ==="
