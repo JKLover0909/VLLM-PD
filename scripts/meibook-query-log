@@ -1,0 +1,242 @@
+#!/usr/bin/env python3
+"""Pretty-print Meibook web-app user query traffic from container logs.
+
+Uvicorn access lines often appear *after* query_complete (access is logged when
+the response finishes). Pairing: buffer completes, attach to the next /query access.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Iterable, Optional
+from zoneinfo import ZoneInfo
+
+ACCESS_RE = re.compile(
+    r"INFO:\s+(?P<ip>\d+\.\d+\.\d+\.\d+):(?P<port>\d+)\s+-\s+"
+    r'"(?P<method>GET|POST|PUT|DELETE|PATCH)\s+(?P<path>/query(?:/stream)?)\b[^"]*"\s+'
+    r"(?P<status>\d{3})\s+(?P<status_text>\w+)",
+)
+COMPLETE_RE = re.compile(
+    r"query_complete\s+"
+    r"mode=(?P<mode>\S+)\s+"
+    r"lang=(?P<lang>\S+)\s+"
+    r"scope=(?P<scope>\S+)\s+"
+    r"cache_hit=(?P<cache_hit>\S+)\s+"
+    r"error=(?P<error>\S+)\s+"
+    r"latency_ms=(?P<latency>\d+)",
+)
+
+ENVIRONMENTS = {
+    "prod": "meibook-web",
+    "dev": "meibook-web-dev",
+}
+LOCAL_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+
+
+@dataclass
+class Access:
+    ts: Optional[datetime]
+    ip: str
+    path: str
+    http_status: str
+
+
+@dataclass
+class Complete:
+    ts: Optional[datetime]
+    mode: str
+    lang: str
+    scope: str
+    cache_hit: bool
+    error: bool
+    latency_ms: int
+
+
+@dataclass
+class Row:
+    ts: Optional[datetime]
+    ip: str
+    mode: str
+    scope: str
+    lang: str
+    latency: str
+    status: str
+
+
+def docker_logs(container: str, since: str) -> list[str]:
+    cmd = ["docker", "logs", container, f"--since={since}", "--timestamps"]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        err = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(f"docker logs {container} failed: {err or result.returncode}")
+    return ((result.stdout or "") + (result.stderr or "")).splitlines()
+
+
+def parse_ts(iso: Optional[str]) -> Optional[datetime]:
+    if not iso:
+        return None
+    raw = iso.replace("Z", "+00:00")
+    try:
+        if "." in raw:
+            head, rest = raw.split(".", 1)
+            m = re.match(r"(\d+)(.*)$", rest)
+            if not m:
+                return datetime.fromisoformat(raw)
+            micros = m.group(1)[:6].ljust(6, "0")
+            raw = f"{head}.{micros}{m.group(2)}"
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(LOCAL_TZ)
+    except Exception:
+        return None
+
+
+def fmt_ts(dt: Optional[datetime]) -> str:
+    if not dt:
+        return "--/-- --:--:--"
+    return dt.strftime("%d/%m %H:%M:%S")
+
+
+def status_text(c: Complete) -> str:
+    if c.error:
+        return "ERROR"
+    if c.cache_hit:
+        return "OK (cache hit)"
+    return "OK"
+
+
+def parse_lines(lines: Iterable[str]) -> list[Row]:
+    """Pair each query_complete with the nearest prior /query access (handles overlap)."""
+    pending_accesses: list[Access] = []
+    rows: list[Row] = []
+
+    def pick_access(complete_ts: Optional[datetime]) -> Optional[Access]:
+        if not pending_accesses:
+            return None
+        prior = [
+            a
+            for a in pending_accesses
+            if complete_ts is None or a.ts is None or a.ts <= complete_ts
+        ]
+        pool = prior or list(pending_accesses)
+        chosen = max(pool, key=lambda a: a.ts or datetime.min.replace(tzinfo=LOCAL_TZ))
+        pending_accesses.remove(chosen)
+        return chosen
+
+    for line in lines:
+        ts = None
+        msg = line
+        m_ts = re.match(r"^(\d{4}-\d{2}-\d{2}T\S+)\s+(.*)$", line)
+        if m_ts:
+            ts = parse_ts(m_ts.group(1))
+            msg = m_ts.group(2)
+
+        am = ACCESS_RE.search(msg)
+        if am:
+            pending_accesses.append(
+                Access(
+                    ts=ts,
+                    ip=am.group("ip"),
+                    path=am.group("path"),
+                    http_status=am.group("status"),
+                )
+            )
+            continue
+
+        cm = COMPLETE_RE.search(msg)
+        if cm:
+            c = Complete(
+                ts=ts,
+                mode=cm.group("mode"),
+                lang=cm.group("lang"),
+                scope=cm.group("scope"),
+                cache_hit=cm.group("cache_hit").lower() == "true",
+                error=cm.group("error").lower() == "true",
+                latency_ms=int(cm.group("latency")),
+            )
+            a = pick_access(c.ts)
+            if a is not None:
+                rows.append(
+                    Row(
+                        ts=c.ts or a.ts,
+                        ip=a.ip,
+                        mode=c.mode,
+                        scope=c.scope,
+                        lang=c.lang,
+                        latency=f"{c.latency_ms}ms",
+                        status=status_text(c),
+                    )
+                )
+            else:
+                rows.append(
+                    Row(
+                        ts=c.ts,
+                        ip="?",
+                        mode=c.mode,
+                        scope=c.scope,
+                        lang=c.lang,
+                        latency=f"{c.latency_ms}ms",
+                        status=f"{status_text(c)} (không có access IP tương ứng)",
+                    )
+                )
+            continue
+
+    orphan_n = len(pending_accesses)
+    if orphan_n:
+        # Keep a short marker row so operators know unpaired accesses existed.
+        rows.append(
+            Row(
+                ts=pending_accesses[-1].ts,
+                ip="*",
+                mode="-",
+                scope="-",
+                lang="-",
+                latency="-",
+                status=f"{orphan_n} access chưa gắn query_complete (bỏ qua chi tiết)",
+            )
+        )
+    return rows
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Meibook web user-query log viewer")
+    parser.add_argument("--env", choices=["prod", "dev", "both"], default="both")
+    parser.add_argument("--since", default="72h", help="docker logs --since (default 72h)")
+    parser.add_argument("--tail", type=int, default=50, help="show last N rows (default 50)")
+    args = parser.parse_args(argv)
+
+    envs = ["prod", "dev"] if args.env == "both" else [args.env]
+    for env in envs:
+        container = ENVIRONMENTS[env]
+        try:
+            lines = docker_logs(container, args.since)
+        except RuntimeError as exc:
+            print(f"ERROR env={env} container={container}: {exc}", file=sys.stderr)
+            continue
+        rows = parse_lines(lines)
+        selected = rows[-args.tail :] if args.tail > 0 else rows
+        print(
+            f"=== Server Meibook / {env} ({container}) "
+            f"since={args.since} shown={len(selected)}/{len(rows)} ==="
+        )
+        if not selected:
+            print("(no /query traffic in window)")
+        else:
+            print("TIME\tIP\tMODE\tSCOPE\tLANG\tLATENCY\tSTATUS")
+            for r in selected:
+                print(
+                    f"{fmt_ts(r.ts)}\t{r.ip}\t{r.mode}\t{r.scope}\t"
+                    f"{r.lang}\t{r.latency}\t{r.status}"
+                )
+        print()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

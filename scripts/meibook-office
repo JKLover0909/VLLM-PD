@@ -1,0 +1,331 @@
+#!/usr/bin/env python3
+"""Allowlisted Meibook office CLI: Gmail send + Calendar room booking.
+
+Uses the same OAuth token files as Meibook:
+  - data/gmail_token.json      scope: gmail.send
+  - data/calendar_token.json   scope: calendar.events
+  - config/calendar_rooms.json room-1 / room-3
+
+Mutating commands require --yes.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+ROOT = Path(os.environ.get("MEIBOOK_ROOT", "/home/jkl/Code/VLLM-PD"))
+TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+OWNER = os.environ.get("CALENDAR_OWNER_EMAIL", "")
+EMPLOYEE_ID = os.environ.get("MEIBOOK_OWNER_EMPLOYEE_ID", "")
+
+
+def _paths():
+    return {
+        "rooms": ROOT / "config" / "calendar_rooms.json",
+        "gmail_credentials": Path(
+            os.environ.get(
+                "GMAIL_CREDENTIALS_PATH",
+                ROOT / "data" / "gmail_credentials.json",
+            )
+        ),
+        "gmail_token": Path(
+            os.environ.get(
+                "GMAIL_TOKEN_PATH",
+                ROOT / "data" / "gmail_token.json",
+            )
+        ),
+        "calendar_token": Path(
+            os.environ.get(
+                "CALENDAR_TOKEN_PATH",
+                ROOT / "data" / "calendar_token.json",
+            )
+        ),
+    }
+
+
+def load_rooms():
+    data = json.loads(_paths()["rooms"].read_text(encoding="utf-8"))
+    return data.get("timezone", "Asia/Ho_Chi_Minh"), data.get("rooms") or []
+
+
+def google_creds(token_path: Path, scopes: list[str]):
+    from google.auth.transport.requests import Request
+    from google.oauth2.credentials import Credentials
+
+    if not token_path.is_file():
+        raise SystemExit(f"Missing token: {token_path}")
+    creds = Credentials.from_authorized_user_file(str(token_path), scopes)
+    if creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+    return creds
+
+
+def cmd_status(_: argparse.Namespace) -> int:
+    p = _paths()
+    tz, rooms = load_rooms()
+    print("OWNER_EMAIL=" + (OWNER or "(env not set)"))
+    print("EMPLOYEE_ID=" + (EMPLOYEE_ID or "(env not set)"))
+    print("TIMEZONE=" + tz)
+    print("ROOMS=" + str(len(rooms)))
+    for room in rooms:
+        print(f"- {room.get('id')}: {room.get('name')}")
+    print(
+        "GMAIL_CREDENTIALS="
+        + ("yes" if p["gmail_credentials"].is_file() else "no")
+    )
+    print("GMAIL_TOKEN=" + ("yes" if p["gmail_token"].is_file() else "no"))
+    print(
+        "CALENDAR_TOKEN="
+        + ("yes" if p["calendar_token"].is_file() else "no")
+    )
+    if p["gmail_token"].is_file():
+        data = json.loads(p["gmail_token"].read_text(encoding="utf-8"))
+        print("GMAIL_SCOPES=" + ",".join(data.get("scopes") or []))
+    if p["calendar_token"].is_file():
+        data = json.loads(p["calendar_token"].read_text(encoding="utf-8"))
+        scopes = data.get("scopes") or (
+            [] if not data.get("scope") else str(data.get("scope")).split()
+        )
+        print("CALENDAR_SCOPES=" + ",".join(scopes))
+    print("NOTE=Tokens stay on Server Meibook; call this CLI via SSH only.")
+    return 0
+
+
+def cmd_rooms(_: argparse.Namespace) -> int:
+    tz, rooms = load_rooms()
+    print("TIMEZONE=" + tz)
+    print("OWNER_EMAIL=" + (OWNER or "(env not set)"))
+    print("ROOMS=")
+    for room in rooms:
+        print(
+            f"- id={room.get('id')} name={room.get('name')} "
+            f"aliases={','.join(room.get('aliases') or [])}"
+        )
+    return 0
+
+
+def parse_dt(value: str) -> datetime:
+    value = value.strip()
+    for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%d/%m/%Y %H:%M"):
+        try:
+            return datetime.strptime(value, fmt).replace(tzinfo=TZ)
+        except ValueError:
+            continue
+    raise SystemExit("Invalid datetime. Use YYYY-MM-DDTHH:MM.")
+
+
+def room_matches(room: dict, key: str) -> bool:
+    candidates = [room.get("id"), room.get("name"), *(room.get("aliases") or [])]
+    return any(str(candidate).strip().lower() == key for candidate in candidates)
+
+
+def cmd_availability(args: argparse.Namespace) -> int:
+    from googleapiclient.discovery import build
+
+    _, rooms = load_rooms()
+    start = parse_dt(args.start) if args.start else datetime.now(TZ).replace(
+        minute=0, second=0, microsecond=0
+    ) + timedelta(hours=1)
+    end = parse_dt(args.end) if args.end else start + timedelta(hours=1)
+    if end <= start:
+        raise SystemExit("end must be after start")
+
+    creds = google_creds(
+        _paths()["calendar_token"],
+        ["https://www.googleapis.com/auth/calendar.events"],
+    )
+    service = build("calendar", "v3", credentials=creds, cache_discovery=False)
+    print(f"WINDOW={start:%Y-%m-%d %H:%M} -> {end:%Y-%m-%d %H:%M} ({TZ})")
+    print("AVAILABILITY=")
+    for room in rooms:
+        if args.room and not room_matches(room, args.room.strip().lower()):
+            continue
+        try:
+            events = (
+                service.events()
+                .list(
+                    calendarId=room["calendar_id"],
+                    timeMin=start.isoformat(),
+                    timeMax=end.isoformat(),
+                    singleEvents=True,
+                    maxResults=20,
+                    orderBy="startTime",
+                )
+                .execute()
+            )
+            items = events.get("items") or []
+            busy = len(items) > 0
+            print(
+                f"- id={room['id']} name={room['name']} "
+                f"status={'BUSY' if busy else 'FREE'} conflicts={len(items)}"
+            )
+            for event in items[:5]:
+                event_start = event.get("start") or {}
+                event_end = event.get("end") or {}
+                start_label = event_start.get("dateTime") or event_start.get("date")
+                end_label = event_end.get("dateTime") or event_end.get("date")
+                print(
+                    f"    * {event.get('summary') or '(no title)'} "
+                    f"{start_label} -> {end_label}"
+                )
+        except Exception as exc:
+            print(
+                f"- id={room['id']} name={room['name']} "
+                f"status=ERROR detail={exc}"
+            )
+    return 0
+
+
+def cmd_gmail_send(args: argparse.Namespace) -> int:
+    if not args.yes:
+        raise SystemExit("Refusing to send without --yes")
+    sys.path.insert(0, str(ROOT))
+    os.environ.setdefault("GMAIL_SEND_ENABLED", "true")
+    os.environ.setdefault(
+        "GMAIL_CREDENTIALS_PATH", str(_paths()["gmail_credentials"])
+    )
+    os.environ.setdefault("GMAIL_TOKEN_PATH", str(_paths()["gmail_token"]))
+    from src.integrations.gmail_sender import GmailSender
+
+    sender = GmailSender.from_env()
+    if sender is None or not sender.available:
+        raise SystemExit("GmailSender not available")
+    result = sender.send_email(args.to, args.subject, args.body)
+    print("OK=true")
+    print("MESSAGE_ID=" + result.message_id)
+    print("TO=" + result.to_email)
+    print("SUBJECT=" + result.subject)
+    print("AS=" + (OWNER or "(env not set)"))
+    return 0
+
+
+def resolve_room(room_key: str | None):
+    _, rooms = load_rooms()
+    if not room_key:
+        return None
+    key = room_key.strip().lower()
+    for room in rooms:
+        if room_matches(room, key):
+            return room
+        if key in {"1", "phong 1", "phòng 1", "room 1"}:
+            if room.get("id") == "room-1":
+                return room
+        if key in {"3", "phong 3", "phòng 3", "room 3"}:
+            if room.get("id") == "room-3":
+                return room
+    raise SystemExit(f"Unknown room: {room_key}. Use room-1 or room-3.")
+
+
+def cmd_calendar_create(args: argparse.Namespace) -> int:
+    if not args.yes:
+        raise SystemExit("Refusing to create calendar event without --yes")
+    from googleapiclient.discovery import build
+
+    start = parse_dt(args.start)
+    end = parse_dt(args.end) if args.end else start + timedelta(hours=1)
+    if end <= start:
+        raise SystemExit("end must be after start")
+    room = resolve_room(args.room)
+
+    creds = google_creds(
+        _paths()["calendar_token"],
+        ["https://www.googleapis.com/auth/calendar.events"],
+    )
+    service = build("calendar", "v3", credentials=creds, cache_discovery=False)
+    if room:
+        events = (
+            service.events()
+            .list(
+                calendarId=room["calendar_id"],
+                timeMin=start.isoformat(),
+                timeMax=end.isoformat(),
+                singleEvents=True,
+                maxResults=5,
+            )
+            .execute()
+        )
+        if events.get("items"):
+            raise SystemExit(f"Room busy: {room['name']}")
+
+    event_body = {
+        "summary": args.title,
+        "description": args.description
+        or "Sự kiện được tạo qua meibook-office.",
+        "start": {"dateTime": start.isoformat(), "timeZone": str(TZ)},
+        "end": {"dateTime": end.isoformat(), "timeZone": str(TZ)},
+    }
+    if room:
+        event_body["attendees"] = [
+            {"email": room["calendar_id"], "displayName": room["name"]}
+        ]
+    created = (
+        service.events()
+        .insert(calendarId="primary", body=event_body, sendUpdates="none")
+        .execute()
+    )
+    print("OK=true")
+    print("EVENT_ID=" + str(created.get("id") or ""))
+    print("HTML_LINK=" + str(created.get("htmlLink") or ""))
+    print("TITLE=" + args.title)
+    print(f"START={start:%Y-%m-%d %H:%M}")
+    print(f"END={end:%Y-%m-%d %H:%M}")
+    print("ROOM=" + (room["name"] if room else "(none)"))
+    print("AS=" + (OWNER or "(env not set)"))
+    return 0
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("status", help="Token/rooms readiness")
+    sub.add_parser("rooms", help="List MKAC meeting rooms")
+
+    p_av = sub.add_parser(
+        "availability", help="Check room free/busy via events.list"
+    )
+    p_av.add_argument("--start", help="YYYY-MM-DDTHH:MM")
+    p_av.add_argument("--end", help="YYYY-MM-DDTHH:MM")
+    p_av.add_argument("--room", help="room-1|room-3")
+
+    p_gs = sub.add_parser(
+        "gmail-send", help="Send email as connected Gmail account"
+    )
+    p_gs.add_argument("--to", required=True)
+    p_gs.add_argument("--subject", required=True)
+    p_gs.add_argument("--body", required=True)
+    p_gs.add_argument("--yes", action="store_true")
+
+    p_cc = sub.add_parser(
+        "calendar-create",
+        help="Create event on primary calendar (+ optional room)",
+    )
+    p_cc.add_argument("--title", required=True)
+    p_cc.add_argument("--start", required=True, help="YYYY-MM-DDTHH:MM")
+    p_cc.add_argument("--end", help="YYYY-MM-DDTHH:MM")
+    p_cc.add_argument("--room", help="room-1|room-3")
+    p_cc.add_argument("--description", default="")
+    p_cc.add_argument("--yes", action="store_true")
+
+    args = parser.parse_args(argv)
+    if args.command == "status":
+        return cmd_status(args)
+    if args.command == "rooms":
+        return cmd_rooms(args)
+    if args.command == "availability":
+        return cmd_availability(args)
+    if args.command == "gmail-send":
+        return cmd_gmail_send(args)
+    if args.command == "calendar-create":
+        return cmd_calendar_create(args)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
