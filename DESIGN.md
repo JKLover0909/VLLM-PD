@@ -1,7 +1,7 @@
 ---
 version: alpha
-name: Meibook Development UI
-description: Implementation-derived visual identity for the Dev MKAC, MES, WMS, and Research interface.
+name: Meibook Production UI
+description: Implementation-derived visual identity for the Production MKAC, MES, WMS, and Research interface.
 colors:
   canvas-light: "#f4f6f8"
   surface-light: "#ffffff"
@@ -125,84 +125,84 @@ components:
     padding: 24px
 ---
 
-# Meibook Development UI
+# Meibook Production UI
 
 ## Overview
 
-Meibook Dev is the implementation and verification surface for the bilingual MKAC internal assistant. It currently includes MKAC/HR, MES, WMS, and Research. The interface is intentionally restrained: neutral work surfaces, a dark document sidebar, teal default interactions, and domain accents that clarify context without overpowering operational data.
+Meibook is a restrained bilingual internal-tool interface for MKAC. The Production UI supports MKAC/HR, MES, and Research as active modes. WMS code has been merged and the WMS tab appears only when a validated Production snapshot is available. The interface favors dense, verifiable information over decorative presentation: a pale neutral canvas, white working surfaces, a dark document sidebar, and teal as the default interaction accent.
 
-This is an implementation-derived reference. `frontend/src/styles.css` remains authoritative, and many selectors still use literal values or dark-mode overrides. The tokens above describe stable roles; they do not claim that the CSS is fully tokenized or authorize a broad visual refactor.
+This file records a stable, implementation-derived subset of the visual system. It does not replace `frontend/src/styles.css`, which remains the source of truth. Many selectors still use literal colors and component-specific dark overrides, so the token inventory above must not be treated as proof that the CSS is fully tokenized.
 
-Dev is ahead of Production. WMS, advanced report artifacts, staged reveal, report email actions, and related accessibility states are Dev capabilities until deliberately reviewed and promoted.
+Use the MKAC logo from `frontend/public/mkac-logo.png` and Lucide React for interface icons. Do not introduce a second icon family without an explicit design decision.
 
 ## Colors
 
-Use teal for default/MKAC interactions, blue for MES, amber for Research, and orange/amber for WMS. Use success and danger colors only for semantic state. WMS availability, freshness, suppression, and verification must remain distinguishable by text and structure as well as color.
+Use teal for default actions and MKAC context, blue for MES, amber for Research, and orange/amber for WMS. Reserve green and red for semantic success and error/destructive states. Do not use status colors as decoration.
 
-Every addition must support light and dark themes. Dark mode combines root variables with selector-level overrides, so a light-only implementation is incomplete. Forced-colors support already exists for selected Dev controls and must not be broken.
+Light mode uses the neutral canvas and white surfaces. Dark mode uses the dark canvas and component-level surface overrides. Every UI change must be checked in both themes; changing a light selector alone is incomplete.
 
-The token foreground/background pairs are representative. Run contrast and visual checks on rendered states; this file is not a declaration of complete WCAG compliance.
+The documented component foreground/background pairs are representative, not a claim of complete WCAG conformance. Validate contrast and state distinctions in the rendered interface.
 
 ## Typography
 
-Desktop uses Merriweather with the implemented optical sizing and width variation. Mobile switches to a system sans-serif stack. Technical identifiers, SQL-like values, Lot IDs, process IDs, and filenames use the existing monospace treatment where appropriate.
+Desktop uses Merriweather with optical sizing and the existing width variation. At the mobile breakpoint, the implementation switches to a system sans-serif stack for compact readability. Code and technical identifiers use the existing monospace stack.
 
-Keep Vietnamese diacritics and Japanese glyphs readable. Do not translate or visually transform technical codes in ways that change their meaning.
+Keep headings clear but compact. Preserve readable line height for Vietnamese diacritics and Japanese text. Do not force identifiers, Lot codes, filenames, or process codes through decorative typography.
 
 ## Layout
 
-The desktop Research shell combines a `304px` document sidebar, fluid workspace, and optional `320px` source panel under a `72px` header.
+The desktop Research shell combines a `304px` document sidebar, a fluid workspace, and an optional `320px` source panel under a `72px` header.
 
-Responsive boundaries are implementation contracts:
+Responsive behavior is structural:
 
-- `1140px`: simplify dense grids and supporting panels.
-- `900px`: document sidebar becomes off-canvas; sources become an overlay.
-- `760px` and `680px`: Dev report layouts progressively simplify.
-- `700px`: compact header, short but descriptive mode labels, horizontally scrollable mode tabs, single-column prompts, and mobile typography.
-- `420px`: narrow spacing and secondary content.
+- At `1140px`, simplify dense grids and supporting panels.
+- At `900px`, move the document sidebar off-canvas and show sources as an overlay.
+- At `700px`, compact the header, use short mode labels, switch prompts to one column, and use mobile typography.
+- At `420px`, reduce spacing and secondary metrics further.
 
-Support approximately `320px` width. Preserve `44px` touch targets. Active mobile mode tabs must be revealed inside their own horizontal container; do not use page-level `scrollIntoView` for this behavior.
+Support viewports down to approximately `320px`. Preserve at least `44px` touch targets where the current mobile controls establish them. Tables may scroll horizontally; never squeeze operational columns until their values become ambiguous.
 
 ## Elevation & Depth
 
-Use light borders and restrained shadows for cards and the composer, stronger separation for menus and dialogs, and reduced shadow in dark mode. Report artifacts use component-scoped `--report-*` surface, border, text, muted, and accent roles.
+Use thin borders and restrained shadows. Cards and the composer receive subtle lift; menus and dialogs receive stronger separation. Dark mode should reduce or remove bright shadows and rely more on borders and surface contrast. Report artifacts use component-scoped `--report-*` surface, border, text, muted, and accent roles.
 
-Depth communicates containment or temporary overlay only. Avoid decorative glass effects and stacked shadows.
+Avoid stacked shadows, glass effects, and ornamental depth. Elevation communicates containment, focus, or temporary overlay state only.
 
 ## Shapes
 
-The common radius is `8px`; use `12px` for prominent dialog/composer surfaces, smaller radii for compact metadata, and full radius for chips/status indicators.
+The dominant radius is `8px`. Use `12px` for prominent dialogs/composer surfaces, smaller radii for compact metadata, and the full radius only for pills, chips, and status dots.
 
-Matrices, charts, KPI groups, and governance panels should inherit established report geometry rather than introducing unrelated card shapes.
+Keep shapes practical and consistent. Do not introduce arbitrary radii when an existing scale value fits.
 
 ## Components
 
-Reuse existing component boundaries:
+Reuse the established React boundaries before creating a parallel pattern:
 
-- `EmployeeLogin` for employee access.
-- `ResearchSidebar` for topic/upload scope and documents.
-- `ChatInput` for compose, history, send, stop, and attachments.
+- `EmployeeLogin` for the employee-code gate.
+- `ResearchSidebar` for topic/upload scope and document operations.
+- `ChatInput` for compose, send, stop, and Research attachment actions.
 - `MessageList` for streaming messages, WMS metadata, citations, and suggestions.
-- `SourcePreviewDialog` for cited source inspection.
+- `SourcePreviewDialog` for source inspection.
 
-Dev-specific patterns include WMS mode and health states, WMS metadata chips, verification timeline, report KPI groups, chart rows, matrix/heatmap tables, governance and limitation sections, staged artifact reveal, report email action, and cancelled timeline states.
+Shared patterns also include mode tabs, model selection, source panel, confirmation dialogs, agent timelines, report artifact cards, loading skeletons, upload progress, error banners, and empty states. WMS-specific patterns include mode-tab-wms styling, WMS metadata chips, verification timeline, and report cards; these are visible only when WMS is enabled.
 
-Use semantic HTML first. Preserve visible focus, ARIA tab semantics, polite live regions, labelled dialogs, table captions and row/column scopes, decorative-icon hiding, keyboard navigation, Escape behavior, reduced motion, and forced-colors treatment. These conventions record current practice, not full accessibility certification.
+Use native controls and semantic elements first. Keep the shared `:focus-visible` outline. Mark decorative icons as hidden from assistive technology, label icon-only controls, expose asynchronous state through the existing polite live regions, and preserve Escape-to-close behavior. These are implementation conventions, not a declaration of complete accessibility compliance.
 
 ## Do's and Don'ts
 
 **Do**
 
-- Verify light/dark, VI/JA, desktop/mobile, keyboard, reduced-motion, and forced-colors states.
-- Reuse established components and `--report-*` roles.
-- Keep WMS status, reason, freshness, and limitations explicit in text.
-- Preserve operational table readability and source-grounded metadata.
-- Mark Dev-only patterns clearly when documenting or promoting them.
+- Verify light, dark, Vietnamese, Japanese, desktop, and mobile states.
+- Reuse existing components and semantic status treatments.
+- Preserve reduced-motion behavior for loading and streaming feedback.
+- Add named semantic CSS variables when a visual role becomes reusable.
+- Keep citations, tables, metadata, and operational codes legible.
+- Keep WMS status, reason, freshness, and limitations explicit in text when WMS is enabled.
 
 **Don't**
 
-- Do not invent colors, radii, shadows, or an icon family per feature.
-- Do not use color or animation as the only state signal.
-- Do not make light-only changes.
-- Do not treat this file as authorization to replace the CSS architecture.
-- Do not present WMS or advanced reports as Production capability before reviewed promotion.
+- Do not invent a new palette, icon family, radius, or shadow per feature.
+- Do not use animation or color as the only indication of progress or state.
+- Do not make light-only styling changes.
+- Do not interpret this document as authorization to refactor all CSS tokens.
+- Do not describe WMS as a fully active Production capability unless snapshot and configuration are verified.

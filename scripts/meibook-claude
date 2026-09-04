@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# Allowlisted Claude Code runner on Server Meibook for OpenClaw.
+set -euo pipefail
+export PATH="${HOME}/.local/bin:/usr/local/bin:${PATH}"
+
+CLAUDE_BIN="${CLAUDE_BIN:-$(command -v claude || true)}"
+ROOTS=(
+  "/home/jkl/Code/VLLM-PD"
+  "/home/jkl/Code/VLLM-PD-dev"
+)
+DEFAULT_CWD="/home/jkl/Code/VLLM-PD-dev"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  meibook-claude status
+  meibook-claude usage
+  meibook-claude ask --prompt "..." [--cwd VLLM-PD|VLLM-PD-dev|/abs/path] [--mode plan|acceptEdits]
+USAGE
+}
+
+resolve_cwd() {
+  local raw="${1:-$DEFAULT_CWD}"
+  case "$raw" in
+    prod|VLLM-PD|vllm-pd) echo "/home/jkl/Code/VLLM-PD" ;;
+    dev|VLLM-PD-dev|vllm-pd-dev) echo "/home/jkl/Code/VLLM-PD-dev" ;;
+    /*)
+      local ok=0
+      for r in "${ROOTS[@]}"; do
+        case "$raw" in
+          "$r"|"$r"/*) ok=1; break ;;
+        esac
+      done
+      if [[ "$ok" -ne 1 ]]; then
+        echo "CWD not allowlisted: $raw" >&2
+        exit 2
+      fi
+      echo "$raw"
+      ;;
+    *)
+      echo "Unknown cwd alias: $raw (use prod|dev)" >&2
+      exit 2
+      ;;
+  esac
+}
+
+cmd_status() {
+  if [[ -z "${CLAUDE_BIN}" || ! -x "${CLAUDE_BIN}" ]]; then
+    echo "CLAUDE=missing"
+    exit 1
+  fi
+  echo "CLAUDE_BIN=${CLAUDE_BIN}"
+  echo "VERSION=$("${CLAUDE_BIN}" --version 2>/dev/null | head -1)"
+  echo "AUTH_JSON<<"
+  "${CLAUDE_BIN}" auth status 2>/dev/null || echo '{"loggedIn":false}'
+  echo
+  echo ">>"
+  echo "ALLOWLIST_CWDS=${ROOTS[*]}"
+  echo "DEFAULT_CWD=${DEFAULT_CWD}"
+  echo "HOST=Server Meibook"
+}
+
+cmd_ask() {
+  local prompt="" cwd="$DEFAULT_CWD" mode="plan"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --prompt) prompt="${2:-}"; shift 2 ;;
+      --cwd) cwd="$(resolve_cwd "${2:-}")"; shift 2 ;;
+      --mode) mode="${2:-plan}"; shift 2 ;;
+      *) echo "Unknown arg: $1" >&2; exit 2 ;;
+    esac
+  done
+  if [[ -z "$prompt" ]]; then
+    echo "Missing --prompt" >&2
+    exit 2
+  fi
+  if [[ ${#prompt} -gt 12000 ]]; then
+    echo "Prompt too long (max 12000 chars)" >&2
+    exit 2
+  fi
+  case "$mode" in
+    plan|acceptEdits|default|manual) ;;
+    *) echo "Invalid --mode (plan|acceptEdits|default|manual)" >&2; exit 2 ;;
+  esac
+
+  if [[ -z "${CLAUDE_BIN}" || ! -x "${CLAUDE_BIN}" ]]; then
+    echo "claude binary not found in PATH" >&2
+    exit 1
+  fi
+
+  echo "CWD=${cwd}"
+  echo "MODE=${mode}"
+  echo "PROMPT_CHARS=${#prompt}"
+  echo "OUTPUT<<"
+  (
+    cd "$cwd"
+    # plan = analyze without writing; acceptEdits = can apply edits after tool use
+    if [[ "$mode" == "default" ]]; then
+      "${CLAUDE_BIN}" -p "$prompt" --output-format text
+    else
+      "${CLAUDE_BIN}" -p "$prompt" --output-format text --permission-mode "$mode"
+    fi
+  )
+  echo
+  echo ">>"
+}
+
+
+cmd_usage() {
+  if [[ -z "${CLAUDE_BIN}" || ! -x "${CLAUDE_BIN}" ]]; then
+    echo "CLAUDE=missing"
+    exit 1
+  fi
+  echo "CLAUDE_BIN=${CLAUDE_BIN}"
+  echo "HOST=Server Meibook"
+  echo "USAGE<<"
+  "${CLAUDE_BIN}" /usage
+  echo
+  echo ">>"
+}
+
+ACTION="${1:-status}"
+shift || true
+case "$ACTION" in
+  status) cmd_status ;;
+  usage|/usage|cost|stats) cmd_usage ;;
+  ask) cmd_ask "$@" ;;
+  -h|--help|help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac

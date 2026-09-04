@@ -18,3 +18,4 @@
 - If verification cannot be run, explain why and provide exact commands for the user to run.
 - Do not commit, push, reset, delete data, reindex all documents, clear vector collections, or perform destructive operations unless explicitly requested.
 - Summarize changed files, verification results, and remaining risks at the end.
+- Codex will review your output once you are done.
