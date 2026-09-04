@@ -6,7 +6,10 @@ name: meibook-dev
 
 services:
   app:
-    image: meibook-web:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: meibook-web:dev
     container_name: meibook-web-dev
     gpus: all
     env_file:
@@ -47,6 +50,17 @@ services:
       WMS_SQL_AGENT_MODEL: local-qwen-coder
       WMS_SQL_PLANNER_MAX_TOKENS: "1200"
       WMS_SQL_ANSWER_MAX_TOKENS: "384"
+      # CCTVAI — PostgreSQL replica read-only. Host/password đến từ env_file (.env.docker, untracked).
+      CCTVAI_DATABASE_ENABLED: "true"
+      CCTVAI_DB_PORT: "55434"
+      CCTVAI_DB_NAME: cctvai
+      CCTVAI_DB_USER: cctvai_llm_ro
+      CCTVAI_DB_CONNECT_TIMEOUT: "3"
+      CCTVAI_DB_STATEMENT_TIMEOUT_MS: "5000"
+      CCTVAI_HEALTH_TTL_SECONDS: "30"
+      CCTVAI_HEALTH_BREAKER_THRESHOLD: "3"
+      CCTVAI_HEALTH_BREAKER_COOLDOWN_SECONDS: "60"
+      CCTVAI_MAX_ROWS: "50"
       LOCAL_CHAT_NUM_CTX: "16384"
       LOCAL_AUX_NUM_CTX: "4096"
       TRANSLATION_MODEL: local-qwen-small
@@ -107,10 +121,10 @@ services:
       - ${MEIBOOK_ENV_FILE:-.env.docker}
     environment:
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
-      QWEN_CHAT_API_BASE: http://192.84.106.78:11434
+      QWEN_CHAT_API_BASE: http://192.84.106.63:11434
       QWEN_CHAT_NGROK_API_BASE: https://carless-overarch-establish.ngrok-free.dev
       QWEN_SMALL_API_BASE: http://host.docker.internal:11435
-      QWEN_CODER_LAN_API_BASE: http://192.84.106.77:11434/v1
+      QWEN_CODER_LAN_API_BASE: http://192.84.106.80:11434/v1
       QWEN_CODER_LAN_API_KEY: sk-local
       QWEN_CODER_NGROK_API_BASE: https://36b4-2405-4803-f160-2090-b282-e2ff-fe05-dfe9.ngrok-free.app/v1
       QWEN_CODER_NGROK_API_KEY: sk-local
