@@ -603,8 +603,10 @@ QWEN_CHAT_NGROK_API_BASE=https://carless-overarch-establish.ngrok-free.dev
 QWEN_CHAT_MODEL=qwen3:14b
 QWEN_SMALL_API_BASE=http://host.docker.internal:11435
 QWEN_SMALL_MODEL=qwen2.5:3b-instruct
-QWEN_CODER_API_BASE=https://.../v1
-QWEN_CODER_API_KEY=sk-local
+QWEN_CODER_LAN_API_BASE=http://192.168.10.14:11434/v1
+QWEN_CODER_LAN_API_KEY=sk-local
+QWEN_CODER_NGROK_API_BASE=https://.../v1
+QWEN_CODER_NGROK_API_KEY=sk-local
 
 TRANSLATION_ENABLED=true
 TRANSLATION_MODEL=local-qwen-small
@@ -687,7 +689,7 @@ curl -fsS http://localhost:4000/v1/chat/completions \
 
 ### Index tài liệu MKAC
 
-Host Python phải dùng Conda environment `meibook` qua wrapper
+Host Python phải dùng Conda environment `meibook-dev` qua wrapper
 `scripts/meibook-python`; không chạy bare `python` từ Conda `base`.
 
 ```bash

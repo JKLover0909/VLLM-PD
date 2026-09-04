@@ -2,7 +2,6 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPT_DIR="$REPO_ROOT/scripts"
 COMMAND="${1:-start}"
 BUILD_FRONTEND="${2:-}"
 
@@ -26,8 +25,6 @@ Usage:
   ./scripts/meibook.sh stop
   ./scripts/meibook.sh status
   ./scripts/meibook.sh logs
-  ./scripts/meibook.sh query-log [--env dev|prod|both] [--allow-prod] [--since 24h] [--tail 50]
-      Default is --env dev; Production/both require --allow-prod.
 EOF
 }
 
@@ -141,10 +138,6 @@ case "$COMMAND" in
     ;;
   logs)
     logs_system
-    ;;
-  query-log|queries)
-    shift || true
-    exec "$SCRIPT_DIR/meibook-python" "$SCRIPT_DIR/meibook-query-log" "$@"
     ;;
   -h|--help|help)
     usage
