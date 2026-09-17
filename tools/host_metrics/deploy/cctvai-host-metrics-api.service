@@ -1,0 +1,42 @@
+[Unit]
+Description=CCTVAI host metrics read-only HTTPS API
+Documentation=file:///opt/cctvai-host-metrics/Markdowns/CCTVAI_HARDWARE.md
+After=network.target cctvai-host-metrics-collector.service
+Wants=cctvai-host-metrics-collector.service
+
+[Service]
+Type=simple
+User=cctvai-metrics-api
+Group=cctvai-metrics-api
+# Deliberately NOT a member of the docker group and no Docker socket
+# access -- this process only reads the snapshot file the collector wrote.
+# Membership in cctvai-metrics-collector's group grants read (not write)
+# access to /run/cctvai-metrics via the directory/file permission bits set
+# by the collector service (0750 dir, 0640 snapshot file).
+SupplementaryGroups=cctvai-metrics-collector
+
+EnvironmentFile=/etc/cctvai-host-metrics/api.env
+ExecStart=/opt/cctvai-host-metrics/venv/bin/python -m tools.host_metrics.server
+WorkingDirectory=/opt/cctvai-host-metrics/app
+
+Restart=on-failure
+RestartSec=5s
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+# Read-only access to the snapshot dir, the bearer token file, and the TLS
+# cert/key -- never grants write access anywhere.
+ReadOnlyPaths=/run/cctvai-metrics /etc/cctvai-host-metrics
+
+[Install]
+WantedBy=multi-user.target

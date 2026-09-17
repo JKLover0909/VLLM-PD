@@ -61,6 +61,32 @@ services:
       CCTVAI_HEALTH_BREAKER_THRESHOLD: "3"
       CCTVAI_HEALTH_BREAKER_COOLDOWN_SECONDS: "60"
       CCTVAI_MAX_ROWS: "50"
+      # LLM SQL fallback — only reached when none of the 7 deterministic
+      # intents match (cctvai_scope_clarification). Mirrors WMS/MES's
+      # already-live SQL-agent pattern; disabled by default in Production.
+      CCTVAI_SQL_AGENT_ENABLED: "true"
+      CCTVAI_SEMANTIC_MODEL_PATH: /app/config/cctvai_semantic_model.json
+      CCTVAI_SQL_AGENT_MAX_ROWS: "50"
+      CCTVAI_SQL_AGENT_MAX_ATTEMPTS: "2"
+      CCTVAI_SQL_AGENT_MODEL: local-qwen-coder
+      CCTVAI_SQL_PLANNER_MAX_TOKENS: "1200"
+      CCTVAI_SQL_ANSWER_MAX_TOKENS: "384"
+      # CCTVAI host hardware metrics — read-only HTTPS service on the CCTVAI
+      # server, independent of the PostgreSQL replica above. Endpoint đến từ
+      # env_file (.env.docker, untracked); token/CA đọc từ file trong ./data
+      # (đã mount sẵn ở /app/data) nên không lộ qua `docker inspect`.
+      # Bật lên "true" chỉ sau khi service đã deploy và token/CA đã có mặt.
+      CCTVAI_HARDWARE_ENABLED: "true"
+      CCTVAI_HARDWARE_TOKEN_PATH: /app/data/cctvai_hardware_token
+      CCTVAI_HARDWARE_CA_PATH: /app/data/cctvai_hardware_ca.pem
+      CCTVAI_HARDWARE_TIMEOUT_SECONDS: "5"
+      CCTVAI_HARDWARE_CACHE_SECONDS: "5"
+      CCTVAI_HARDWARE_MAX_AGE_SECONDS: "30"
+      CCTVAI_HARDWARE_MAX_FUTURE_SKEW_SECONDS: "30"
+      CCTVAI_HARDWARE_MAX_BYTES: "262144"
+      # Alias local-only, cố tình không có trong litellm fallbacks.
+      CCTVAI_HARDWARE_MODEL: local-hardware-summary
+      CCTVAI_HARDWARE_ANSWER_MAX_TOKENS: "384"
       LOCAL_CHAT_NUM_CTX: "16384"
       LOCAL_AUX_NUM_CTX: "4096"
       TRANSLATION_MODEL: local-qwen-small
@@ -121,10 +147,10 @@ services:
       - ${MEIBOOK_ENV_FILE:-.env.docker}
     environment:
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
-      QWEN_CHAT_API_BASE: http://192.84.106.63:11434
+      QWEN_CHAT_API_BASE: http://192.84.106.76:11434
       QWEN_CHAT_NGROK_API_BASE: https://carless-overarch-establish.ngrok-free.dev
       QWEN_SMALL_API_BASE: http://host.docker.internal:11435
-      QWEN_CODER_LAN_API_BASE: http://192.84.106.80:11434/v1
+      QWEN_CODER_LAN_API_BASE: http://192.168.10.11:11434/v1
       QWEN_CODER_LAN_API_KEY: sk-local
       QWEN_CODER_NGROK_API_BASE: https://36b4-2405-4803-f160-2090-b282-e2ff-fe05-dfe9.ngrok-free.app/v1
       QWEN_CODER_NGROK_API_KEY: sk-local

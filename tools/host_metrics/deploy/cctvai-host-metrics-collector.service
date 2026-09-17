@@ -1,0 +1,56 @@
+[Unit]
+Description=CCTVAI host metrics collector (read-only sampler)
+Documentation=file:///opt/cctvai-host-metrics/Markdowns/CCTVAI_HARDWARE.md
+After=network.target docker.service
+# Soft dependency only: the collector must keep running (and report
+# docker=unavailable) even if the Docker daemon is stopped/restarted.
+Wants=docker.service
+
+[Service]
+Type=simple
+User=cctvai-metrics-collector
+Group=cctvai-metrics-collector
+# Collector needs to read Docker state (docker ps/inspect) and, on most
+# distros, nvidia-smi. Grant Docker read access via group membership only
+# -- never give this user shell/login or broader sudo rights.
+SupplementaryGroups=docker
+
+EnvironmentFile=/etc/cctvai-host-metrics/collector.env
+ExecStart=/opt/cctvai-host-metrics/venv/bin/python -m tools.host_metrics.collector
+WorkingDirectory=/opt/cctvai-host-metrics/app
+
+Restart=on-failure
+RestartSec=5s
+
+# The collector owns and writes the snapshot directory; everything else on
+# disk is read-only to it.
+RuntimeDirectory=cctvai-metrics
+RuntimeDirectoryMode=0750
+StateDirectory=cctvai-host-metrics-collector
+StateDirectoryMode=0700
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=no
+# nvidia-smi/GPU device nodes require PrivateDevices=no; docker.sock access
+# comes from the docker supplementary group above, not from broader device
+# access.
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+ReadWritePaths=/run/cctvai-metrics
+
+# Never let this process compete with CCTV workloads for CPU/IO.
+Nice=19
+CPUWeight=10
+IOSchedulingClass=idle
+IOWeight=10
+
+[Install]
+WantedBy=multi-user.target
