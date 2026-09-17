@@ -66,6 +66,16 @@ _WMS_CONTEXT_MARKERS = (
     "inventory",
 )
 _WMS_CONTEXT_MARKERS_JA = ("在庫", "倉庫", "保管", "資材", "受払", "入出庫")
+_CCTVAI_CONTEXT_MARKERS = (
+    "camera",
+    "cctv",
+    "cctvai",
+    "vi pham",
+    "su kien",
+    "tuyen",
+    "giam sat",
+)
+_CCTVAI_CONTEXT_MARKERS_JA = ("カメラ", "監視", "違反", "イベント", "ライン")
 _HR_CONTEXT_MARKERS = (
     "nhan su",
     "nhan vien",
@@ -208,6 +218,39 @@ _WMS_UNSUPPORTED_REPORT_MARKERS_JA = (
     "回転率",
     "在庫金額",
     "保管コスト",
+)
+
+# CCTVAI report v1 chỉ là tổng quan cố định (7 ngày qua). Chặn 3 nhóm dữ liệu
+# suppressed y hệt Q&A (credentials/identity/duration — cctvai_database.py
+# route_question) và mọi yêu cầu so sánh/lọc theo camera cụ thể mà báo cáo
+# overview không trả lời được.
+_CCTVAI_UNSUPPORTED_REPORT_MARKERS = (
+    "mat khau",
+    "password",
+    "username",
+    "dang nhap",
+    "url camera",
+    "rtsp",
+    "endpoint",
+    "nguoi phu trach",
+    "phu trach",
+    "ten nguoi",
+    "email",
+    "nhan vien tuyen",
+    "thoi gian dien ra",
+    "dang dien ra",
+    "keo dai bao lau",
+    "duration",
+    "chua ket thuc",
+    "dang mo",
+)
+_CCTVAI_UNSUPPORTED_REPORT_MARKERS_JA = (
+    "パスワード",
+    "ユーザー名",
+    "担当者",
+    "担当",
+    "継続時間",
+    "経過時間",
 )
 
 # HR chỉ có snapshot danh bạ dạng aggregate. Lương, KPI cá nhân, tuyển dụng,
@@ -565,7 +608,7 @@ _NON_ERROR_REPORT_MARKERS_JA = (
 )
 _ENTITY_FILTER_PATTERN = re.compile(
     r"\b(?:mã hàng|ma hang|sản phẩm|san pham|product|mã lot|ma lot|lot|"
-    r"mã lỗi|ma loi|error|công đoạn|cong doan|process)\s+"
+    r"mã lỗi|ma loi|error|công đoạn|cong doan|process|camera|cam)\s+"
     r"(?=[A-Z0-9._/-]*[A-Z0-9])(?=[A-Z0-9._/-]*[-_./0-9])[A-Z0-9._/-]+\b"
 )
 
@@ -575,9 +618,9 @@ class ReportCapability:
     """Kết quả phân loại fail-closed cho Report Agent deterministic."""
 
     status: str  # not_report | supported | unsupported
-    shape: str = ""  # overview | top_errors | hr_executive | wms_executive
+    shape: str = ""  # overview | top_errors | hr_executive | wms_executive | cctvai_overview
     reason: str = ""
-    domain: str = ""  # hr | mes | wms
+    domain: str = ""  # hr | mes | wms | cctvai
 
     @property
     def is_report(self) -> bool:
@@ -599,6 +642,7 @@ def report_capability_for_mode(question: str, mode: str) -> ReportCapability:
         "hr": "mkac",
         "mes": "mes",
         "wms": "wms",
+        "cctvai": "cctvai",
     }.get(capability.domain)
     if expected_mode and mode != expected_mode:
         return ReportCapability(
@@ -649,7 +693,10 @@ def _has_domain_context(question: str, normalized: str) -> bool:
     has_hr = any(marker in normalized for marker in _HR_CONTEXT_MARKERS) or any(
         marker in original for marker in _HR_CONTEXT_MARKERS_JA
     )
-    return has_mes or has_wms or has_hr
+    has_cctvai = any(
+        marker in normalized for marker in _CCTVAI_CONTEXT_MARKERS
+    ) or any(marker in original for marker in _CCTVAI_CONTEXT_MARKERS_JA)
+    return has_mes or has_wms or has_hr or has_cctvai
 
 
 def is_executive_overview_request(question: str) -> bool:
@@ -901,6 +948,38 @@ def report_capability(question: str) -> ReportCapability:
                 ),
             )
         return ReportCapability(status="supported", shape="wms_executive", domain="wms")
+    is_cctvai_context = any(
+        marker in normalized for marker in _CCTVAI_CONTEXT_MARKERS
+    ) or any(marker in original for marker in _CCTVAI_CONTEXT_MARKERS_JA)
+    if is_cctvai_context:
+        if (
+            _has_multiple_periods(question)
+            or _has_invalid_explicit_date(question)
+            or _has_invalid_explicit_month(question)
+            or _has_normalized_marker(normalized, _UNSUPPORTED_PERIOD_MARKERS)
+            or any(marker in original for marker in _UNSUPPORTED_PERIOD_MARKERS_JA)
+            or _has_normalized_marker(normalized, _DYNAMIC_REPORT_MARKERS)
+            or any(marker in original for marker in _DYNAMIC_REPORT_MARKERS_JA)
+            or _has_normalized_marker(normalized, _CCTVAI_UNSUPPORTED_REPORT_MARKERS)
+            or any(
+                marker in original
+                for marker in _CCTVAI_UNSUPPORTED_REPORT_MARKERS_JA
+            )
+            or _ENTITY_FILTER_PATTERN.search(original)
+        ):
+            return ReportCapability(
+                status="unsupported",
+                domain="cctvai",
+                reason=(
+                    "CCTVAI Report hiện chỉ hỗ trợ tổng quan cố định (7 ngày "
+                    "qua) từ replica báo cáo; yêu cầu theo kỳ, so sánh, lọc "
+                    "theo camera cụ thể, thông tin đăng nhập camera hoặc "
+                    "người phụ trách chưa được hỗ trợ."
+                ),
+            )
+        return ReportCapability(
+            status="supported", shape="cctvai_overview", domain="cctvai"
+        )
     if not _has_domain_context(question, normalized):
         # Khẩu lệnh đúng nhưng không nêu lĩnh vực ("Tạo báo cáo"). Không mặc định
         # sang MES, vì đoán sai lĩnh vực nguy hiểm hơn việc hỏi lại một câu.

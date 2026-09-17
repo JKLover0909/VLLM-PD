@@ -191,6 +191,27 @@ model_list:
       cache_creation_input_token_cost: 0.0
       cache_read_input_token_cost: 0.0
 
+  # CCTVAI host hardware summariser. Same local Qwen3 upstream as
+  # local-qwen-chat, but a separate model_name on purpose: it is deliberately
+  # absent from router_settings.fallbacks below, so a local outage returns an
+  # error instead of shipping server telemetry to Azure/OpenAI. Do not add this
+  # alias to any fallback chain, and do not reuse local-qwen-* for hardware.
+  - model_name: local-hardware-summary
+    litellm_params:
+      model: ollama_chat/qwen3:14b
+      api_base: os.environ/QWEN_CHAT_API_BASE
+      timeout: 60
+      think: false
+      stream: true
+      max_parallel_requests: 1
+    model_info:
+      max_input_tokens: 16384
+      max_output_tokens: 1024
+      input_cost_per_token: 0.0
+      output_cost_per_token: 0.0
+      cache_creation_input_token_cost: 0.0
+      cache_read_input_token_cost: 0.0
+
 router_settings:
   fallbacks:
     # Keep the local model for each role primary. Azure is the last cloud

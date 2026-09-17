@@ -73,6 +73,7 @@ class FakeHrReportAgent:
                 "observations": ["HR snapshot fixture"],
                 "governance": ["Aggregate only"],
                 "limitations": ["Not realtime"],
+                "markdown": "## Báo cáo Tổng quan Nhân sự Cấp Điều hành\n\n**Tổng quan:**\n- Tổng nhân sự: 10",
             },
             "Đã tạo Báo cáo Nhân sự Cấp Điều hành.",
         )
@@ -103,6 +104,7 @@ class FakeWmsReportAgent:
                 ],
                 "observations": ["WMS snapshot fixture"],
                 "limitations": ["UOM chưa được xác minh"],
+                "markdown": "## Báo cáo Tồn kho WMS Cấp Điều hành\n\n**Tổng quan:**\n- Mã vật tư: 3",
             },
             "Đã tạo Báo cáo WMS Cấp Điều hành.",
         )
@@ -293,6 +295,7 @@ def test_handle_hr_report_query_returns_safe_artifact(monkeypatch):
         "employee_id": "000000",
         "report_type": "hr_executive_report",
         "title": "Báo cáo Tổng quan Nhân sự Cấp Điều hành",
+        "markdown": "## Báo cáo Tổng quan Nhân sự Cấp Điều hành\n\n**Tổng quan:**\n- Tổng nhân sự: 10",
     }
 
 
@@ -437,7 +440,7 @@ def test_download_report_contract(monkeypatch):
     assert response.status_code == 200
     assert response.media_type.startswith("text/html")
     assert response.headers["content-disposition"] == (
-        'attachment; filename="mes-report-fixture.html"'
+        'inline; filename="mes-report-fixture.html"'
     )
     assert response.headers["cache-control"] == "private, max-age=300"
     assert response.headers["x-content-type-options"] == "nosniff"

@@ -167,7 +167,7 @@ export function ChatInput({
           onKeyDown={handleKeyDown}
           placeholder={modeText(mode).inputPlaceholder}
           disabled={
-            (["mkac", "mes", "wms"].includes(mode) && !mkacAuthorized) ||
+            (["mkac", "mes", "wms", "cctvai"].includes(mode) && !mkacAuthorized) ||
             (mode === "research" && !researchReady)
           }
         />

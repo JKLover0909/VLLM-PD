@@ -596,6 +596,12 @@ summary:focus-visible {
   border-color: #fde68a;
 }
 
+.mode-mark.cctvai {
+  color: #0e7490;
+  background: #ecfeff;
+  border-color: #a5f3fc;
+}
+
 .header-title strong,
 .header-title span {
   display: block;
@@ -672,6 +678,12 @@ summary:focus-visible {
   color: #b45309;
   background: #fef3c7;
   border: 1px solid #fde68a;
+}
+
+.mode-tabs button.active.cctvai {
+  color: #0e7490;
+  background: #ecfeff;
+  border: 1px solid #a5f3fc;
 }
 
 .mode-tabs button > span {
@@ -1073,6 +1085,12 @@ html[data-theme="dark"] .wms-health-banner.disabled {
   color: #b45309;
   background: #fef3c7;
   border-color: #fde68a;
+}
+
+.empty-icon.cctvai {
+  color: #0e7490;
+  background: #ecfeff;
+  border-color: #a5f3fc;
 }
 
 .empty-conversation h1 {
@@ -2180,6 +2198,36 @@ html[data-theme="dark"] .wms-health-banner.disabled {
   background: #0a6f65;
 }
 
+.confirm-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Input email trong EmailDialog */
+.email-dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 20px;
+  padding: 10px 13px;
+  font-size: 14.5px;
+  color: #26313c;
+  background: #f5f8fa;
+  border: 1px solid #cdd5dc;
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.email-dialog-input:focus {
+  border-color: #0d7f73;
+  box-shadow: 0 0 0 3px rgba(13, 127, 115, 0.15);
+  background: #ffffff;
+}
+
+.email-dialog-input::placeholder {
+  color: #9aa5af;
+}
+
 .confirm-danger {
   color: #ffffff;
   background: #c0392b;
@@ -2953,6 +3001,10 @@ html[data-theme="dark"] .suggestion-list button:hover {
   color: #91e6dc;
 }
 
+html[data-theme="dark"] .message-suggestions p {
+  color: #94a3b8;
+}
+
 /* Dark theme — remap token (giai đoạn 1) + override từng selector (đuôi chưa
    token hoá). Mục tiêu dài hạn: mọi màu đi qua token, xoá dần các override. */
 html[data-theme="dark"] {
@@ -3055,6 +3107,13 @@ html[data-theme="dark"] .empty-icon.wms {
   border-color: rgba(217, 119, 6, 0.3);
 }
 
+html[data-theme="dark"] .mode-mark.cctvai,
+html[data-theme="dark"] .empty-icon.cctvai {
+  color: #22d3ee;
+  background: rgba(8, 145, 178, 0.15);
+  border-color: rgba(8, 145, 178, 0.3);
+}
+
 html[data-theme="dark"] .empty-icon {
   color: #8ce2d8;
   background: #183b39;
@@ -3088,6 +3147,12 @@ html[data-theme="dark"] .mode-tabs button.active.wms {
   color: #fbbf24;
   background: rgba(217, 119, 6, 0.15);
   border-color: rgba(217, 119, 6, 0.3);
+}
+
+html[data-theme="dark"] .mode-tabs button.active.cctvai {
+  color: #22d3ee;
+  background: rgba(8, 145, 178, 0.15);
+  border-color: rgba(8, 145, 178, 0.3);
 }
 
 html[data-theme="dark"] .model-select,
@@ -3543,6 +3608,22 @@ html[data-theme="dark"] .confirm-primary {
 
 html[data-theme="dark"] .confirm-primary:hover {
   background: #83e5d9;
+}
+
+html[data-theme="dark"] .email-dialog-input {
+  color: #dbe2e9;
+  background: #252d37;
+  border-color: #3a444f;
+}
+
+html[data-theme="dark"] .email-dialog-input:focus {
+  border-color: #69d8ca;
+  box-shadow: 0 0 0 3px rgba(105, 216, 202, 0.18);
+  background: #1d232b;
+}
+
+html[data-theme="dark"] .email-dialog-input::placeholder {
+  color: #5c6b78;
 }
 
 html[data-theme="dark"] .confirm-danger {

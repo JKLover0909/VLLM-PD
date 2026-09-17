@@ -1,4 +1,4 @@
-name: meibook
+name: meibook-dev
 channels:
   - conda-forge
 dependencies:

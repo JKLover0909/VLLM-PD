@@ -24,6 +24,7 @@ from src.actions.report_intent import (
     report_period_for_question,
     report_top_limit,
 )
+from src.integrations import cctvai_contract
 from src.integrations.mes_sql_agent import (
     MesSqlAgent,
     MesSqlAgentError,
@@ -472,14 +473,17 @@ def _limitations(
 
 
 def render_markdown(report: dict[str, Any]) -> str:
-    """Render Markdown chỉ dùng heading + bullet (ReactMarkdown không có GFM table)."""
-    lines: list[str] = [f"## {report['title']}", ""]
-    if report["kpis"]:
-        lines.append("**Tổng quan:**")
-        for item in report["kpis"]:
-            lines.append(f"- {item['label']}: {format_number(item['value'])}")
+    """Render Markdown chỉ dùng heading + bullet (ReactMarkdown không có GFM table).
+    Dùng .get() để không crash khi report từ agent không có đủ keys (WMS, HR, CCTVAI).
+    """
+    lines: list[str] = [f"## {report.get('title', 'Báo cáo')}", ""]
+    for item in report.get("kpis") or []:
+        if lines[-1] != "**Tổng quan:**":
+            lines.append("**Tổng quan:**")
+        lines.append(f"- {item['label']}: {format_number(item['value'])}")
+    if len(lines) > 2 and lines[-1] != "":
         lines.append("")
-    for section in report["sections"]:
+    for section in report.get("sections") or []:
         rows = section.get("rows") or []
         if not rows:
             continue
@@ -487,15 +491,15 @@ def render_markdown(report: dict[str, Any]) -> str:
         for row in rows:
             parts = [
                 f"{COLUMN_LABELS.get(column, column)} {format_number(row.get(column))}"
-                for column in section["columns"]
+                for column in section.get("columns") or []
             ]
             lines.append("- " + ", ".join(parts))
         lines.append("")
-    if report["observations"]:
+    if report.get("observations"):
         lines.append("**Nhận xét (tính từ số liệu):**")
         lines.extend(f"- {note}" for note in report["observations"])
         lines.append("")
-    if report["limitations"]:
+    if report.get("limitations"):
         lines.append("**Giới hạn dữ liệu:**")
         lines.extend(f"- {note}" for note in report["limitations"])
     return "\n".join(lines).strip()
@@ -1226,6 +1230,334 @@ class MesWmsReportAgent:
                 f"- **Mã vật tư:** {format_number(distinct_items)} mã\n"
                 f"- **Công đoạn WMS:** {format_number(distinct_processes)} mã công đoạn (Ánh xạ tên: {mapping_rate:.1f}%)\n"
                 "- **Quy tắc an toàn dữ liệu:** Không cộng gộp số lượng giữa các mã vật tư do thiếu Master UOM.\n\n"
+                f"{labels['download_note']}"
+            )
+
+        return report_dict, summary_text
+
+
+class CctvaiReportAgent:
+    """Báo cáo tổng quan CCTVAI (7 ngày qua) từ replica báo cáo Postgres.
+
+    Không dùng LLM, cùng nguyên tắc chống hallucination với MES/WMS/HR: SQL
+    tất định (không phải 7 intent Q&A — mỗi intent chỉ trả một góc nhìn hẹp,
+    report cần tổng hợp nhiều góc nhìn một lần), chạy qua đúng guardrail đã
+    kiểm chứng cho SQL agent (``CctvaiSqlAgent.validate_sql`` rồi
+    ``CctvaiDatabase.execute_ad_hoc``) thay vì viết validator riêng — tránh
+    trùng lặp bug ở đúng chỗ nguy hiểm nhất (del_flag fan-out, xem
+    Markdowns/cctvai_llm_report_replica_handoff.md §6.1).
+    """
+
+    _SQL_KPI_TOTALS = """
+SELECT
+    (SELECT count(e.id) FROM cctvai.event_snapshots e) AS total_events,
+    (SELECT count(c.camera_id) FROM cctvai.cctvai_cameras c
+       WHERE NOT c.del_flag AND c.is_active) AS active_cameras,
+    (SELECT count(e.id) FROM cctvai.event_snapshots e
+       WHERE NOT EXISTS (
+         SELECT 1 FROM cctvai.cctvai_cameras c
+         WHERE LOWER(c.camera_id) = LOWER(e.camera_id) AND NOT c.del_flag
+       )) AS orphan_events,
+    (SELECT count(e.id) FROM cctvai.event_snapshots e
+       WHERE to_timestamp(e.detected_time / 1000.0) >= now() - interval '7 days'
+    ) AS events_last_7_days,
+    (SELECT to_timestamp(max(e.detected_time) / 1000.0)::text
+       FROM cctvai.event_snapshots e) AS latest_event_at
+"""
+
+    _SQL_SEVERITY_7D = """
+SELECT COALESCE(vt.severity, '(không rõ)') AS severity, count(e.id) AS total
+FROM cctvai.event_snapshots e
+LEFT JOIN cctvai.cctvai_violation_types vt
+       ON LOWER(vt.violation_code) = LOWER(e.violation_type) AND NOT vt.del_flag
+WHERE to_timestamp(e.detected_time / 1000.0) >= now() - interval '7 days'
+GROUP BY 1
+ORDER BY total DESC
+"""
+
+    _SQL_CAMERA_VIOLATION_MATRIX_7D = """
+SELECT
+    COALESCE(c.camera_name, e.camera_id || ' (không có trong master)') AS camera_name,
+    COALESCE(vt.violation_name, e.violation_type) AS violation_name,
+    count(e.id) AS total
+FROM cctvai.event_snapshots e
+LEFT JOIN cctvai.cctvai_cameras c
+       ON LOWER(c.camera_id) = LOWER(e.camera_id) AND NOT c.del_flag
+LEFT JOIN cctvai.cctvai_violation_types vt
+       ON LOWER(vt.violation_code) = LOWER(e.violation_type) AND NOT vt.del_flag
+WHERE to_timestamp(e.detected_time / 1000.0) >= now() - interval '7 days'
+GROUP BY 1, 2
+ORDER BY total DESC
+"""
+
+    def __init__(self, cctvai_database: Any, cctvai_sql_agent: Any):
+        self.cctvai_database = cctvai_database
+        self.cctvai_sql_agent = cctvai_sql_agent
+
+    @property
+    def available(self) -> bool:
+        return (
+            self.cctvai_database is not None
+            and bool(getattr(self.cctvai_database, "available", False))
+            and self.cctvai_sql_agent is not None
+        )
+
+    async def _run_step(
+        self,
+        sql: str,
+        step_label: str,
+        failures: list[str],
+    ) -> list[dict[str, Any]]:
+        """Validate + execute one report SQL step; never raises.
+
+        A failed step is recorded in ``failures`` (surfaced in the report's
+        ``limitations``) and treated as empty data — one bad step must not
+        take down the whole report, mirroring how the MES report agent
+        continues past a guarded SQL step failure.
+        """
+        try:
+            safe_sql, _tables, _reason_codes = self.cctvai_sql_agent.validate_sql(sql)
+            return await asyncio.to_thread(
+                self.cctvai_database.execute_ad_hoc, safe_sql
+            )
+        except Exception:
+            # Only the step name reaches the report — a raw psycopg/sqlglot
+            # message would put connection strings, column names and stack
+            # detail into a document that gets shared outside the team.
+            failures.append(step_label)
+            return []
+
+    async def generate_report(
+        self,
+        _question: str,
+        language: str = "vi",
+    ) -> tuple[dict[str, Any], str]:
+        """Tạo báo cáo CCTVAI tổng quan cố định (7 ngày qua)."""
+        japanese = language == "ja"
+        failures: list[str] = []
+
+        kpi_rows = await self._run_step(
+            self._SQL_KPI_TOTALS, "kpi_totals", failures
+        )
+        severity_rows = await self._run_step(
+            self._SQL_SEVERITY_7D, "severity_7d", failures
+        )
+        matrix_rows = await self._run_step(
+            self._SQL_CAMERA_VIOLATION_MATRIX_7D,
+            "camera_violation_matrix_7d",
+            failures,
+        )
+
+        kpi = kpi_rows[0] if kpi_rows else {}
+        total_events = int(kpi.get("total_events") or 0)
+        active_cameras = int(kpi.get("active_cameras") or 0)
+        orphan_events = int(kpi.get("orphan_events") or 0)
+        events_7d = int(kpi.get("events_last_7_days") or 0)
+        latest_event_at = cctvai_contract.trim_timestamp(
+            str(kpi.get("latest_event_at") or "")
+        )
+
+        labels = (
+            {
+                "title": "CCTVAIエグゼクティブ概要レポート",
+                "period": "CCTVAIレポートデータ 概要 — 最新イベント: {latest}",
+                "unverified": "未確認",
+                "total_kpi": "累計イベント数",
+                "active_camera_kpi": "稼働中カメラ数",
+                "week_kpi": "直近7日間のイベント数",
+                "orphan_kpi": "マスタ外カメラのイベント数",
+                "chart_title": "1. 重要度別イベント（直近7日間）",
+                "matrix_title": "2. カメラ × 違反種別 マトリクス（直近7日間）",
+                "matrix_row_label": "カメラ",
+                "governance": "ガバナンス上の注意（CCTVAIレポートデータ）",
+                "lag_note": (
+                    "数値はCCTVAIレポート用の複製データから取得しており、"
+                    "リアルタイムデータではありません（同期遅延は未検証）。"
+                ),
+                "del_flag_note": (
+                    "台帳から削除済みのカメラ・違反種別は除外しているため、"
+                    "件数が重複計上されることはありません。"
+                ),
+                "identity_note": (
+                    "カメラのログイン情報や担当者の氏名・メールアドレスは"
+                    "本レポートに含まれません（読み取り権限なし）。"
+                ),
+                "observation_totals": (
+                    f"CCTVAIレポートデータには累計{format_number(total_events)}"
+                    f"件のイベントと{format_number(active_cameras)}台の稼働中"
+                    "カメラが記録されています。"
+                ),
+                "observation_orphan": (
+                    f"現行のカメラ台帳に存在しないカメラのイベントが"
+                    f"{format_number(orphan_events)}件あります。"
+                ),
+                "duration_limitation": (
+                    "進行中のイベント（終了時刻が未記録）は継続時間を計算でき"
+                    "ません。"
+                ),
+                "matrix_limitation": "マトリクスは上位80件の組み合わせに制限されています。",
+                "summary_title": "CCTVAIエグゼクティブ概要レポートを作成しました",
+                "download_note": "詳細チャートとマトリクスはHTMLレポートからダウンロードできます。",
+            }
+            if japanese
+            else {
+                "title": "Báo cáo Tổng quan CCTVAI Cấp Điều hành",
+                "period": "Tổng quan dữ liệu báo cáo CCTVAI — Sự kiện mới nhất: {latest}",
+                "unverified": "chưa xác định",
+                "total_kpi": "Tổng sự kiện ghi nhận",
+                "active_camera_kpi": "Camera đang hoạt động",
+                "week_kpi": "Sự kiện 7 ngày qua",
+                "orphan_kpi": "Sự kiện camera ngoài danh mục",
+                "chart_title": "1. Sự kiện theo mức độ nghiêm trọng (7 ngày qua)",
+                "matrix_title": "2. Ma trận camera × loại vi phạm (7 ngày qua)",
+                "matrix_row_label": "Camera",
+                "governance": "Lưu ý Governance (Dữ liệu báo cáo CCTVAI)",
+                "lag_note": (
+                    "Số liệu lấy từ bản sao dữ liệu báo cáo CCTVAI, không phải "
+                    "dữ liệu thời gian thực; độ trễ đồng bộ chưa được xác minh."
+                ),
+                "del_flag_note": (
+                    "Đã loại bỏ các bản ghi camera/loại vi phạm đã xoá khỏi "
+                    "danh mục, nên số liệu không bị đếm trùng."
+                ),
+                "identity_note": (
+                    "Báo cáo không chứa thông tin đăng nhập camera và không có "
+                    "tên/email người phụ trách (hệ thống không cấp quyền đọc)."
+                ),
+                "observation_totals": (
+                    f"Dữ liệu báo cáo CCTVAI ghi nhận tổng {format_number(total_events)} "
+                    f"sự kiện và {format_number(active_cameras)} camera đang hoạt động."
+                ),
+                "observation_orphan": (
+                    f"Có {format_number(orphan_events)} sự kiện thuộc camera không "
+                    "còn trong danh mục camera hiện hành."
+                ),
+                "duration_limitation": (
+                    "Sự kiện đang diễn ra (chưa có thời điểm kết thúc) không "
+                    "tính được thời lượng."
+                ),
+                "matrix_limitation": "Ma trận giới hạn Top 80 tổ hợp camera × loại vi phạm.",
+                "summary_title": "Đã tạo Báo cáo Tổng quan CCTVAI Cấp Điều hành",
+                "download_note": "Chart và ma trận chi tiết có trong báo cáo HTML tải xuống.",
+            }
+        )
+
+        report_id = str(uuid.uuid4())
+        svg_chart = render_bar_chart_svg(
+            severity_rows,
+            label_key="severity",
+            value_key="total",
+            title=labels["chart_title"],
+            accent="#b5442f",
+        )
+        charts = (
+            [
+                {
+                    "id": "cctvai_severity_7d",
+                    "title": labels["chart_title"],
+                    "label_key": "severity",
+                    "value_key": "total",
+                    "rows": severity_rows,
+                    "svg": svg_chart,
+                }
+            ]
+            if severity_rows
+            else []
+        )
+
+        matrix = build_error_matrix(
+            matrix_rows[:80],
+            row_key="camera_name",
+            column_key="violation_name",
+            value_key="total",
+            row_label=labels["matrix_row_label"],
+        )
+        matrices: list[dict[str, Any]] = []
+        if matrix:
+            matrix["id"] = "cctvai_camera_violation_matrix_7d"
+            matrix["title"] = labels["matrix_title"]
+            matrices.append(matrix)
+
+        governance = [
+            labels["lag_note"],
+            labels["del_flag_note"],
+            labels["identity_note"],
+        ]
+        observations = [labels["observation_totals"]]
+        if orphan_events:
+            observations.append(labels["observation_orphan"])
+
+        # lag_note stays in `governance` only: render_html prints governance
+        # and limitations as two separate blocks, so repeating it here put the
+        # same sentence twice on one page (three times counting summary_text).
+        limitations = [labels["duration_limitation"]]
+        if len(matrix_rows) > 80:
+            limitations.append(labels["matrix_limitation"])
+        for failure in failures:
+            limitations.append(
+                f"一部のデータを取得できませんでした（{failure}）。"
+                if japanese
+                else f"Một phần dữ liệu không lấy được ({failure})."
+            )
+
+        report_dict: dict[str, Any] = {
+            "id": report_id,
+            "report_type": "cctvai_report",
+            "language": language,
+            "title": labels["title"],
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "period_label": labels["period"].format(
+                latest=latest_event_at or labels["unverified"]
+            ),
+            "kpis": [
+                {
+                    "key": "total_events",
+                    "label": labels["total_kpi"],
+                    "value": total_events,
+                },
+                {
+                    "key": "active_cameras",
+                    "label": labels["active_camera_kpi"],
+                    "value": active_cameras,
+                },
+                {
+                    "key": "events_last_7_days",
+                    "label": labels["week_kpi"],
+                    "value": events_7d,
+                },
+                {
+                    "key": "orphan_events",
+                    "label": labels["orphan_kpi"],
+                    "value": orphan_events,
+                },
+            ],
+            "charts": charts,
+            "matrices": matrices,
+            "sections": [],
+            "observations": observations,
+            "governance": governance,
+            "limitations": limitations,
+        }
+        report_dict["html_content"] = render_html(report_dict)
+
+        if japanese:
+            summary_text = (
+                f"**{labels['summary_title']}**（{report_dict['period_label']}）。\n\n"
+                f"- **累計イベント:** {format_number(total_events)}件\n"
+                f"- **稼働中カメラ:** {format_number(active_cameras)}台\n"
+                f"- **直近7日間のイベント:** {format_number(events_7d)}件\n"
+                "- **データガバナンス:** レポート用の複製データで、リアルタイム"
+                "ではありません（同期遅延は未検証）。\n\n"
+                f"{labels['download_note']}"
+            )
+        else:
+            summary_text = (
+                f"**{labels['summary_title']}** ({report_dict['period_label']}).\n\n"
+                f"- **Tổng sự kiện:** {format_number(total_events)}\n"
+                f"- **Camera đang hoạt động:** {format_number(active_cameras)}\n"
+                f"- **Sự kiện 7 ngày qua:** {format_number(events_7d)}\n"
+                "- **Quy tắc an toàn dữ liệu:** Số liệu từ bản sao dữ liệu "
+                "báo cáo, không phải thời gian thực; độ trễ chưa xác minh.\n\n"
                 f"{labels['download_note']}"
             )
 

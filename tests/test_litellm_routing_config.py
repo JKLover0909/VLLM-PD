@@ -121,6 +121,28 @@ def test_fallbacks_preserve_role_and_prefer_azure_before_openai():
     assert "local-qwen-chat" not in fallbacks["coding-model"]
 
 
+def test_hardware_summary_alias_is_local_only_with_no_cloud_path():
+    """CCTVAI host telemetry must never reach a cloud provider.
+
+    The alias exists precisely so it can be left out of every fallback chain;
+    reusing local-qwen-* would silently inherit the Azure fallback.
+    """
+    config = _load_config()
+    models = _models_by_name(config)
+    fallbacks = _fallbacks_by_name(config)
+
+    params = models["local-hardware-summary"]["litellm_params"]
+    assert params["model"].startswith("ollama_chat/")
+    assert params["api_base"] == "os.environ/QWEN_CHAT_API_BASE"
+    assert "api_key" not in params
+
+    # Not a fallback source: an outage errors out instead of going cloud.
+    assert "local-hardware-summary" not in fallbacks
+    # Not a fallback target either, so no other alias can route into it.
+    for targets in fallbacks.values():
+        assert "local-hardware-summary" not in targets
+
+
 def test_fallback_graph_has_no_cycles():
     fallbacks = _fallbacks_by_name(_load_config())
 

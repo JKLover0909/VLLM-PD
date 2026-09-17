@@ -1,0 +1,193 @@
+{
+  "database": "CCTVAI reporting replica (PostgreSQL, schema cctvai)",
+  "description": "Sự kiện vi phạm do AI phát hiện từ camera nhà máy, cùng master camera/line/loại vi phạm. Đây là replica CHỈ ĐỌC đồng bộ bất đồng bộ từ database CCTVAI thật — không phải dữ liệu realtime tuyệt đối.",
+  "source_policy": {
+    "is_realtime": false,
+    "replica_lag": "Đồng bộ bất đồng bộ, thường dưới vài giây nhưng KHÔNG đo được từ phía client. Mọi số liệu là ảnh chụp với độ trễ chưa xác minh. Không dùng cho quyết định cần chính xác tới mili-giây.",
+    "schema_prefix_mandatory": "search_path của role KHÔNG chứa cctvai và schema public rỗng. MỌI bảng phải viết đủ prefix cctvai.<tên bảng>, nếu không query sẽ lỗi relation does not exist.",
+    "column_level_grants": "Quyền cấp ở mức CỘT, không phải mức bảng. SELECT * trên cctvai.cctvai_cameras bị từ chối với permission denied for table. Luôn liệt kê cột tường minh và chỉ dùng cột có trong danh sách columns của bảng đó.",
+    "soft_delete_is_dedup": "del_flag KHÔNG phải filter tuỳ chọn — nó là cơ chế de-dup DUY NHẤT. camera_id và violation_code KHÔNG unique trên toàn bảng (cam008 có 4 dòng: 1 active + 3 đã xoá; violation_code glove_not_changed có 2 dòng khác severity). Quên del_flag thì JOIN nhân bản dòng: đo thực tế 11986 dòng thay vì 8305, phồng +44%, mà query VẪN CHẠY THÀNH CÔNG không báo lỗi. Đây là dạng lỗi không thể tự phát hiện từ kết quả.",
+    "soft_reference_no_fk": "event_snapshots.camera_id và event_snapshots.violation_type là tham chiếu MỀM, không có ràng buộc FK. Đo thực tế: 26 sự kiện không khớp camera active nào, 3 sự kiện có violation_type không khớp danh mục. INNER JOIN sẽ ÂM THẦM bỏ mất các dòng này.",
+    "epoch_milliseconds": "detected_time và end_time là epoch MILLISECONDS (bigint), KHÔNG phải timestamp. Luôn quy đổi to_timestamp(detected_time / 1000.0). So sánh trực tiếp với now() hoặc interval mà không quy đổi sẽ cho kết quả vô nghĩa.",
+    "no_identity_schema": "Replica KHÔNG có schema identity. cctvai_line_responsibles.user_id chỉ là số ID, không resolve ra được tên/email/phòng ban. Không suy diễn danh tính người phụ trách trong bất kỳ hoàn cảnh nào.",
+    "camera_credentials_blocked": "8 cột username, password, endpoint, main_cam_url, sub_cam_url, speaker_url, speaker_topic, light_topic của cctvai_cameras cố ý loại khỏi quyền đọc vì là thông tin đăng nhập thiết bị vật lý. Không truy vấn, không nhắc tên, không suy đoán giá trị.",
+    "out_of_scope_tables": "cctvai_notification_outbox, cctvai_speaker_outbox và schema_migrations là hàng đợi nội bộ / bookkeeping migration — ngoài phạm vi báo cáo, không dùng."
+  },
+  "hard_rules": [
+    "Mọi JOIN tới cctvai_cameras, cctvai_violation_types, cctvai_lines PHẢI kèm AND NOT <alias>.del_flag NGAY TRONG mệnh đề ON, không phải ở WHERE. Đặt ở WHERE sẽ biến LEFT JOIN thành INNER JOIN và làm mất các dòng không khớp.",
+    "Khi một trong ba bảng soft-delete đứng dẫn đầu ở FROM (không qua JOIN), phải có WHERE NOT <alias>.del_flag.",
+    "Trong subquery EXISTS, phải có NOT <alias>.del_flag trong WHERE của subquery.",
+    "Đếm sự kiện dùng count(<alias event_snapshots>.id), TUYỆT ĐỐI KHÔNG dùng count(*): count(*) đếm cả dòng nhân bản nếu lỡ fan-out, và SELECT * / count(*) còn vướng grant mức cột.",
+    "Báo cáo tổng số sự kiện phải dùng LEFT JOIN + COALESCE để giữ đủ 26 sự kiện của camera không còn trong master. INNER JOIN chỉ dùng khi câu hỏi nêu rõ là chỉ tính camera đang hoạt động.",
+    "Khi chỉ cần kiểm tra tồn tại mà không cần cột từ bảng master, dùng EXISTS thay vì JOIN — EXISTS miễn nhiễm hoàn toàn với fan-out.",
+    "Luôn có LIMIT. Mọi bảng phải viết đủ prefix cctvai.",
+    "Chỉ SELECT một câu duy nhất. Không INSERT/UPDATE/DELETE/DDL, không nhiều statement, không SET/COPY/LISTEN, không FOR UPDATE, không pg_catalog/information_schema.",
+    "Tính thời lượng sự kiện phải lọc end_time IS NOT NULL — hiện có 166 sự kiện đang diễn ra với end_time NULL.",
+    "confidence_rate có thể NULL; không coi NULL là 0 khi tính trung bình."
+  ],
+  "tables": {
+    "event_snapshots": {
+      "description": "Bảng trung tâm. Một dòng = một sự kiện AI phát hiện. Alias quy ước: e. Grain là một sự kiện, khoá là id.",
+      "row_count_verified": 8305,
+      "columns": {
+        "id": "Khoá chính bigint (snowflake). Dùng count(e.id) để đếm sự kiện",
+        "camera_id": "Mã camera dạng text, tham chiếu MỀM tới cctvai_cameras.camera_id. Master lưu chữ hoa (CAM007), sự kiện lưu chữ thường — nên so sánh bằng LOWER() hai phía",
+        "violation_type": "Mã loại vi phạm dạng text, tham chiếu MỀM tới cctvai_violation_types.violation_code",
+        "detected_time": "Thời điểm phát hiện, epoch MILLISECONDS bigint. Quy đổi to_timestamp(e.detected_time / 1000.0)",
+        "end_time": "Thời điểm kết thúc, epoch MILLISECONDS bigint. NULL khi sự kiện ĐANG diễn ra (166 dòng)",
+        "thumbnail_path": "Đường dẫn ảnh thumbnail",
+        "thumbnail_metadata": "Metadata ảnh dạng JSONB",
+        "video_path": "Đường dẫn video clip",
+        "confidence_rate": "Độ tin cậy của model AI, 0-1, có thể NULL",
+        "created_at": "Thời điểm tạo bản ghi",
+        "record_status": "Trạng thái ghi hình: recording hoặc recorded",
+        "updated_at": "Thời điểm cập nhật bản ghi"
+      }
+    },
+    "cctvai_cameras": {
+      "description": "Master camera. Alias quy ước: c. SOFT-DELETE: 30 dòng tổng, chỉ 15 dòng active và chỉ khi lọc del_flag thì camera_id mới unique. CHỈ ĐƯỢC dùng 11 cột dưới đây — 8 cột credential thiết bị không đọc được.",
+      "row_count_verified": 30,
+      "active_row_count_verified": 15,
+      "soft_delete": true,
+      "columns": {
+        "id": "Khoá chính bigint, được cctvai_lines tham chiếu qua line_ref_id",
+        "camera_id": "Mã camera dạng text, KHÔNG unique khi chưa lọc del_flag",
+        "camera_name": "Tên camera hiển thị",
+        "line_ref_id": "Tham chiếu cctvai_lines.id",
+        "protocol": "Giao thức kết nối camera",
+        "description": "Mô tả",
+        "is_active": "Cờ bật/tắt vận hành, KHÁC NGHĨA với del_flag",
+        "del_flag": "Cờ soft-delete. BẮT BUỘC lọc NOT c.del_flag để de-dup",
+        "create_date": "Ngày tạo",
+        "edit_date": "Ngày sửa",
+        "camera_name_translations": "Bản dịch tên camera dạng JSONB"
+      }
+    },
+    "cctvai_violation_types": {
+      "description": "Danh mục loại vi phạm AI. Alias quy ước: vt. SOFT-DELETE: 17 dòng tổng, 15 active. violation_code chỉ unique khi lọc del_flag.",
+      "row_count_verified": 17,
+      "active_row_count_verified": 15,
+      "soft_delete": true,
+      "columns": {
+        "id": "Khoá chính bigint",
+        "violation_code": "Mã loại vi phạm, khớp với event_snapshots.violation_type. KHÔNG unique khi chưa lọc del_flag",
+        "violation_name": "Tên loại vi phạm hiển thị",
+        "severity": "Mức độ nghiêm trọng: alert hoặc normal",
+        "description": "Mô tả",
+        "del_flag": "Cờ soft-delete. BẮT BUỘC lọc NOT vt.del_flag",
+        "create_date": "Ngày tạo",
+        "edit_date": "Ngày sửa"
+      }
+    },
+    "cctvai_lines": {
+      "description": "Tuyến/khu vực đặt camera. Alias quy ước: l. SOFT-DELETE: 3 dòng tổng, 2 active.",
+      "row_count_verified": 3,
+      "active_row_count_verified": 2,
+      "soft_delete": true,
+      "columns": {
+        "id": "Khoá chính bigint, được cctvai_cameras.line_ref_id tham chiếu",
+        "line_id": "Mã tuyến dạng text",
+        "line_name": "Tên tuyến hiển thị",
+        "description": "Mô tả",
+        "is_active": "Cờ bật/tắt vận hành, KHÁC NGHĨA với del_flag",
+        "del_flag": "Cờ soft-delete. BẮT BUỘC lọc NOT l.del_flag",
+        "create_date": "Ngày tạo",
+        "edit_date": "Ngày sửa"
+      }
+    },
+    "cctvai_camera_violation_mappings": {
+      "description": "Cặp (camera, loại vi phạm) được phép phát hiện. Alias quy ước: m. Không có del_flag.",
+      "row_count_verified": 239,
+      "soft_delete": false,
+      "columns": {
+        "camera_ref_id": "Tham chiếu cctvai_cameras.id",
+        "violation_ref_id": "Tham chiếu cctvai_violation_types.id",
+        "create_date": "Ngày tạo",
+        "edit_date": "Ngày sửa"
+      }
+    },
+    "cctvai_line_responsibles": {
+      "description": "Người phụ trách tuyến. Alias quy ước: r. CHỈ CÓ user_id dạng số — KHÔNG có tên/email và KHÔNG resolve được vì replica không có schema identity.",
+      "row_count_verified": 3,
+      "soft_delete": false,
+      "columns": {
+        "line_ref_id": "Tham chiếu cctvai_lines.id",
+        "user_id": "ID người phụ trách dạng số. KHÔNG resolve ra tên/email được",
+        "create_date": "Ngày tạo",
+        "edit_date": "Ngày sửa"
+      }
+    }
+  },
+  "relationships": [
+    "event_snapshots.camera_id -> cctvai_cameras.camera_id: tham chiếu MỀM, không FK. So sánh LOWER(e.camera_id) = LOWER(c.camera_id) AND NOT c.del_flag trong ON. 26 sự kiện không khớp camera active nào",
+    "event_snapshots.violation_type -> cctvai_violation_types.violation_code: tham chiếu MỀM, không FK. LOWER(vt.violation_code) = LOWER(e.violation_type) AND NOT vt.del_flag trong ON. 3 sự kiện không khớp danh mục",
+    "cctvai_cameras.line_ref_id -> cctvai_lines.id: khoá số, JOIN l.id = c.line_ref_id AND NOT l.del_flag trong ON",
+    "cctvai_camera_violation_mappings.camera_ref_id -> cctvai_cameras.id và violation_ref_id -> cctvai_violation_types.id: khoá số, vẫn phải lọc del_flag của hai bảng master",
+    "cctvai_line_responsibles.line_ref_id -> cctvai_lines.id",
+    "KHÔNG có quan hệ nào dẫn tới tên/email người phụ trách — schema identity không tồn tại trên replica"
+  ],
+  "business_rules": [
+    "Đếm sự kiện: count(e.id). Đếm camera: count(DISTINCT c.camera_id) sau khi đã lọc NOT c.del_flag. Đếm loại vi phạm: count(DISTINCT vt.violation_code) sau khi đã lọc NOT vt.del_flag.",
+    "Lọc theo cửa sổ thời gian: to_timestamp(e.detected_time / 1000.0) >= now() - interval '7 days'. Không so sánh e.detected_time trực tiếp với now().",
+    "Sắp xếp theo thời gian nên dùng ORDER BY e.detected_time DESC (bigint, dùng được index) thay vì sắp xếp trên biểu thức to_timestamp.",
+    "Khi severity hoặc violation_name có thể NULL do không khớp danh mục, dùng COALESCE và ghi rõ nhãn không rõ thay vì bỏ dòng.",
+    "Camera không còn trong master: COALESCE(c.camera_name, e.camera_id || ' (không có trong master)') để người đọc biết đây là camera lạ, không phải thiếu dữ liệu.",
+    "Thời lượng sự kiện: (e.end_time - e.detected_time) / 1000.0 giây, BẮT BUỘC kèm WHERE e.end_time IS NOT NULL. Câu hỏi về thời lượng sự kiện đang diễn ra phải từ chối, không suy diễn.",
+    "Trung bình confidence_rate: avg(e.confidence_rate) tự bỏ NULL, nhưng phải nói rõ số dòng tham gia tính bằng count(e.confidence_rate).",
+    "is_active và del_flag là hai khái niệm khác nhau: del_flag là đã xoá khỏi hệ thống, is_active là đang bật/tắt vận hành. Câu hỏi camera đang hoạt động mặc định hiểu là NOT del_flag; nếu câu hỏi nhấn mạnh đang bật thì thêm is_active.",
+    "Mọi câu trả lời phải nói rõ đây là số liệu từ replica báo cáo với độ trễ chưa xác minh, không phải dữ liệu realtime.",
+    "Câu hỏi về thông tin đăng nhập/URL camera, hoặc tên/email người phụ trách, phải từ chối dứt khoát và nêu lý do — không có trong quyền đọc, không suy diễn."
+  ],
+  "verified_query_examples": [
+    {
+      "question": "7 ngày qua có bao nhiêu sự kiện theo mức độ nghiêm trọng?",
+      "sql": "SELECT COALESCE(vt.severity, '(không rõ)') AS severity, count(e.id) AS total FROM cctvai.event_snapshots e LEFT JOIN cctvai.cctvai_violation_types vt ON LOWER(vt.violation_code) = LOWER(e.violation_type) AND NOT vt.del_flag WHERE to_timestamp(e.detected_time / 1000.0) >= now() - interval '7 days' GROUP BY 1 ORDER BY total DESC LIMIT 50"
+    },
+    {
+      "question": "Liệt kê 20 sự kiện gần nhất kèm tên camera, tuyến và loại vi phạm",
+      "sql": "SELECT COALESCE(c.camera_name, e.camera_id || ' (không có trong master)') AS camera_name, l.line_name, vt.violation_name, vt.severity, to_timestamp(e.detected_time / 1000.0) AS detected_at, e.record_status, e.confidence_rate FROM cctvai.event_snapshots e LEFT JOIN cctvai.cctvai_cameras c ON LOWER(c.camera_id) = LOWER(e.camera_id) AND NOT c.del_flag LEFT JOIN cctvai.cctvai_lines l ON l.id = c.line_ref_id AND NOT l.del_flag LEFT JOIN cctvai.cctvai_violation_types vt ON LOWER(vt.violation_code) = LOWER(e.violation_type) AND NOT vt.del_flag ORDER BY e.detected_time DESC LIMIT 20"
+    },
+    {
+      "question": "Danh sách camera đang hoạt động",
+      "sql": "SELECT c.camera_id, c.camera_name, l.line_name, c.protocol, c.is_active FROM cctvai.cctvai_cameras c LEFT JOIN cctvai.cctvai_lines l ON l.id = c.line_ref_id AND NOT l.del_flag WHERE NOT c.del_flag ORDER BY l.line_name, c.camera_name LIMIT 50"
+    },
+    {
+      "question": "Sự kiện nào thuộc camera không còn trong danh mục?",
+      "sql": "SELECT e.camera_id, count(e.id) AS events FROM cctvai.event_snapshots e WHERE NOT EXISTS (SELECT 1 FROM cctvai.cctvai_cameras c WHERE LOWER(c.camera_id) = LOWER(e.camera_id) AND NOT c.del_flag) GROUP BY 1 ORDER BY events DESC LIMIT 50"
+    },
+    {
+      "question": "Top loại vi phạm nhiều sự kiện nhất",
+      "sql": "SELECT COALESCE(vt.violation_name, e.violation_type || ' (không có trong danh mục)') AS violation_name, COALESCE(vt.severity, '(không rõ)') AS severity, count(e.id) AS total FROM cctvai.event_snapshots e LEFT JOIN cctvai.cctvai_violation_types vt ON LOWER(vt.violation_code) = LOWER(e.violation_type) AND NOT vt.del_flag GROUP BY 1, 2 ORDER BY total DESC LIMIT 20"
+    }
+  ],
+  "rejected_query_examples": [
+    {
+      "sql": "SELECT count(*) FROM cctvai.event_snapshots e JOIN cctvai.cctvai_cameras c ON c.camera_id = e.camera_id JOIN cctvai.cctvai_violation_types vt ON vt.violation_code = e.violation_type",
+      "why": "Thiếu del_flag ở cả hai ON: fan-out lên 11986 dòng thay vì 8305 (+44%). Còn dùng count(*) thay vì count(e.id). Query này CHẠY THÀNH CÔNG nhưng số liệu sai."
+    },
+    {
+      "sql": "SELECT c.camera_name, count(e.id) FROM cctvai.event_snapshots e LEFT JOIN cctvai.cctvai_cameras c ON LOWER(c.camera_id) = LOWER(e.camera_id) WHERE NOT c.del_flag GROUP BY 1",
+      "why": "del_flag đặt ở WHERE thay vì ON: biến LEFT JOIN thành INNER JOIN, âm thầm mất 26 sự kiện của camera không có trong master."
+    },
+    {
+      "sql": "SELECT * FROM cctvai.cctvai_cameras WHERE NOT del_flag",
+      "why": "SELECT * trên cctvai_cameras bị Postgres từ chối vì grant ở mức cột — 8 cột credential không đọc được."
+    },
+    {
+      "sql": "SELECT camera_id, camera_name FROM cctvai_cameras WHERE NOT del_flag",
+      "why": "Thiếu prefix cctvai. search_path của role không chứa cctvai nên lỗi relation does not exist."
+    },
+    {
+      "sql": "SELECT r.user_id, r.line_ref_id FROM cctvai.cctvai_line_responsibles r JOIN identity.users u ON u.id = r.user_id",
+      "why": "Schema identity không tồn tại trên replica. Không có cách nào resolve tên/email người phụ trách."
+    },
+    {
+      "sql": "SELECT e.id, (e.end_time - e.detected_time) / 1000.0 AS duration_s FROM cctvai.event_snapshots e ORDER BY duration_s DESC LIMIT 10",
+      "why": "Không lọc end_time IS NOT NULL: 166 sự kiện đang diễn ra có end_time NULL, phép trừ trả NULL và bị sắp xếp sai."
+    },
+    {
+      "sql": "SELECT e.camera_id FROM cctvai.event_snapshots e WHERE to_timestamp(e.detected_time) >= now() - interval '1 day'",
+      "why": "detected_time là epoch MILLISECONDS, thiếu / 1000.0 nên to_timestamp trả mốc thời gian sai hàng nghìn năm."
+    }
+  ]
+}

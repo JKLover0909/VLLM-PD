@@ -19,7 +19,7 @@ class QueryRequest(BaseModel):
     question: str
     stream: bool = True
     model: Literal["auto", "local", "openai", "grok"] = "auto"
-    mode: Literal["mkac", "mes", "wms", "research"] = "mkac"
+    mode: Literal["mkac", "mes", "wms", "cctvai", "research"] = "mkac"
     ui_language: Literal["vi", "ja"] = "vi"
     employee_id: Optional[str] = None
     # Optional UI hint for a server-prepared WMS suggestion. The API validates the
@@ -82,6 +82,22 @@ class WmsAnswerMetadata(BaseModel):
     pagination: Optional[WmsPagination] = None
 
 
+class CctvaiAnswerMetadata(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    intent: str = ""
+    domain: str = ""
+    status: str = ""
+    reason_codes: List[str] = Field(default_factory=list)
+    latest_event_at: str = ""
+    replica_lag_state: str = ""
+    grain: str = ""
+    schema_version: str = ""
+    data_contract_version: str = ""
+    semantic_contract_version: str = ""
+    source_system: str = ""
+
+
 class QueryResponse(BaseModel):
     answer: str
     sources: List[Dict[str, Any]]
@@ -90,6 +106,7 @@ class QueryResponse(BaseModel):
     mode: str
     answer_scope: str
     wms_metadata: Optional[WmsAnswerMetadata] = None
+    cctvai_metadata: Optional[CctvaiAnswerMetadata] = None
     artifact: Optional[Dict[str, Any]] = None
 
 

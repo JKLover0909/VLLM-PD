@@ -36,13 +36,17 @@ def test_parse_non_email_question_returns_none():
     [
         ("Gửi thông tin này cho email test@example.com", "thông tin này"),
         ("Gửi báo cáo này cho email test@example.com", "báo cáo này"),
+        # Câu điền sẵn thực tế từ nút "Gửi qua email" — KHÔNG có chữ "email" trong câu
+        ("Gửi báo cáo này cho 12wuu115@gmail.com", "báo cáo này"),
+        ("Gửi báo cáo này cho test@example.com", "báo cáo này"),
+        ("Gửi thông tin này cho test@mkac.vn", "thông tin này"),
     ],
 )
 def test_parse_contextual_email_send_command(question, expected_data_question):
     command = parse_email_send_command(question)
 
     assert command is not None
-    assert command.to_email == "test@example.com"
+    assert command.to_email == question.split()[-1]  # email là token cuối
     assert command.data_question == expected_data_question
 
 
@@ -160,7 +164,9 @@ def test_email_draft_store_claims_pending_draft_only_once():
     assert updated.message_id == "msg-1"
 
 
-def test_gmail_sender_builds_plain_text_with_html_attachment(tmp_path, monkeypatch):
+def test_gmail_sender_html_report_is_inline_not_attachment(tmp_path, monkeypatch):
+    """Khi attachment là text/html, email phải dùng multipart/alternative để Gmail
+    có thể preview HTML inline thay vì gửi như file đính kèm không preview được."""
     captured = {}
 
     class SendCall:
@@ -196,7 +202,7 @@ def test_gmail_sender_builds_plain_text_with_html_attachment(tmp_path, monkeypat
     result = sender.send_email(
         "test@example.com",
         "Executive report",
-        "Please see the attached report.",
+        "Please see the report below.",
         attachments=[
             {
                 "filename": "report.html",
@@ -208,11 +214,74 @@ def test_gmail_sender_builds_plain_text_with_html_attachment(tmp_path, monkeypat
 
     raw = base64.urlsafe_b64decode(captured["body"]["raw"])
     message = BytesParser(policy=policy.default).parsebytes(raw)
-    attachment = next(message.iter_attachments())
 
     assert result.message_id == "msg-1"
     assert captured["user_id"] == "me"
-    assert message.get_body(preferencelist=("plain",)).get_content().startswith("Please see")
-    assert attachment.get_filename() == "report.html"
-    assert attachment.get_content_type() == "text/html"
-    assert b"<h1>Report</h1>" in attachment.get_payload(decode=True)
+
+    # Email phải là multipart/alternative (không phải attachment)
+    assert message.get_content_type() == "multipart/alternative", (
+        f"Expected multipart/alternative for Gmail inline preview, got {message.get_content_type()}"
+    )
+
+    # Không được có attachment (HTML đã là inline body)
+    attachments = list(message.iter_attachments())
+    assert attachments == [], (
+        f"HTML report must not be an attachment (got {len(attachments)} attachment(s)); "
+        "Gmail cannot preview attachments inline"
+    )
+
+    # Phải có cả plain text lẫn HTML body
+    plain_body = message.get_body(preferencelist=("plain",))
+    html_body = message.get_body(preferencelist=("html",))
+    assert plain_body is not None, "Missing text/plain body part"
+    assert html_body is not None, "Missing text/html body part"
+    assert "Please see" in plain_body.get_content()
+    assert b"<h1>Report</h1>" in html_body.get_payload(decode=True)
+
+
+def test_gmail_sender_plain_text_only_no_attachment(tmp_path, monkeypatch):
+    """Email không có attachment vẫn dùng plain EmailMessage đơn giản."""
+    captured = {}
+
+    class SendCall:
+        @staticmethod
+        def execute():
+            return {"id": "msg-2"}
+
+    class Messages:
+        @staticmethod
+        def send(*, userId, body):
+            captured.update(user_id=userId, body=body)
+            return SendCall()
+
+    class Users:
+        @staticmethod
+        def messages():
+            return Messages()
+
+    class Service:
+        @staticmethod
+        def users():
+            return Users()
+
+    credentials = tmp_path / "credentials.json"
+    credentials.write_text("{}", encoding="utf-8")
+    sender = GmailSender(
+        credentials_path=credentials,
+        token_path=tmp_path / "token.json",
+        enabled=True,
+    )
+    monkeypatch.setattr(sender, "_service", lambda: Service())
+
+    result = sender.send_email(
+        "test@example.com",
+        "Simple message",
+        "Hello from Meibook.",
+    )
+
+    raw = base64.urlsafe_b64decode(captured["body"]["raw"])
+    message = BytesParser(policy=policy.default).parsebytes(raw)
+
+    assert result.message_id == "msg-2"
+    assert message.get_content_type() == "text/plain"
+    assert "Hello from Meibook" in message.get_content()

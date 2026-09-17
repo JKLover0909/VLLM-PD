@@ -1,5 +1,8 @@
 {
   "short_answer_threshold": 300,
+  "short_answer_threshold_by_mode": {
+    "cctvai": 450
+  },
   "max_suggestions": 3,
   "mkac": [
     {
@@ -250,6 +253,51 @@
       "answer": "Không. Dữ liệu WMS trong Meibook được truy vấn từ bản snapshot tĩnh cuối ngày (Current Balance), không phải tồn kho thời gian thực. Hệ thống chỉ hỗ trợ xem số lượng tồn theo mã vật tư, chưa thể cộng gộp vì thiếu Master Đơn vị tính (UOM).",
       "question_ja": "WMS在庫データはリアルタイムですか？",
       "answer_ja": "いいえ。MeibookのWMSデータはリアルタイムではなく、1日の終わりの静的スナップショット（現行残高）から照会されます。また、単位マスター（UOM）がないため、異なる資材コードの数量を合算することはできません。"
+    }
+  ],
+  "cctvai": [
+    {
+      "id": "cctvai-hardware-status",
+      "live": true,
+      "question": "Kiểm tra tình trạng phần cứng server CCTVAI: CPU, RAM, GPU và ổ đĩa",
+      "aliases": [
+        "Tình trạng phần cứng server CCTVAI hiện tại thế nào?",
+        "Server CCTVAI có đang hoạt động bình thường không?"
+      ],
+      "question_ja": "CCTVAIサーバーのハードウェア状態を確認してください：CPU、RAM、GPU、ディスク",
+      "aliases_ja": [
+        "CCTVAIサーバーの現在のハードウェア状態はどうですか？"
+      ]
+    },
+    {
+      "id": "cctvai-overview",
+      "live": true,
+      "question": "Tổng quan dữ liệu CCTVAI hiện có bao nhiêu sự kiện?",
+      "question_ja": "CCTVAIデータの概要：現在イベントは何件ありますか？"
+    },
+    {
+      "id": "cctvai-severity",
+      "live": true,
+      "question": "7 ngày qua sự kiện vi phạm theo mức độ nghiêm trọng như thế nào?",
+      "question_ja": "直近7日間の違反イベントを重要度別に教えてください。"
+    },
+    {
+      "id": "cctvai-cameras",
+      "live": true,
+      "question": "Danh sách camera đang hoạt động trong hệ thống?",
+      "question_ja": "システム内で稼働中のカメラ一覧を表示してください。"
+    },
+    {
+      "id": "cctvai-report",
+      "live": true,
+      "question": "Lập báo cáo tổng quan CCTVAI",
+      "question_ja": "CCTVAIの概要レポートを作成してください。"
+    },
+    {
+      "id": "cctvai-avg-confidence",
+      "live": true,
+      "question": "Độ tin cậy trung bình của mô hình nhận diện là bao nhiêu?",
+      "question_ja": "検知モデルの平均信頼度はどれくらいですか？"
     }
   ]
 }

@@ -1,0 +1,19 @@
+# Isolated requirements for the standalone CCTVAI host metrics service.
+#
+# Install into its own venv on the Ubuntu host (NOT the Meibook app's
+# Python/Conda environment, NOT the Docker image):
+#
+#   python3 -m venv /opt/cctvai-host-metrics/venv
+#   /opt/cctvai-host-metrics/venv/bin/pip install --upgrade pip
+#   /opt/cctvai-host-metrics/venv/bin/pip install -r requirements.txt
+#
+# This package intentionally shares no dependency pin file with the main
+# Meibook app: it must keep working even if the app's dependency set
+# changes, and its GPU/docker sampling code must never run inside the app
+# container. See Markdowns/CCTVAI_HARDWARE.md for the full deployment
+# runbook.
+
+psutil>=6.0.0,<8.0.0
+fastapi>=0.115.0,<1.0.0
+uvicorn[standard]>=0.30.0,<1.0.0
+pydantic>=2.7.0,<3.0.0

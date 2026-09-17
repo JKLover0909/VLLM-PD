@@ -391,8 +391,11 @@ class WmsSqlAgent:
                     "bottleneck, trend hoặc min-stock, gọi rõ đó là proxy/suy luận "
                     "từ snapshot chứ không phải KPI nghiệp vụ đã xác minh. "
                     "process_name rỗng thì giữ nguyên mã công đoạn, không suy "
-                    "đoán tên. Nếu kết quả có nhiều hơn 3 dòng, trình bày mỗi dòng trên "
-                    "một mục gạch đầu dòng markdown riêng (bắt đầu bằng '- ')."
+                    "đoán tên. Trình bày kết quả rõ ràng, xuống dòng cách đoạn "
+                    "hợp lý. Khi có từ 2 mục hoặc nhiều dòng dữ liệu, luôn "
+                    "trình bày mỗi mục trên một gạch đầu dòng markdown riêng "
+                    "(bắt đầu bằng '- '), in đậm thông tin chính, không dồn "
+                    "thành một đoạn văn dài."
                 ),
             },
             {

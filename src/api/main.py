@@ -35,10 +35,12 @@ from src.actions.calendar_action import (
     CalendarActionService,
 )
 from src.actions.report_agent import (
+    CctvaiReportAgent,
     HrExecutiveReportAgent,
     MesReportAgent,
     MesWmsReportAgent,
     render_html,
+    render_markdown,
 )
 from src.actions.report_intent import ReportCapability, report_capability_for_mode
 from src.rag.parser import (
@@ -60,6 +62,11 @@ from src.integrations.mes_query_service import (
     MesQueryStreamOutcome,
 )
 from src.integrations.mes_wms_database import MesWmsDatabase
+from src.integrations.cctvai_query_service import CctvaiQueryService
+from src.integrations.cctvai_hardware_service import (
+    CctvaiHardwareService,
+    classify_hardware_question,
+)
 from src.integrations.gmail_sender import (
     EmailDraft,
     EmailDraftStore,
@@ -111,6 +118,7 @@ from src.api.research_cached_answers import (
 from src.api.schemas import (
     AgentRequest,
     AgentResponse,
+    CctvaiAnswerMetadata,
     EmployeeAuthRequest,
     EmployeeAuthResponse,
     EmployeeResponse,
@@ -171,12 +179,15 @@ mes_query_service: Optional[MesQueryService] = None
 mes_report_agent: Optional[MesReportAgent] = None
 mes_wms_report_agent: Optional[MesWmsReportAgent] = None
 hr_report_agent: Optional[HrExecutiveReportAgent] = None
+cctvai_report_agent: Optional[CctvaiReportAgent] = None
 calendar_action_service: Optional[CalendarActionService] = None
 artifact_store = ArtifactStore()
 web_searcher: Optional[WebSearcher] = None
 employee_directory = EmployeeDirectory(EMPLOYEE_DIRECTORY_DB_PATH)
 mes_database = MesDatabase.from_env()
 mes_wms_database = MesWmsDatabase.from_env()
+cctvai_query_service: Optional[CctvaiQueryService] = CctvaiQueryService.from_env()
+cctvai_hardware_service: Optional[CctvaiHardwareService] = CctvaiHardwareService.from_env()
 gmail_sender = GmailSender.from_env()
 email_draft_store = EmailDraftStore()
 translation_service = TranslationService.from_env()
@@ -264,7 +275,10 @@ async def enforce_rate_limit(
             retry_after = max(1, int(window_seconds - (now - events[0])))
             raise HTTPException(
                 status_code=429,
-                detail="Too many requests. Please try again later.",
+                detail=(
+                    f"Bạn đang gửi câu hỏi quá nhanh. Vui lòng thử lại sau "
+                    f"{retry_after} giây."
+                ),
                 headers={"Retry-After": str(retry_after)},
             )
         events.append(now)
@@ -316,6 +330,7 @@ async def lifespan(app: FastAPI):
     global embedder, vector_store, mkac_vector_store, docjp_vector_store
     global doc_parser, rag_pipeline
     global mes_query_service, mes_report_agent, mes_wms_report_agent, hr_report_agent
+    global cctvai_report_agent
     global calendar_action_service
     global web_searcher
 
@@ -359,13 +374,52 @@ async def lifespan(app: FastAPI):
     mes_report_agent = MesReportAgent(rag_pipeline.mes_sql_agent)
     mes_wms_report_agent = MesWmsReportAgent(mes_wms_database)
     hr_report_agent = HrExecutiveReportAgent(employee_directory)
+    cctvai_report_agent = CctvaiReportAgent(
+        cctvai_query_service.cctvai_database if cctvai_query_service else None,
+        cctvai_query_service.cctvai_sql_agent if cctvai_query_service else None,
+    )
     calendar_action_service = CalendarActionService(
         tool_runner=rag_pipeline.run_calendar_tool,
         planner=rag_pipeline.plan_calendar_event,
     )
 
     logger.info("✅ Meibook API Gateway is fully operational.")
-    yield
+
+    # CCTVAI background health refresh task
+    async def _cctvai_health_loop() -> None:
+        while True:
+            try:
+                if cctvai_query_service is not None and cctvai_query_service.cctvai_database is not None:
+                    await cctvai_query_service.cctvai_database.refresh_health()
+            except Exception as exc:
+                logger.warning("CCTVAI background health refresh failed: %s", exc)
+            await asyncio.sleep(
+                float(os.getenv("CCTVAI_HEALTH_TTL_SECONDS", "30"))
+            )
+
+    if cctvai_query_service is not None:
+        asyncio.ensure_future(_cctvai_health_loop())
+
+    async def _hardware_health_loop() -> None:
+        while True:
+            try:
+                await cctvai_hardware_service.refresh_health()
+            except Exception:
+                logger.warning("Hardware metrics health refresh failed.")
+            await asyncio.sleep(10)
+
+    hardware_task = (
+        asyncio.create_task(_hardware_health_loop())
+        if cctvai_hardware_service is not None else None
+    )
+    try:
+        yield
+    finally:
+        if hardware_task is not None:
+            hardware_task.cancel()
+            await asyncio.gather(hardware_task, return_exceptions=True)
+        if cctvai_hardware_service is not None:
+            await cctvai_hardware_service.close()
     logger.info("Shutdown completed.")
 
 
@@ -801,7 +855,7 @@ def verify_mkac_employee(employee_id: Optional[str]) -> EmployeeResponse:
 
 
 def authorize_query(req: QueryRequest) -> Optional[EmployeeResponse]:
-    if req.mode not in {"mkac", "mes", "wms"}:
+    if req.mode not in {"mkac", "mes", "wms", "cctvai"}:
         return None
     return verify_mkac_employee(req.employee_id)
 
@@ -866,7 +920,7 @@ async def localize_query_request(req: QueryRequest) -> QueryRequest:
     # lẫn từ "email" hoặc mất audience/domain marker rồi route sai. MES có bộ
     # rule Nhật riêng, Research dùng kho DocJP tiếng Nhật nên cũng giữ nguyên.
     if (
-        req.mode in {"mes", "wms", "research"}
+        req.mode in {"mes", "wms", "cctvai", "research"}
         or report_capability_for_mode(req.question, req.mode).is_report
         or is_email_confirm_request(req.question)
         or is_email_cancel_request(req.question)
@@ -904,6 +958,8 @@ async def translate_answer_for_ui(
     if req.ui_language != "ja" or translation_service is None:
         return answer
     if answer_scope == "wms_database":
+        return answer
+    if answer_scope in {"cctvai_database", "cctvai_hardware"}:
         return answer
     if req.mode == "research" and re.search(r"[\u3040-\u30ff\u3400-\u9fff]", answer or ""):
         return answer
@@ -990,6 +1046,18 @@ def safe_wms_metadata_model(
     """Build the response model through the same allowlisted metadata gate."""
     safe_payload = safe_wms_metadata(payload)
     return WmsAnswerMetadata.model_validate(safe_payload) if safe_payload else None
+
+
+def safe_cctvai_metadata(
+    payload: Optional[Dict[str, Any]],
+) -> Optional[CctvaiAnswerMetadata]:
+    """Validate and allowlist CCTVAI metadata before REST/SSE serialization."""
+    if not payload:
+        return None
+    try:
+        return CctvaiAnswerMetadata.model_validate(payload)
+    except Exception:
+        return None
 
 
 def wms_suppressed_outcome(
@@ -1257,6 +1325,68 @@ async def wms_verification_event_generator(
         raise
 
 
+def format_sources_for_scope(
+    results: list,
+    answer_scope: str,
+    *,
+    research_scope: Optional[str] = None,
+) -> list:
+    """Format citations, skipping the RAG formatter for hardware answers.
+
+    Host metrics carry no documents, and rag_pipeline may legitimately be None
+    while the hardware service is up, so calling the formatter here would turn
+    an available answer into an AttributeError.
+    """
+    if answer_scope == "cctvai_hardware":
+        return []
+    return rag_pipeline.format_sources(results, research_scope=research_scope)
+
+
+def should_route_to_hardware(req: QueryRequest, question: str) -> bool:
+    """Decide whether this CCTVAI question is about host hardware.
+
+    Kept deliberately narrow: only mode=cctvai, only when the metrics service
+    is configured, and only when the pure classifier recognises an explicit
+    CPU/RAM/GPU/disk/network/Docker intent. Anything ambiguous falls through to
+    the existing deterministic replica intents rather than being claimed here.
+    """
+    if req.mode != "cctvai":
+        return False
+    if cctvai_hardware_service is None:
+        return False
+    return bool(classify_hardware_question(question or ""))
+
+
+async def route_hardware_outcome(
+    req: QueryRequest,
+    question: str,
+) -> Optional[MesQueryOutcome]:
+    """Answer host-hardware questions, or return None to keep normal routing."""
+    if not should_route_to_hardware(req, question):
+        return None
+    logger.info("Routing query to CCTVAI hardware metrics service.")
+    return await cctvai_hardware_service.query_hardware_outcome(
+        question=question,
+        model=req.model,
+        language=req.ui_language,
+    )
+
+
+async def route_hardware_stream_outcome(
+    req: QueryRequest,
+    question: str,
+) -> Optional[MesQueryStreamOutcome]:
+    """Streaming counterpart of route_hardware_outcome()."""
+    if not should_route_to_hardware(req, question):
+        return None
+    logger.info("Routing streaming query to CCTVAI hardware metrics service.")
+    return await cctvai_hardware_service.query_hardware_stream_outcome(
+        question=question,
+        model=req.model,
+        language=req.ui_language,
+    )
+
+
 async def route_query_outcome(
     req: QueryRequest,
     *,
@@ -1264,8 +1394,15 @@ async def route_query_outcome(
     current_user_context: Optional[Dict[str, Any]] = None,
 ) -> MesQueryOutcome:
     """Route by mode and preserve additive WMS metadata."""
-    ensure_query_services_ready()
     routed_question = question or req.question
+    # Hardware questions are answered from the CCTVAI host metrics service and
+    # touch neither RAG nor MES nor the Postgres replica. Dispatch before
+    # ensure_query_services_ready(), which demands both rag_pipeline and
+    # mes_query_service, so server health stays answerable while those are down.
+    hardware_outcome = await route_hardware_outcome(req, routed_question)
+    if hardware_outcome is not None:
+        return hardware_outcome
+    ensure_query_services_ready()
     if req.mode == "wms":
         logger.info("Routing query to isolated WMS service.")
         wms_method = getattr(mes_query_service, "query_wms_outcome", None)
@@ -1275,6 +1412,18 @@ async def route_query_outcome(
                 detail="WMS query service is not available.",
             )
         return await wms_method(
+            question=routed_question,
+            model=req.model,
+            language=req.ui_language,
+        )
+    if req.mode == "cctvai":
+        logger.info("Routing query to CCTVAI service.")
+        if not callable(getattr(cctvai_query_service, "query_cctvai_outcome", None)):
+            raise HTTPException(
+                status_code=503,
+                detail="CCTVAI query service is not available.",
+            )
+        return await cctvai_query_service.query_cctvai_outcome(
             question=routed_question,
             model=req.model,
             language=req.ui_language,
@@ -1329,6 +1478,11 @@ async def route_query_stream_outcome(
     current_user_context: Optional[Dict[str, Any]] = None,
 ) -> MesQueryStreamOutcome:
     """Streaming route preserving additive WMS metadata."""
+    # Same ordering rationale as route_query_outcome(): hardware must not be
+    # gated behind RAG/MES readiness.
+    hardware_outcome = await route_hardware_stream_outcome(req, req.question)
+    if hardware_outcome is not None:
+        return hardware_outcome
     ensure_query_services_ready()
     if req.mode == "wms":
         logger.info("Routing streaming query to isolated WMS service.")
@@ -1343,6 +1497,18 @@ async def route_query_stream_outcome(
                 detail="WMS streaming query service is not available.",
             )
         return await wms_method(
+            question=req.question,
+            model=req.model,
+            language=req.ui_language,
+        )
+    if req.mode == "cctvai":
+        logger.info("Routing streaming query to CCTVAI service.")
+        if not callable(getattr(cctvai_query_service, "query_cctvai_stream_outcome", None)):
+            raise HTTPException(
+                status_code=503,
+                detail="CCTVAI streaming query service is not available.",
+            )
+        return await cctvai_query_service.query_cctvai_stream_outcome(
             question=req.question,
             model=req.model,
             language=req.ui_language,
@@ -1405,6 +1571,7 @@ async def store_report_artifact(
     filename_prefix = (
         "wms-report" if report_type == "wms_executive_report"
         else "hr-report" if report_type == "hr_executive_report"
+        else "cctvai-report" if report_type == "cctvai_report"
         else "mes-report"
     )
     session_id = req.session_id if req else ""
@@ -1421,6 +1588,9 @@ async def store_report_artifact(
                 "employee_id": employee_id,
                 "report_type": report_type,
                 "title": report["title"],
+                # Lưu markdown để làm body email — không chứa SVG/chart.
+                # MesReportAgent đã set report["markdown"]; các agent khác thì render ở đây.
+                "markdown": str(report.get("markdown") or render_markdown(report)),
             },
             session_id=session_id,
             employee_id=employee_id,
@@ -1509,6 +1679,7 @@ def report_refusal_response(
             "hr": "HCNS",
             "mes": "MES",
             "wms": "WMS",
+            "cctvai": "CCTVAI",
         }.get(capability.domain, "phù hợp")
         answer = (
             f"このレポートは{expected_mode}モードでのみ作成できます。"
@@ -1523,15 +1694,16 @@ def report_refusal_response(
     elif not capability.domain:
         answer = (
             "レポートの対象領域が不明です。人事（HR）、MES品質・エラー、"
-            "またはWMS工程在庫のいずれかを明示してください。\n\n"
-            "例: 「WMS工程在庫の概要レポートを作成」「MESエラーレポートを作成」"
+            "WMS工程在庫、またはCCTVAIカメラのいずれかを明示してください。\n\n"
+            "例: 「WMS工程在庫の概要レポートを作成」「CCTVAIの概要レポートを作成」"
             if req.ui_language == "ja"
             else (
                 "Yêu cầu chưa nêu rõ lĩnh vực báo cáo nên tôi không tự chọn nguồn "
                 "dữ liệu để tránh trả sai. Bạn hãy nêu kèm lĩnh vực:\n\n"
                 "- Nhân sự: \"Báo cáo tổng quan nhân sự\"\n"
                 "- Chất lượng MES: \"Báo cáo tổng hợp lỗi MES\"\n"
-                "- Tồn kho WMS: \"Báo cáo tổng quan tồn kho WMS\""
+                "- Tồn kho WMS: \"Báo cáo tổng quan tồn kho WMS\"\n"
+                "- Camera CCTVAI: \"Báo cáo tổng quan CCTVAI\""
             )
         )
     elif capability.domain == "hr":
@@ -1555,6 +1727,19 @@ def report_refusal_response(
                 "Hệ thống chưa hỗ trợ báo cáo KPI, so sánh theo kỳ hoặc bộ lọc tùy biến."
             )
         )
+    elif capability.domain == "cctvai":
+        answer = (
+            "現在のCCTVAI Reportでは、レプリカの固定概要（直近7日間）レポートのみ"
+            "対応しています。期間指定、比較、特定カメラでの絞り込み、カメラの"
+            "ログイン情報や担当者名はサポートされていません。"
+            if req.ui_language == "ja"
+            else (
+                "CCTVAI Report hiện chỉ hỗ trợ báo cáo tổng quan cố định (7 ngày "
+                "qua) từ replica báo cáo. Hệ thống chưa hỗ trợ báo cáo theo kỳ, "
+                "so sánh, lọc theo camera cụ thể, thông tin đăng nhập camera hay "
+                "tên người phụ trách."
+            )
+        )
     elif req.ui_language == "ja":
         answer = (
             "現在のReport Agentでは、この形式のレポートを正確に作成できません。"
@@ -1572,7 +1757,7 @@ def report_refusal_response(
         capability.reason
         and req.ui_language != "ja"
         and capability.shape != "mode_mismatch"
-        and capability.domain not in {"", "hr", "wms"}
+        and capability.domain not in {"", "hr", "wms", "cctvai"}
     ):
         answer += f"\n\nLý do: {capability.reason}"
     return QueryResponse(
@@ -1630,6 +1815,26 @@ async def handle_report_query(req: QueryRequest) -> Optional[QueryResponse]:
             model="report-agent",
             mode=req.mode,
             answer_scope="wms_executive_report",
+            artifact=report_artifact_payload(report),
+        )
+    if capability.shape == "cctvai_overview":
+        if cctvai_report_agent is None or not cctvai_report_agent.available:
+            raise HTTPException(
+                status_code=503,
+                detail="CCTVAI Report Agent chưa sẵn sàng vì replica báo cáo chưa khả dụng.",
+            )
+        report, summary = await cctvai_report_agent.generate_report(
+            req.question,
+            language=req.ui_language,
+        )
+        await store_report_artifact(report, req)
+        return QueryResponse(
+            answer=summary,
+            sources=[],
+            session_id=req.session_id,
+            model="report-agent",
+            mode=req.mode,
+            answer_scope="cctvai_report",
             artifact=report_artifact_payload(report),
         )
     if mes_report_agent is None or not mes_report_agent.available:
@@ -1862,9 +2067,13 @@ async def handle_email_send_query(
             filename = artifact.filename
             media_type = artifact.media_type
             subject = f"Báo cáo Meibook - {artifact.meta.get('title', 'Executive Report')}"
+            # Dùng markdown tóm tắt (KPI + bảng + nhận xét) làm body email
+            # để người nhận đọc được nội dung chính mà không cần mở file.
+            report_markdown = artifact.meta.get("markdown", "").strip()
+            email_body = report_markdown if report_markdown else f"Báo cáo: {artifact.meta.get('title', '')}."
             body_text = build_direct_email_body(
                 original_question=req.question,
-                body=f"Đính kèm báo cáo HTML {artifact.meta.get('title', '')}."
+                body=email_body,
             )
         else:
             body_text = build_email_body(
@@ -1954,7 +2163,7 @@ async def download_report(report_id: str):
         content=artifact.content,
         media_type=artifact.media_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{artifact.filename}"',
+            "Content-Disposition": f'inline; filename="{artifact.filename}"',
             "Cache-Control": "private, max-age=300",
             "X-Content-Type-Options": "nosniff",
         },
@@ -2083,6 +2292,18 @@ async def health():
         "mes_wms_database": (
             mes_wms_database.status()
             if mes_wms_database is not None
+            else {"available": False, "enabled": False}
+        ),
+        "cctvai_database": (
+            cctvai_query_service.status()
+            if cctvai_query_service is not None
+            else {"available": False, "enabled": False}
+        ),
+        # Hardware metrics reach a different host service than the CCTVAI
+        # Postgres replica, so their readiness is reported independently.
+        "cctvai_hardware": (
+            cctvai_hardware_service.status()
+            if cctvai_hardware_service is not None
             else {"available": False, "enabled": False}
         ),
         "gmail_send": (
@@ -2581,10 +2802,15 @@ async def quick_answers(mode: str = "mkac", language: Literal["vi", "ja"] = "vi"
                 "live": is_live,
             }
         )
+    # Một số mode luôn gắn thêm hậu tố cố định vào câu trả lời (ví dụ cctvai gắn
+    # disclaimer freshness ~100-150 ký tự), khiến ngưỡng chung 300 ký tự loại bỏ
+    # gợi ý dù nội dung thực sự ngắn. Cho phép override theo mode trong config.
+    threshold_overrides = data.get("short_answer_threshold_by_mode", {})
+    default_threshold = data.get("short_answer_threshold", 300)
     return {
         "mode": mode,
         "language": language,
-        "short_answer_threshold": data.get("short_answer_threshold", 300),
+        "short_answer_threshold": threshold_overrides.get(mode, default_threshold),
         "max_suggestions": data.get("max_suggestions", 3),
         "suggestions": suggestions,
     }
@@ -2855,6 +3081,7 @@ async def query_documents(req: QueryRequest, request: Request):
             )
         else:
             wms_metadata = safe_wms_metadata_model(query_outcome.wms_metadata)
+        cctvai_meta = safe_cctvai_metadata(query_outcome.cctvai_metadata)
         answer = query_outcome.answer
         results = query_outcome.results
         routed_model = query_outcome.routed_model
@@ -2865,8 +3092,9 @@ async def query_documents(req: QueryRequest, request: Request):
             answer_scope=answer_scope,
         )
         sources = await translate_sources_for_ui(
-            rag_pipeline.format_sources(
+            format_sources_for_scope(
                 results,
+                answer_scope,
                 research_scope=req.research_scope if req.mode == "research" else None,
             ),
             req,
@@ -2883,6 +3111,7 @@ async def query_documents(req: QueryRequest, request: Request):
                 if isinstance(wms_metadata, dict)
                 else wms_metadata
             ),
+            cctvai_metadata=cctvai_meta,
         )
         await set_cached_query_response(cache_key, response)
         await record_query_metric(
@@ -3447,6 +3676,130 @@ async def query_stream(req: QueryRequest, request: Request):
                         latency_ms=(time.monotonic() - request_started_at) * 1000,
                     )
                     return
+                if report_capability_result.shape == "cctvai_overview":
+                    if cctvai_report_agent is None or not cctvai_report_agent.available:
+                        raise RuntimeError("CCTVAI Report Agent chưa sẵn sàng.")
+                    yield sse_status(req, "report")
+                    yield sse_event(
+                        {
+                            "type": "agent_plan",
+                            "title": (
+                                "CCTVAIエグゼクティブ概要レポート"
+                                if req.ui_language == "ja"
+                                else "Báo cáo Tổng quan CCTVAI Cấp Điều hành"
+                            ),
+                            "period_label": (
+                                "直近7日間の概要"
+                                if req.ui_language == "ja"
+                                else "Tổng quan 7 ngày qua"
+                            ),
+                            "steps": [
+                                {
+                                    "id": "cctvai_replica_query",
+                                    "title": (
+                                        "CCTVAIレプリカに問い合わせ"
+                                        if req.ui_language == "ja"
+                                        else "Truy vấn replica báo cáo CCTVAI"
+                                    ),
+                                },
+                                {
+                                    "id": "cctvai_artifact",
+                                    "title": (
+                                        "HTMLレポートを作成"
+                                        if req.ui_language == "ja"
+                                        else "Dựng báo cáo HTML"
+                                    ),
+                                },
+                            ],
+                        }
+                    )
+                    await pace_report_step(0.6)
+                    yield sse_event(
+                        {
+                            "type": "tool_start",
+                            "step_id": "cctvai_replica_query",
+                            "tool": "query_cctvai",
+                            "title": (
+                                "CCTVAIレプリカに問い合わせ"
+                                if req.ui_language == "ja"
+                                else "Truy vấn replica báo cáo CCTVAI"
+                            ),
+                        }
+                    )
+                    report, summary = await cctvai_report_agent.generate_report(
+                        localized_req.question,
+                        language=req.ui_language,
+                    )
+                    await pace_report_step()
+                    yield sse_event(
+                        {
+                            "type": "tool_result",
+                            "step_id": "cctvai_replica_query",
+                            "status": "done",
+                            "summary": (
+                                "レプリカへの問い合わせが完了"
+                                if req.ui_language == "ja"
+                                else "Đã truy vấn xong replica báo cáo"
+                            ),
+                        }
+                    )
+                    await pace_report_step(0.4)
+                    yield sse_event(
+                        {
+                            "type": "tool_start",
+                            "step_id": "cctvai_artifact",
+                            "tool": "render_cctvai_report",
+                            "title": (
+                                "HTMLレポートを作成"
+                                if req.ui_language == "ja"
+                                else "Dựng báo cáo HTML"
+                            ),
+                        }
+                    )
+                    await store_report_artifact(report, req)
+                    await pace_report_step()
+                    yield sse_event(
+                        {
+                            "type": "tool_result",
+                            "step_id": "cctvai_artifact",
+                            "status": "done",
+                            "summary": (
+                                "HTMLレポートの準備が完了"
+                                if req.ui_language == "ja"
+                                else "Báo cáo HTML đã sẵn sàng"
+                            ),
+                        }
+                    )
+                    await wait_for_min_query_latency(request_started_at)
+                    await pace_report_step(0.7)
+                    artifact_payload = report_artifact_payload(report)
+                    yield sse_event(
+                        {
+                            "type": "artifact",
+                            "artifact_type": "cctvai_report",
+                            "artifact": artifact_payload,
+                        }
+                    )
+                    yield sse_event({"type": "sources", "sources": []})
+                    yield sse_event(
+                        {
+                            "type": "meta",
+                            "model": "report-agent",
+                            "mode": req.mode,
+                            "answer_scope": "cctvai_report",
+                        }
+                    )
+                    yield sse_event({"type": "token", "content": summary})
+                    yield sse_event({"type": "agent_done"})
+                    yield sse_event({"type": "done"})
+                    await record_query_metric(
+                        mode=req.mode,
+                        ui_language=req.ui_language,
+                        answer_scope="cctvai_report",
+                        cache_hit=False,
+                        latency_ms=(time.monotonic() - request_started_at) * 1000,
+                    )
+                    return
                 if mes_report_agent is None or not mes_report_agent.available:
                     raise RuntimeError(
                         "Report Agent chưa sẵn sàng vì MES snapshot/SQL Agent "
@@ -3545,7 +3898,7 @@ async def query_stream(req: QueryRequest, request: Request):
                     answer_scope=answer_scope,
                 )
                 sources = await translate_sources_for_ui(
-                    rag_pipeline.format_sources(results),
+                    format_sources_for_scope(results, answer_scope),
                     req,
                 )
                 await wait_for_min_query_latency(request_started_at)
@@ -3600,8 +3953,9 @@ async def query_stream(req: QueryRequest, request: Request):
             answer_scope = stream_outcome.answer_scope
             
             # Gửi nguồn trích dẫn (sources) trước
-            sources = rag_pipeline.format_sources(
+            sources = format_sources_for_scope(
                 results,
+                answer_scope,
                 research_scope=req.research_scope if req.mode == "research" else None,
             )
             await wait_for_min_query_latency(request_started_at)
@@ -3618,6 +3972,10 @@ async def query_stream(req: QueryRequest, request: Request):
                 meta_event["wms_metadata"] = safe_wms_metadata(
                     stream_outcome.wms_metadata
                 )
+            if stream_outcome.cctvai_metadata:
+                cctvai_model = safe_cctvai_metadata(stream_outcome.cctvai_metadata)
+                if cctvai_model:
+                    meta_event["cctvai_metadata"] = cctvai_model.model_dump()
             yield sse_event(meta_event)
 
             # Stream từng token câu trả lời. Generator phát tuple (kind, text):
@@ -3651,6 +4009,7 @@ async def query_stream(req: QueryRequest, request: Request):
                         if stream_outcome.wms_metadata
                         else None
                     ),
+                    cctvai_metadata=safe_cctvai_metadata(stream_outcome.cctvai_metadata),
                 ),
             )
             await record_query_metric(

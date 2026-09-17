@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from src.actions.report_agent import (
+    CctvaiReportAgent,
     HrExecutiveReportAgent,
     MesReportAgent,
     MesWmsReportAgent,
@@ -17,13 +18,19 @@ from src.actions.report_intent import (
     is_mes_report_request,
     is_report_request,
     report_capability,
+    report_capability_for_mode,
     report_period_for_question,
     report_top_limit,
 )
+from src.integrations.cctvai_sql_agent import CctvaiSqlAgent
 from src.integrations.mes_sql_agent import (
     MesSqlAgent,
     MesSqlAgentError,
     MesSqlQueryResult,
+)
+
+CCTVAI_SEMANTIC_MODEL_PATH = (
+    Path(__file__).parents[1] / "config" / "cctvai_semantic_model.json"
 )
 
 
@@ -263,6 +270,51 @@ def test_wms_report_capability_rejects_unverified_semantics(question):
 @pytest.mark.parametrize(
     "question",
     [
+        "Lập báo cáo tổng quan CCTVAI",
+        "Tạo báo cáo camera vi phạm",
+        "CCTVAIレポートを作成してください",
+        "監視カメラのレポートを作成",
+    ],
+)
+def test_cctvai_report_capability_supported(question):
+    capability = report_capability(question)
+
+    assert capability.status == "supported"
+    assert capability.shape == "cctvai_overview"
+    assert capability.domain == "cctvai"
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Xuất báo cáo CCTVAI về thông tin đăng nhập camera",
+        "Lập báo cáo CCTVAI về người phụ trách tuyến A",
+        "Lập báo cáo CCTVAI về thời gian diễn ra của sự kiện đang mở",
+        "Lập báo cáo CCTVAI so sánh tuần này với tuần trước",
+        "Lập báo cáo CCTVAI cho riêng camera CAM-01",
+        "カメラのパスワードのレポートを作成してください",
+    ],
+)
+def test_cctvai_report_rejects_out_of_scope_concepts(question):
+    capability = report_capability(question)
+
+    assert capability.status == "unsupported"
+    assert capability.domain == "cctvai"
+    assert capability.shape == ""
+    assert "CCTVAI Report" in capability.reason
+
+
+def test_cctvai_report_capability_mode_mismatch():
+    capability = report_capability_for_mode("Lập báo cáo tổng quan CCTVAI", "mes")
+
+    assert capability.status == "unsupported"
+    assert capability.shape == "mode_mismatch"
+    assert capability.domain == "cctvai"
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
         "Tạo báo cáo so sánh lỗi tháng 5/2026 và tháng 6/2026",
         "Tạo báo cáo chất lượng riêng cho mã hàng PRODUCT-B",
         "Chỉ tạo báo cáo xu hướng tổng lỗi theo tháng, không cần top Lot",
@@ -467,6 +519,109 @@ def test_wms_report_agent_builds_safe_bilingual_artifacts():
     assert "WMS工程倉庫" in report_ja["title"]
     assert "異なる資材間の合計は計算していません" in report_ja["observations"][1]
     assert "ダウンロード" in summary_ja
+
+
+class _FakeCctvaiDatabaseForReport:
+    """Fake CctvaiDatabase — only fakes I/O; SQL still goes through the real
+    CctvaiSqlAgent.validate_sql() so the report's hand-written SQL is
+    genuinely exercised against the guardrail, not just a stub."""
+
+    def __init__(self, *, available: bool = True, fail_step: str = ""):
+        self.available = available
+        self._fail_step = fail_step
+
+    def execute_ad_hoc(self, sql):
+        if self._fail_step and self._fail_step in sql:
+            raise RuntimeError("replica timeout")
+        if "total_events" in sql:
+            return [
+                {
+                    "total_events": 8378,
+                    "active_cameras": 15,
+                    "orphan_events": 26,
+                    "events_last_7_days": 121,
+                    "latest_event_at": "2026-09-04 10:26:32.122+00",
+                }
+            ]
+        if "COALESCE(vt.severity" in sql:
+            return [
+                {"severity": "alert", "total": 33},
+                {"severity": "normal", "total": 88},
+            ]
+        if "violation_name" in sql:
+            return [
+                {
+                    "camera_name": "Cam <cổng> 1",
+                    "violation_name": "Tay trần & bẩn",
+                    "total": 17,
+                },
+                {"camera_name": "CAM003", "violation_name": "Thiếu khẩu trang", "total": 6},
+            ]
+        raise AssertionError(f"Unexpected report SQL: {sql}")
+
+
+def test_cctvai_report_agent_requires_available_database():
+    unavailable_db = _FakeCctvaiDatabaseForReport(available=False)
+    sql_agent = CctvaiSqlAgent(CCTVAI_SEMANTIC_MODEL_PATH, max_rows=50)
+    assert CctvaiReportAgent(unavailable_db, sql_agent).available is False
+
+    available_db = _FakeCctvaiDatabaseForReport(available=True)
+    assert CctvaiReportAgent(available_db, None).available is False
+    assert CctvaiReportAgent(available_db, sql_agent).available is True
+
+
+def test_cctvai_report_agent_builds_safe_bilingual_artifacts():
+    sql_agent = CctvaiSqlAgent(CCTVAI_SEMANTIC_MODEL_PATH, max_rows=50)
+    agent = CctvaiReportAgent(_FakeCctvaiDatabaseForReport(), sql_agent)
+
+    report_vi, summary_vi = asyncio.run(
+        agent.generate_report("Lập báo cáo tổng quan CCTVAI", language="vi")
+    )
+    report_ja, summary_ja = asyncio.run(
+        agent.generate_report("CCTVAIレポートを作成", language="ja")
+    )
+
+    assert report_vi["report_type"] == "cctvai_report"
+    assert [item["key"] for item in report_vi["kpis"]] == [
+        "total_events",
+        "active_cameras",
+        "events_last_7_days",
+        "orphan_events",
+    ]
+    assert [item["value"] for item in report_vi["kpis"]] == [8378, 15, 121, 26]
+    assert report_vi["charts"] and report_vi["charts"][0]["rows"] == [
+        {"severity": "alert", "total": 33},
+        {"severity": "normal", "total": 88},
+    ]
+    assert report_vi["matrices"]
+    assert "không phải dữ liệu thời gian thực" in report_vi["governance"][0]
+    assert '<html lang="vi">' in report_vi["html_content"]
+    assert "Cam &lt;cổng&gt; 1" in report_vi["html_content"]
+    assert "Tay trần &amp; bẩn" in report_vi["html_content"]
+    assert "8.378" in summary_vi
+
+    assert report_ja["report_type"] == "cctvai_report"
+    assert '<html lang="ja">' in report_ja["html_content"]
+    assert "未検証" in report_ja["governance"][0]
+    assert "ダウンロード" in summary_ja
+
+
+def test_cctvai_report_agent_continues_after_step_failure():
+    sql_agent = CctvaiSqlAgent(CCTVAI_SEMANTIC_MODEL_PATH, max_rows=50)
+    database = _FakeCctvaiDatabaseForReport(fail_step="violation_name")
+    agent = CctvaiReportAgent(database, sql_agent)
+
+    report, _summary = asyncio.run(
+        agent.generate_report("Lập báo cáo tổng quan CCTVAI", language="vi")
+    )
+
+    assert report["kpis"][0]["value"] == 8378
+    assert report["charts"]
+    assert report["matrices"] == []
+    # The step name is disclosed, but never the raw driver error: that string
+    # would carry connection/column detail into a shared HTML document.
+    assert any("camera_violation_matrix_7d" in item for item in report["limitations"])
+    assert not any("replica timeout" in item for item in report["limitations"])
 
 
 def test_report_agent_streams_plan_steps_and_artifact(sql_agent):

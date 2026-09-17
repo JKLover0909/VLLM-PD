@@ -40,6 +40,10 @@ COPY config ./config
 COPY documents ./documents
 COPY scripts ./scripts
 COPY database/schema ./database/schema
+# Only the metrics contract (schemas.py) is imported by the app; collector.py
+# and server.py run in their own venv on the CCTVAI host and are never executed
+# here. Copied so the client and the host service share one source of truth.
+COPY tools/host_metrics ./tools/host_metrics
 COPY litellm_config.yaml ./litellm_config.yaml
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
