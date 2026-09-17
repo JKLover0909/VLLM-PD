@@ -557,20 +557,6 @@ def test_exact_key_feature_requires_all_three_identifiers(wms_database):
     assert result.rows == []
 
 
-def test_japanese_legacy_archive_exact_key_is_deterministic(wms_database):
-    result = wms_database.query_question(
-        "WMSスナップショット 資材コード ITEM-A 資材ロット "
-        "LOT-MATERIAL 工程 PROC-A の記録を確認してください。",
-        language="ja",
-    )
-
-    assert result is not None
-    assert result.intent == "wms_legacy_archive_exact_key"
-    assert "現行在庫との比較" in result.fallback_answer
-    assert result.domain == "LEGACY_ARCHIVE"
-
-
-
 def test_japanese_cross_era_presence_is_suppressed(wms_database):
     result = wms_database.query_question(
         "WMSスナップショット 資材コード ITEM-A 資材ロット LOT-MATERIAL "
@@ -596,6 +582,7 @@ def test_japanese_snapshot_exact_key_is_deterministic(wms_database):
 
     assert result is not None
     assert result.intent == "wms_legacy_archive_exact_key"
+    assert result.domain == "LEGACY_ARCHIVE"
     assert "現行在庫との比較" in result.fallback_answer
     assert "推移や増減の判定ではありません" in result.fallback_answer
 
@@ -832,18 +819,6 @@ def test_snapshot_presence_warns_about_namespace_mismatch(wms_database):
     assert "không được diễn giải" in result.fallback_answer
 
 
-
-def test_snapshot_presence_ja_warns_about_namespace_mismatch(wms_database):
-    result = wms_database.query_question(
-        "WMSスナップショット 資材コード ITEM-A 資材ロット LOT-MATERIAL "
-        "工程 PROC-A は現行に存在しますか？",
-        language="ja",
-    )
-
-    assert result is not None
-    assert result.intent == "wms_cross_era_presence_diagnostic"
-    assert result.status == "SUPPRESSED"
-    assert result.rows[0]["current_exact_lot_presence"] == "NOT_EVALUATED"
 
 
 

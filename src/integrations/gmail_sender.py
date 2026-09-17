@@ -11,6 +11,10 @@ import unicodedata
 from collections import OrderedDict
 from dataclasses import dataclass, replace
 from email.message import EmailMessage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders as email_encoders
 from pathlib import Path
 from typing import Any
 
@@ -187,6 +191,10 @@ def _is_email_context_reference(value: str) -> bool:
         "vua roi",
         "ben tren",
         "this report",
+        # Câu điền sẵn từ nút: "Gửi báo cáo này cho <addr>" — remaining sau khi
+        # tách email ra là "Gửi báo cáo này cho" → normalized "gui bao cao nay cho"
+        "gui bao cao nay",
+        "gui bao cao cho",
         "このレポート",
         "この報告書",
         "この内容",
@@ -212,6 +220,11 @@ def parse_email_send_command(question: str) -> EmailSendCommand | None:
             "cho email",
             "toi email",
             "den email",
+            # Khớp câu điền sẵn từ nút "Gửi qua email": "Gửi báo cáo này cho <addr>"
+            "gui bao cao nay cho",
+            "gui bao cao cho",
+            "gui thong tin nay cho",
+            "gui ket qua nay cho",
         )
     ) or any(
         marker in text
@@ -455,30 +468,91 @@ class GmailSender:
             raise GmailSenderError("Địa chỉ email người nhận không hợp lệ.")
 
         service = self._service()
-        message = EmailMessage()
-        message["To"] = to_email.strip()
-        if self.sender_email:
-            message["From"] = self.sender_email
-        message["Subject"] = subject.strip() or "Meibook - Báo cáo dữ liệu"
-        message.set_content(body, charset="utf-8")
 
+        # Phân loại attachments: HTML report → inline body; file khác → attachment thật.
+        html_items = []
+        binary_items = []
         for item in attachments or []:
-            filename = str(item.get("filename") or "report.html")
-            content = item.get("content")
-            if isinstance(content, str):
-                payload_bytes = content.encode("utf-8")
-            elif isinstance(content, bytes):
-                payload_bytes = content
+            raw_mt = str(item.get("media_type") or "")
+            mt_base = raw_mt.partition(";")[0].strip().lower()
+            if mt_base == "text/html":
+                html_items.append(item)
             else:
-                continue
-            media_type = str(item.get("media_type") or "text/html; charset=utf-8")
-            maintype, _, subtype = media_type.partition(";")[0].partition("/")
-            message.add_attachment(
-                payload_bytes,
-                maintype=maintype or "application",
-                subtype=subtype or "octet-stream",
-                filename=filename,
-            )
+                binary_items.append(item)
+
+        # Xây dựng cấu trúc MIME:
+        # - Không có HTML: plain EmailMessage đơn giản (hoặc multipart/mixed nếu có binary)
+        # - Có HTML: multipart/alternative (text/plain + text/html) để Gmail preview inline,
+        #   bọc ngoài bằng multipart/mixed nếu còn có binary attachment.
+        if html_items:
+            # Lấy HTML đầu tiên (báo cáo); nếu nhiều item gộp lại (hiếm gặp)
+            html_content_bytes: bytes = b""
+            for hi in html_items:
+                c = hi.get("content")
+                html_content_bytes = (
+                    c.encode("utf-8") if isinstance(c, str)
+                    else c if isinstance(c, bytes)
+                    else b""
+                )
+                break  # chỉ lấy item đầu
+
+            alt_part = MIMEMultipart("alternative")
+            alt_part.attach(MIMEText(body, "plain", "utf-8"))
+            alt_part.attach(MIMEText(html_content_bytes.decode("utf-8", errors="replace"), "html", "utf-8"))
+
+            if binary_items:
+                # multipart/mixed bọc alternative + binary attachments
+                outer = MIMEMultipart("mixed")
+                outer["To"] = to_email.strip()
+                if self.sender_email:
+                    outer["From"] = self.sender_email
+                outer["Subject"] = subject.strip() or "Meibook - Báo cáo dữ liệu"
+                outer.attach(alt_part)
+                for item in binary_items:
+                    fname = str(item.get("filename") or "attachment.bin")
+                    c = item.get("content")
+                    payload_bytes = (
+                        c.encode("utf-8") if isinstance(c, str)
+                        else c if isinstance(c, bytes)
+                        else b""
+                    )
+                    part = MIMEBase("application", "octet-stream")
+                    part.set_payload(payload_bytes)
+                    email_encoders.encode_base64(part)
+                    part.add_header("Content-Disposition", "attachment", filename=fname)
+                    outer.attach(part)
+                message = outer
+            else:
+                # Chỉ có HTML: multipart/alternative là root message
+                alt_part["To"] = to_email.strip()
+                if self.sender_email:
+                    alt_part["From"] = self.sender_email
+                alt_part["Subject"] = subject.strip() or "Meibook - Báo cáo dữ liệu"
+                message = alt_part
+        else:
+            # Không có HTML report: dùng EmailMessage thuần (backward-compatible)
+            message = EmailMessage()
+            message["To"] = to_email.strip()
+            if self.sender_email:
+                message["From"] = self.sender_email
+            message["Subject"] = subject.strip() or "Meibook - Báo cáo dữ liệu"
+            message.set_content(body, charset="utf-8")
+            for item in binary_items:
+                fname = str(item.get("filename") or "attachment.bin")
+                c = item.get("content")
+                payload_bytes = (
+                    c.encode("utf-8") if isinstance(c, str)
+                    else c if isinstance(c, bytes)
+                    else b""
+                )
+                raw_mt = str(item.get("media_type") or "application/octet-stream")
+                maintype, _, subtype = raw_mt.partition(";")[0].partition("/")
+                message.add_attachment(
+                    payload_bytes,
+                    maintype=maintype or "application",
+                    subtype=subtype or "octet-stream",
+                    filename=fname,
+                )
 
         raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode("ascii")
 

@@ -9,7 +9,12 @@ NGROK_MODEL = (
     "openai//home/jkl0909/models/qwen2.5-coder-14b/"
     "Qwen2.5-Coder-14B-Instruct-Q5_K_M.gguf"
 )
-AZURE_MODEL = "openai/grok-4-20-reasoning"
+# Azure role fallbacks were switched 2026-09-04 to the gpt-5.4-mini deployment
+# (same Azure AI Foundry resource, OPENAI_API_KEY account has no credits left).
+# The openai-*-fallback model_list entries stay defined for a future re-add
+# but were removed from router_settings.fallbacks the same day, so they no
+# longer appear in ROLE_FALLBACKS below.
+AZURE_MODEL = "openai/gpt-5.4-mini"
 OPENAI_MODEL = "openai/gpt-5.4-mini"
 CLOUD_MODELS = {
     "azure-chat-fallback",
@@ -23,27 +28,22 @@ ROLE_FALLBACKS = {
     "auto-model": [
         "local-qwen-chat-ngrok",
         "azure-chat-fallback",
-        "openai-chat-fallback",
     ],
     "local-qwen-chat": [
         "local-qwen-chat-ngrok",
         "azure-chat-fallback",
-        "openai-chat-fallback",
     ],
     "local-qwen-small": [
         "local-qwen-chat",
         "azure-small-fallback",
-        "openai-small-fallback",
     ],
     "local-qwen-coder": [
         "local-qwen-coder-ngrok",
         "azure-coder-fallback",
-        "openai-coder-fallback",
     ],
     "coding-model": [
         "local-qwen-coder-ngrok",
         "azure-coder-fallback",
-        "openai-coder-fallback",
     ],
 }
 
@@ -119,6 +119,28 @@ def test_fallbacks_preserve_role_and_prefer_azure_before_openai():
 
     assert "local-qwen-chat" not in fallbacks["local-qwen-coder"]
     assert "local-qwen-chat" not in fallbacks["coding-model"]
+
+
+def test_hardware_summary_alias_is_local_only_with_no_cloud_path():
+    """CCTVAI host telemetry must never reach a cloud provider.
+
+    The alias exists precisely so it can be left out of every fallback chain;
+    reusing local-qwen-* would silently inherit the Azure fallback.
+    """
+    config = _load_config()
+    models = _models_by_name(config)
+    fallbacks = _fallbacks_by_name(config)
+
+    params = models["local-hardware-summary"]["litellm_params"]
+    assert params["model"].startswith("ollama_chat/")
+    assert params["api_base"] == "os.environ/QWEN_CHAT_API_BASE"
+    assert "api_key" not in params
+
+    # Not a fallback source: an outage errors out instead of going cloud.
+    assert "local-hardware-summary" not in fallbacks
+    # Not a fallback target either, so no other alias can route into it.
+    for targets in fallbacks.values():
+        assert "local-hardware-summary" not in targets
 
 
 def test_fallback_graph_has_no_cycles():
