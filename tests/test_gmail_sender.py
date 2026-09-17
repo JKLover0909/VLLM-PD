@@ -31,14 +31,19 @@ def test_parse_non_email_question_returns_none():
     assert parse_email_send_command("Mã hàng 3736-0008 có tổng bao nhiêu lỗi?") is None
 
 
-def test_parse_contextual_email_send_command():
-    command = parse_email_send_command(
-        "Gửi thông tin này cho email test@example.com"
-    )
+@pytest.mark.parametrize(
+    ("question", "expected_data_question"),
+    [
+        ("Gửi thông tin này cho email test@example.com", "thông tin này"),
+        ("Gửi báo cáo này cho email test@example.com", "báo cáo này"),
+    ],
+)
+def test_parse_contextual_email_send_command(question, expected_data_question):
+    command = parse_email_send_command(question)
 
     assert command is not None
     assert command.to_email == "test@example.com"
-    assert command.data_question == "thông tin này"
+    assert command.data_question == expected_data_question
 
 
 def test_parse_explicit_email_body_does_not_become_data_question():
@@ -89,15 +94,6 @@ def test_disabled_sender_is_not_available(tmp_path):
 
     assert sender.available is False
 
-
-def test_parse_report_email_send_command():
-    command = parse_email_send_command(
-        "Gửi báo cáo này cho email test@example.com"
-    )
-
-    assert command is not None
-    assert command.to_email == "test@example.com"
-    assert command.data_question == "báo cáo này"
 
 
 @pytest.mark.parametrize(

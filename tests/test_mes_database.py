@@ -418,16 +418,13 @@ def test_error_name_questions_route_by_vietnamese_name(mes_database):
     assert lots.rows[0]["lot_id"] == "000002-01-000"
 
 
-def test_lowest_lot_and_typo_question_are_deterministic(mes_database):
-    lowest = mes_database.query_question("Lot nào có ít lỗi nhất trong hệ thống?")
+def test_typo_question_routes_to_highest_error_lot(mes_database):
+    # "lowest" path is covered by test_lowest_error_lot_returns_all_ties
     typo = mes_database.query_question(
         "lot nào lỗi nhìu nhất",
         allow_highest_lot=True,
     )
 
-    assert lowest is not None
-    assert lowest.intent == "lowest_error_lot"
-    assert lowest.rows[0]["lot_id"] == "000001-01-000"
     assert typo is not None
     assert typo.intent == "highest_error_lot"
     assert typo.rows[0]["lot_id"] == "000002-01-000"

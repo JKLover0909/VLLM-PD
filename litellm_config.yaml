@@ -116,9 +116,14 @@ model_list:
   # as OpenAI-compatible, so preserve its verified provider/model form. Each
   # role has a separate alias even when it initially shares the same Azure
   # deployment; aliases can later point to different deployments independently.
+  # Switched 2026-09-04 from the grok-4-20-reasoning deployment to gpt-5.4-mini
+  # (same Azure AI Foundry resource/api_base/api_key, different deployment
+  # name) per explicit user request, mirroring the same change verified on Dev.
+  # The legacy grok-model route below is intentionally left on
+  # grok-4-20-reasoning (out of scope for this change).
   - model_name: azure-chat-fallback
     litellm_params:
-      model: openai/grok-4-20-reasoning
+      model: openai/gpt-5.4-mini
       api_key: os.environ/AZURE_OPENAI_API_KEY
       api_base: os.environ/AZURE_OPENAI_ENDPOINT
       timeout: 120
@@ -126,7 +131,7 @@ model_list:
 
   - model_name: azure-small-fallback
     litellm_params:
-      model: openai/grok-4-20-reasoning
+      model: openai/gpt-5.4-mini
       api_key: os.environ/AZURE_OPENAI_API_KEY
       api_base: os.environ/AZURE_OPENAI_ENDPOINT
       timeout: 60
@@ -134,7 +139,7 @@ model_list:
 
   - model_name: azure-coder-fallback
     litellm_params:
-      model: openai/grok-4-20-reasoning
+      model: openai/gpt-5.4-mini
       api_key: os.environ/AZURE_OPENAI_API_KEY
       api_base: os.environ/AZURE_OPENAI_ENDPOINT
       timeout: 120
@@ -188,13 +193,16 @@ model_list:
 
 router_settings:
   fallbacks:
-    # Keep the local model for each role primary. Azure is the first cloud
-    # provider and OpenAI is the independent final fallback for that same role.
-    - auto-model: ["local-qwen-chat-ngrok", "azure-chat-fallback", "openai-chat-fallback"]
-    - local-qwen-chat: ["local-qwen-chat-ngrok", "azure-chat-fallback", "openai-chat-fallback"]
-    - local-qwen-small: ["local-qwen-chat", "azure-small-fallback", "openai-small-fallback"]
-    - local-qwen-coder: ["local-qwen-coder-ngrok", "azure-coder-fallback", "openai-coder-fallback"]
-    - coding-model: ["local-qwen-coder-ngrok", "azure-coder-fallback", "openai-coder-fallback"]
+    # Keep the local model for each role primary. Azure is the last cloud
+    # provider in the chain. OpenAI fallback removed 2026-09-04: the shared
+    # OpenAI account (OPENAI_API_KEY) has no credits left, so
+    # openai-*-fallback only added dead retries/latency before final 500.
+    # Re-add once the account is topped up.
+    - auto-model: ["local-qwen-chat-ngrok", "azure-chat-fallback"]
+    - local-qwen-chat: ["local-qwen-chat-ngrok", "azure-chat-fallback"]
+    - local-qwen-small: ["local-qwen-chat", "azure-small-fallback"]
+    - local-qwen-coder: ["local-qwen-coder-ngrok", "azure-coder-fallback"]
+    - coding-model: ["local-qwen-coder-ngrok", "azure-coder-fallback"]
   num_retries: 1
   timeout: 120
   routing_strategy: simple-shuffle

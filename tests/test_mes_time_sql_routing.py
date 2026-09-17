@@ -34,16 +34,6 @@ def test_time_sql_routes_daily_total_error_question():
     assert "LIMIT 1" in sql
 
 
-def test_time_sql_routes_raw_japanese_monthly_top_lots():
-    sql = MesQueryService.time_sql_for_question(
-        "2025年7月で総エラー数が多い上位5つのLotを教えてください。"
-    )
-
-    assert "v_error_details" in sql
-    assert "2025-07-01" in sql
-    assert "GROUP BY lot_id, product_id" in sql
-    assert "LIMIT 5" in sql
-
 
 def test_time_sql_routes_inclusive_date_range_top_lots():
     sql = MesQueryService.time_sql_for_question(

@@ -79,10 +79,9 @@ def sql_agent(tmp_path: Path) -> MesSqlAgent:
 
 
 def test_report_intent_requires_report_and_mes_context():
+    # Positive cases — negative cases covered by test_report_intent_multilingual_and_negative_cases
     assert is_mes_report_request("Lập báo cáo lỗi sản xuất tháng 6/2026") is True
     assert is_mes_report_request("Tạo báo cáo top 5 Lot có lỗi cao nhất") is True
-    assert is_mes_report_request("Mã Lot nào có số lỗi nhiều nhất?") is False
-    assert is_mes_report_request("Lập báo cáo nhân sự") is False
     assert is_report_request("Lập báo cáo nhân sự") is True
 
 
@@ -270,9 +269,9 @@ def test_wms_report_capability_rejects_unverified_semantics(question):
         "Tạo báo cáo các Lot có trên 100 lỗi; với mỗi Lot lấy top 2 lỗi",
         "Lập báo cáo sản lượng sản xuất theo ca",
         "Lập báo cáo lỗi ngày 2026-02-30",
+        # Invalid-month cases: one representative to verify build_report_plan→report_capability
+        # integration; full invalid-month coverage in test_report_capability_rejects_invalid_explicit_months
         "Lập báo cáo lỗi tháng 13/2026",
-        "Lập báo cáo lỗi 2026-13",
-        "2026年13月の生産エラーレポートを作成してください。",
     ],
 )
 def test_report_plan_rejects_unsupported_requests(question):

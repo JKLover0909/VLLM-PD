@@ -9,7 +9,12 @@ NGROK_MODEL = (
     "openai//home/jkl0909/models/qwen2.5-coder-14b/"
     "Qwen2.5-Coder-14B-Instruct-Q5_K_M.gguf"
 )
-AZURE_MODEL = "openai/grok-4-20-reasoning"
+# Azure role fallbacks were switched 2026-09-04 to the gpt-5.4-mini deployment
+# (same Azure AI Foundry resource, OPENAI_API_KEY account has no credits left).
+# The openai-*-fallback model_list entries stay defined for a future re-add
+# but were removed from router_settings.fallbacks the same day, so they no
+# longer appear in ROLE_FALLBACKS below.
+AZURE_MODEL = "openai/gpt-5.4-mini"
 OPENAI_MODEL = "openai/gpt-5.4-mini"
 CLOUD_MODELS = {
     "azure-chat-fallback",
@@ -23,27 +28,22 @@ ROLE_FALLBACKS = {
     "auto-model": [
         "local-qwen-chat-ngrok",
         "azure-chat-fallback",
-        "openai-chat-fallback",
     ],
     "local-qwen-chat": [
         "local-qwen-chat-ngrok",
         "azure-chat-fallback",
-        "openai-chat-fallback",
     ],
     "local-qwen-small": [
         "local-qwen-chat",
         "azure-small-fallback",
-        "openai-small-fallback",
     ],
     "local-qwen-coder": [
         "local-qwen-coder-ngrok",
         "azure-coder-fallback",
-        "openai-coder-fallback",
     ],
     "coding-model": [
         "local-qwen-coder-ngrok",
         "azure-coder-fallback",
-        "openai-coder-fallback",
     ],
 }
 

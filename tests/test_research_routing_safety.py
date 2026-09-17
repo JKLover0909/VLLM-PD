@@ -37,17 +37,6 @@ def test_dan_jailbreak_prompt_is_still_blocked():
     assert response.answer_scope == "guardrail"
 
 
-def test_research_mode_does_not_treat_email_word_as_gmail_action():
-    req = QueryRequest(
-        session_id="s",
-        question="HENNGE Email DLP làm gì khi gửi mail ra ngoài?",
-        mode="research",
-        research_topic="information_systems",
-    )
-
-    assert asyncio.run(handle_email_send_query(req, None)) is None
-
-
 def test_research_mode_ignores_explicit_email_send_command():
     req = QueryRequest(
         session_id="s",

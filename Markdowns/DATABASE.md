@@ -1,7 +1,8 @@
 # Thiết kế cơ sở dữ liệu Meibook
 
 Tài liệu này mô tả các lớp dữ liệu hiện tại của Meibook: Qdrant cho tài liệu,
-SQLite cho nhân sự, SQLite cho MES snapshot và các thư mục nguồn phục vụ import.
+SQLite cho nhân sự, SQLite cho MES snapshot, PostgreSQL replica cho CCTVAI và
+các thư mục nguồn phục vụ import.
 
 ## 1. Tổng quan
 
@@ -15,9 +16,13 @@ Meibook không dùng một database duy nhất. Hệ thống chia dữ liệu th
 | Danh bạ nhân sự | SQLite | `data/employee_directory.sqlite` | Đăng nhập, tra nhân sự/phòng ban |
 | MES snapshot | SQLite | `data/mes.sqlite` | Hỏi đáp MES deterministic/SQL |
 | MES raw source | SQL dump | `database/raw_mkac/*.sql` | Nguồn tạo `data/mes.sqlite` |
+| CCTVAI replica | PostgreSQL | schema `cctvai` (host ngoài) | Hỏi đáp/báo cáo camera AI — xem mục 9 |
 | Gmail OAuth | JSON | `data/gmail_credentials.json`, `data/gmail_token.json` | Gửi mail qua Gmail API |
 
 Thư mục `data/` và các dump raw nhạy cảm không nên commit.
+
+CCTVAI là lớp dữ liệu duy nhất **không nằm trong repo**: nó là replica chỉ đọc
+của một PostgreSQL bên ngoài, hiện chỉ bật trên môi trường Dev.
 
 ## 2. Qdrant tài liệu MKAC
 
@@ -356,7 +361,192 @@ erDiagram
 Các view này là lớp công khai cho SQL Agent. Model không được truy cập bảng raw
 trực tiếp.
 
-## 9. Chất lượng dữ liệu MES hiện tại
+## 9. PostgreSQL replica CCTVAI
+
+Lớp dữ liệu cho `mode=cctvai` (hỏi đáp camera giám sát AI và báo cáo tổng quan).
+Đây là **replica chỉ đọc** đồng bộ bất đồng bộ từ database CCTVAI thật, **không**
+phải dữ liệu realtime.
+
+| Thuộc tính | Giá trị |
+|---|---|
+| Công nghệ | PostgreSQL (host ngoài, không nằm trong Compose) |
+| Schema | `cctvai` |
+| Role | `cctvai_llm_ro` — chỉ `SELECT`, quyền cấp ở **mức cột** |
+| Môi trường | Chỉ bật trên Dev (`docker-compose.dev.yml`, port `8002`) |
+| Semantic model | `config/cctvai_semantic_model.json` |
+| Query service | `src/integrations/cctvai_database.py` |
+| SQL Agent | `src/integrations/cctvai_sql_agent.py` |
+| Report Agent | `CctvaiReportAgent` trong `src/actions/report_agent.py` |
+| Phiên bản migration | `19` |
+| Hợp đồng dữ liệu | `cctvai-replica-v1` / `cctvai-report-v1` |
+
+### 9.1 Sơ đồ quan hệ thực thể (ERD)
+
+```mermaid
+erDiagram
+    cctvai_lines           ||--o{ cctvai_cameras                   : "line_ref_id"
+    cctvai_cameras         ||--o{ cctvai_camera_violation_mappings : "camera_ref_id"
+    cctvai_violation_types ||--o{ cctvai_camera_violation_mappings : "violation_ref_id"
+    cctvai_lines           ||--o{ cctvai_line_responsibles         : "line_ref_id"
+    cctvai_cameras         |o..o{ event_snapshots                  : "MỀM: camera_id"
+    cctvai_violation_types |o..o{ event_snapshots                  : "MỀM: violation_code"
+
+    cctvai_lines {
+        bigint  id            PK "tuyến / khu vực đặt camera"
+        varchar line_id       UK
+        varchar line_name
+        boolean is_active        "đang bật vận hành"
+        boolean del_flag         "SOFT-DELETE — de-dup"
+    }
+    cctvai_cameras {
+        bigint  id            PK "được line và mapping tham chiếu"
+        varchar camera_id     UK "unique CHỈ KHI lọc del_flag"
+        varchar camera_name      "chữ HOA trong master"
+        bigint  line_ref_id   FK
+        varchar protocol         "WEBRTC"
+        boolean is_active        "đang bật vận hành"
+        boolean del_flag         "SOFT-DELETE — de-dup"
+    }
+    cctvai_violation_types {
+        bigint  id             PK "danh mục loại vi phạm AI"
+        varchar violation_code UK "unique CHỈ KHI lọc del_flag"
+        varchar violation_name
+        varchar severity          "alert | normal"
+        boolean del_flag          "SOFT-DELETE — de-dup"
+    }
+    cctvai_camera_violation_mappings {
+        bigint camera_ref_id    FK "cặp (camera, loại vi phạm) được phép"
+        bigint violation_ref_id FK
+    }
+    cctvai_line_responsibles {
+        bigint line_ref_id FK "người phụ trách tuyến"
+        bigint user_id        "CHỈ số ID — KHÔNG resolve ra tên/email"
+    }
+    event_snapshots {
+        bigint  id              PK "BẢNG TRUNG TÂM — count(e.id) để đếm"
+        varchar camera_id       FK "tham chiếu MỀM, lưu chữ thường"
+        varchar violation_type  FK "tham chiếu MỀM, lưu chữ thường"
+        bigint  detected_time      "epoch MILLISECONDS"
+        bigint  end_time           "epoch ms — NULL khi đang diễn ra"
+        real    confidence_rate    "0-1, nullable"
+        varchar record_status      "recording | recorded"
+        text    thumbnail_path
+        text    video_path
+    }
+```
+
+**Chú thích ký hiệu đường nối:**
+
+| Ký hiệu | Ý nghĩa |
+|---|---|
+| `\|\|--o{` nét liền | Khoá ngoại **số** thật, ràng buộc chặt |
+| `\|o..o{` nét đứt | **Tham chiếu mềm** — khớp bằng `LOWER(text)`, **không có FK**, có thể không khớp |
+
+ERD trên lược bớt các cột phụ trợ cho dễ đọc. Đầy đủ còn có: `create_date` /
+`edit_date` ở cả 6 bảng, `created_at` / `updated_at` ở `event_snapshots`, cột
+`description` ở 3 bảng master, `camera_name_translations` (`jsonb`) ở
+`cctvai_cameras` và `thumbnail_metadata` (`jsonb`) ở `event_snapshots`.
+
+### 9.2 Số liệu đã đo trực tiếp trên replica
+
+Đo lúc `2026-09-07`, sự kiện mới nhất `2026-09-06 19:21`:
+
+| Bảng | Tổng dòng | Sau khi lọc `NOT del_flag` | Ghi chú |
+|---|---:|---:|---|
+| `event_snapshots` | `8.451` | — | Không có `del_flag` |
+| `cctvai_cameras` | `30` | `15` | 15 dòng là bản đã xoá mềm |
+| `cctvai_violation_types` | `17` | `15` | `10` alert + `5` normal |
+| `cctvai_lines` | `3` | `2` | `DES001` (15 camera) + `Line test` (0 camera) |
+| `cctvai_camera_violation_mappings` | `239` | — | Không có `del_flag` |
+| `cctvai_line_responsibles` | `3` | — | Không có `del_flag` |
+
+Chỉ số dữ liệu sự kiện:
+
+| Chỉ số | Giá trị |
+|---|---:|
+| Khoảng thời gian dữ liệu | `2024-07-23` → `2026-09-06` |
+| Sự kiện 7 ngày qua | `178` |
+| Sự kiện đang diễn ra (`end_time IS NULL`) | `166` |
+| Sự kiện thiếu `confidence_rate` | `0` |
+| Độ tin cậy trung bình | `0,9232` |
+| Trạng thái ghi hình | `recorded 8.287` / `recording 164` |
+| Sự kiện mồ côi (camera không còn trong master) | `26` (thuộc `4` mã camera) |
+| Sự kiện mồ côi (loại vi phạm không khớp danh mục) | `0` |
+
+### 9.3 Ba đặc tính schema bắt buộc phải tôn trọng
+
+Ba điểm dưới đây là nguyên nhân gốc của mọi ràng buộc trong `cctvai_sql_agent.py`.
+Cả ba đều **không báo lỗi** khi làm sai — query vẫn chạy thành công với số liệu sai.
+
+**1. `del_flag` là cơ chế de-dup DUY NHẤT, không phải filter tuỳ chọn.**
+
+`camera_id` và `violation_code` **không** unique trên toàn bảng. Quên `del_flag`
+trong `ON` thì JOIN nhân bản dòng:
+
+```text
+Đúng   (có del_flag trong ON):   8.451 dòng
+Sai    (thiếu del_flag):        12.093 dòng   →  phồng +43%
+```
+
+Vì vậy `del_flag` phải nằm **trong mệnh đề `ON`**, không phải ở `WHERE` — đặt ở
+`WHERE` sẽ biến `LEFT JOIN` thành `INNER JOIN` và âm thầm làm mất 26 sự kiện mồ côi.
+
+**2. `detected_time` / `end_time` là epoch MILLISECONDS, không phải timestamp.**
+
+```sql
+-- ĐÚNG
+WHERE to_timestamp(e.detected_time / 1000.0) >= now() - interval '7 days'
+-- SAI: lệch hàng nghìn năm, không báo lỗi
+WHERE to_timestamp(e.detected_time)          >= now() - interval '7 days'
+```
+
+**3. Quyền cấp ở mức CỘT, nên `SELECT *` bị Postgres từ chối.**
+
+8 cột đăng nhập thiết bị vật lý của `cctvai_cameras` (`username`, `password`,
+`endpoint`, `main_cam_url`, `sub_cam_url`, `speaker_url`, `speaker_topic`,
+`light_topic`) **cố ý loại khỏi quyền đọc** — chúng không xuất hiện trong ERD trên
+vì role không nhìn thấy. Mọi câu SQL phải liệt kê cột tường minh, và phải viết đủ
+prefix `cctvai.` vì `search_path` của role không chứa schema này.
+
+### 9.4 Bảng ngoài phạm vi báo cáo
+
+| Bảng | Lý do loại trừ |
+|---|---|
+| `cctvai_notification_outbox` | Hàng đợi gửi thông báo nội bộ, không phải dữ liệu nghiệp vụ |
+| `cctvai_speaker_outbox` | Hàng đợi phát loa/đèn cảnh báo |
+| `schema_migrations` | Bookkeeping migration |
+
+### 9.5 Giới hạn nghiệp vụ đã cố định
+
+| Giới hạn | Hệ quả |
+|---|---|
+| Replica bất đồng bộ, độ trễ **không đo được** từ phía client | Mọi câu trả lời phải nói rõ không phải realtime (`CCTVAI_REPLICA_LAG_UNVERIFIED`) |
+| Không có schema identity | `cctvai_line_responsibles.user_id` không resolve ra tên/email — từ chối dứt khoát, không suy diễn |
+| `166` sự kiện `end_time IS NULL` | Không tính được thời lượng cho sự kiện đang diễn ra |
+| `is_active` ≠ `del_flag` | `del_flag` = đã xoá khỏi hệ thống; `is_active` = đang bật/tắt vận hành |
+| Thông tin đăng nhập camera bị chặn ở mức quyền | Không truy vấn, không nhắc tên cột, không suy đoán giá trị |
+
+### 9.6 Kiến trúc truy vấn 3 lớp
+
+```mermaid
+flowchart LR
+    Q["Câu hỏi<br/>người dùng"] --> D{"Khớp 1 trong<br/>7 intent tất định?"}
+    D -->|"Có"| T["SQL tham số hoá<br/>cố định sẵn"]
+    D -->|"Không"| A{"SQL Agent<br/>đang bật?"}
+    A -->|"Không"| R["Từ chối<br/>nêu rõ phạm vi"]
+    A -->|"Có"| P["LLM sinh JSON plan<br/>local-qwen-coder"]
+    P --> V{"validate_sql<br/>qua sqlglot"}
+    V -->|"Từ chối"| RT["Thử lại có giới hạn<br/>rồi từ chối"]
+    V -->|"Chấp nhận"| E["execute_ad_hoc<br/>read-only + timeout"]
+    T --> OK["Trả lời"]
+    E --> U["Trả lời + nhãn<br/>CHƯA KIỂM CHỨNG"]
+```
+
+Lớp báo cáo (`CctvaiReportAgent`) đi qua **đúng** `validate_sql` này với các câu
+SQL cố định, và **không dùng LLM** ở bất kỳ bước nào — nhất quán với báo cáo
+HR/MES/WMS.
+
+## 10. Chất lượng dữ liệu MES hiện tại
 
 Theo `/health` gần nhất:
 
@@ -380,7 +570,7 @@ Truy vấn trực tiếp `data/mes.sqlite` cho thấy tổng bảng raw:
 | `error_events` | `654` |
 | `error_catalog` | `969` |
 
-## 10. Loại dữ liệu test
+## 11. Loại dữ liệu test
 
 Hệ thống loại dữ liệu test khỏi câu trả lời MES.
 
@@ -396,7 +586,7 @@ Ví dụ số liệu hiện tại:
 | Lot | `2592` | `1325` |
 | Error events | `654` | `281` |
 
-## 11. Top Lot hiện tại sau khi loại test
+## 12. Top Lot hiện tại sau khi loại test
 
 Truy vấn kiểm tra gần nhất:
 
@@ -411,7 +601,7 @@ Truy vấn kiểm tra gần nhất:
 Các câu hỏi hoặc test cũ nhắc `000346-01-000`, `000432-01-000`, `3736-0008`
 có thể đã lệch với database mới.
 
-## 12. MesDatabase query service
+## 13. MesDatabase query service
 
 `src/integrations/mes_database.py` mở SQLite read-only:
 
@@ -438,7 +628,7 @@ Intent deterministic chính:
 - tổng hợp theo ngày/tháng qua lớp time-SQL;
 - câu mơ hồ như “Có bao nhiêu lot?” sẽ hỏi lại phạm vi.
 
-## 13. SQL Agent MES
+## 14. SQL Agent MES
 
 SQL Agent nằm ở:
 
@@ -470,7 +660,7 @@ SQL Agent dùng `local-qwen-coder` theo biến:
 MES_SQL_AGENT_MODEL=local-qwen-coder
 ```
 
-## 14. Dữ liệu cho model
+## 15. Dữ liệu cho model
 
 Model không được “nhìn thẳng” vào SQLite. Backend truy vấn trước, sau đó chỉ đưa
 JSON kết quả đã kiểm chứng vào prompt.
@@ -491,7 +681,7 @@ Các khái niệm cần giữ rõ:
 Không được suy đoán tên lỗi nếu mapping rỗng. Câu trả lời phải nói rõ “lỗi chưa
 rõ tên” hoặc “chưa mapping tên lỗi”.
 
-## 15. Cache dữ liệu
+## 16. Cache dữ liệu
 
 Cache câu hỏi nằm ở API layer:
 
@@ -502,7 +692,7 @@ Cache câu hỏi nằm ở API layer:
 Cache key có gắn mode, ngôn ngữ, model, employee và metadata snapshot. Các câu
 phụ thuộc `conversation_context` không cache để tránh trả nhầm lượt trước.
 
-## 16. Backup và không commit
+## 17. Backup và không commit
 
 Nên backup:
 
@@ -530,7 +720,7 @@ gmail_credentials.json
 client_secret_*.json
 ```
 
-## 17. Kiểm tra nhanh
+## 18. Kiểm tra nhanh
 
 Kiểm tra health database:
 

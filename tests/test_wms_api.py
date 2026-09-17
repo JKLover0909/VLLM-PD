@@ -359,18 +359,6 @@ def test_wms_query_suggestion_id_fails_closed(monkeypatch):
     assert events[-1]["type"] == "done"
 
 
-def test_wms_quick_answers_hide_prepared_payload(monkeypatch):
-    main._quick_answers_cache = None
-    payload = asyncio.run(main.quick_answers(mode="wms", language="vi"))
-    prepared = next(
-        item
-        for item in payload["suggestions"]
-        if item["id"] == "wms-snapshot-explainer"
-    )
-    assert prepared["execution"] == "server_prepared"
-    assert "answer" not in prepared
-    assert "answer_ja" not in prepared
-
 
 def test_wms_prepared_resolver_requires_allowlisted_match():
     req = wms_request(

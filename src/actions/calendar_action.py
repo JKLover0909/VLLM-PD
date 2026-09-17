@@ -138,28 +138,6 @@ class CalendarActionService:
         return re.sub(r"[^a-z0-9]+", " ", normalized).strip()
 
     @classmethod
-    def is_create_request(cls, question: str) -> bool:
-        text = cls._normalize(question)
-        has_create = any(
-            marker in text
-            for marker in (
-                "tao lich",
-                "tao su kien",
-                "dat lich",
-                "dat phong",
-                "them su kien",
-                "schedule event",
-                "create event",
-                "book room",
-            )
-        ) or any(marker in (question or "") for marker in ("予定を作成", "会議室を予約"))
-        has_calendar_context = any(
-            marker in text
-            for marker in ("lich", "su kien", "phong", "hop", "event", "room")
-        )
-        return has_create and has_calendar_context
-
-    @classmethod
     def is_confirm_request(cls, question: str) -> bool:
         text = cls._normalize(question)
         return text in {
@@ -187,7 +165,7 @@ class CalendarActionService:
     def is_room_availability_request(cls, question: str) -> bool:
         text = cls._normalize(question)
         has_room = bool(
-            re.search(r"\b(phong hop|phong|meeting room|room)\s*(?:so\s*)?[13]\b", text)
+            re.search(r"\b(phong hop|phong|meeting room|room)\b", text)
         )
         has_check = any(
             marker in text
@@ -195,15 +173,48 @@ class CalendarActionService:
                 "kiem tra",
                 "co trong",
                 "con trong",
+                "trong khong",
                 "ranh",
                 "ban",
                 "availability",
                 "available",
                 "free",
                 "busy",
+                "phong nao trong",
+                "con phong nao",
+                "con phong",
+                "phong nao",
             )
         )
         return has_room and has_check
+
+    @classmethod
+    def is_create_request(cls, question: str) -> bool:
+        if (
+            cls.is_confirm_request(question)
+            or cls.is_cancel_request(question)
+            or cls.is_room_availability_request(question)
+        ):
+            return False
+        text = cls._normalize(question)
+        has_create = any(
+            marker in text
+            for marker in (
+                "tao lich",
+                "tao su kien",
+                "dat lich",
+                "dat phong",
+                "them su kien",
+                "schedule event",
+                "create event",
+                "book room",
+            )
+        ) or any(marker in (question or "") for marker in ("予定を作成", "会議室を予約"))
+        has_calendar_context = any(
+            marker in text
+            for marker in ("lich", "su kien", "phong", "hop", "event", "room")
+        )
+        return has_create and has_calendar_context
 
     def is_action_request(self, question: str) -> bool:
         return (
