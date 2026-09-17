@@ -18,7 +18,6 @@ import {
   ChevronDown,
   Copy,
   Database,
-  Download,
   FileCode,
   FileImage,
   FileSpreadsheet,
@@ -49,6 +48,8 @@ import {
   Trash2,
   UploadCloud,
   X,
+  Cctv,
+  ExternalLink,
 } from "lucide-react";
 import { EmployeeLogin } from "./components/EmployeeLogin";
 import { SourcePreviewDialog } from "./components/SourcePreviewDialog";
@@ -56,10 +57,13 @@ import { ResearchSidebar } from "./components/ResearchSidebar";
 import { MessageList } from "./components/MessageList";
 import { ChatInput, pushStoredPromptHistory } from "./components/ChatInput";
 import { quickAnswerRequestOptions } from "./quick-answer-request";
+import { getSuggestions as resolveSuggestions } from "./suggestions";
 import {
   getModeTabScrollLeft,
   shouldClearEmployeeAuth,
   visibleModeKeys,
+  isCctvaiAvailable,
+  cctvaiHealthBannerVisibility,
 } from "./mode-tabs";
 import "./styles.css";
 
@@ -219,23 +223,24 @@ function ReportArtifactCard({ artifact, language, onEmail, onRevealStage, animat
   if (!artifact) return null;
   const isWms = artifact.report_type === "wms_executive_report";
   const isHr = artifact.report_type === "hr_executive_report";
+  const isCctvai = artifact.report_type === "cctvai_report";
   const labels = language === "ja"
     ? {
-        badge: isWms ? "WMSレポート" : isHr ? "HRレポート" : "MESレポート",
+        badge: isWms ? "WMSレポート" : isHr ? "HRレポート" : isCctvai ? "CCTVAIレポート" : "MESレポート",
         governance: "ガバナンス上の注意",
         observations: "数値からの所見",
         limitations: "データの制限",
         details: "データ表を表示",
-        download: "HTMLをダウンロード",
+        download: "レポートを開く",
         emailAction: "メールで共有",
       }
     : {
-        badge: isWms ? "Báo cáo WMS" : isHr ? "Báo cáo HR" : "Báo cáo MES",
+        badge: isWms ? "Báo cáo WMS" : isHr ? "Báo cáo HR" : isCctvai ? "Báo cáo CCTVAI" : "Báo cáo MES",
         governance: "Quy tắc Governance & Data Contract",
         observations: "Nhận xét từ số liệu",
         limitations: "Giới hạn dữ liệu",
         details: "Xem các bảng số liệu",
-        download: "Tải báo cáo HTML",
+        download: "Mở báo cáo",
         emailAction: "Gửi qua email",
       };
   const charts = Array.isArray(artifact.charts)
@@ -406,19 +411,15 @@ function ReportArtifactCard({ artifact, language, onEmail, onRevealStage, animat
       {revealed("actions") && (
       <div className="report-actions">
         {artifact.download_url && (
-          <a className="report-download" href={artifact.download_url} download>
-            <Download size={16} aria-hidden="true" />
+          <a className="report-download" href={artifact.download_url} target="_blank" rel="noopener noreferrer">
+            <ExternalLink size={16} aria-hidden="true" />
             {labels.download}
           </a>
         )}
         <button
           className="report-email-action"
           type="button"
-          onClick={() => onEmail?.(
-            language === "ja"
-              ? "このレポートを メールで送信: "
-              : "Gửi báo cáo này cho ",
-          )}
+          onClick={() => onEmail?.({ artifactId: artifact.id, language })}
         >
           <Mail size={16} aria-hidden="true" />
           {labels.emailAction}
@@ -453,6 +454,11 @@ const QUICK_PROMPTS = {
       "Mã vật tư nào có số lượng tồn kho nhiều nhất?",
       "Tình hình tồn kho WMS hiện tại thế nào?",
     ],
+    cctvai: [
+      "Tổng quan dữ liệu CCTVAI hiện có bao nhiêu sự kiện?",
+      "7 ngày qua sự kiện vi phạm theo mức độ nghiêm trọng như thế nào?",
+      "Danh sách camera đang hoạt động trong hệ thống?",
+    ],
     research: [
       "Lập báo cáo nghiên cứu tổng hợp từ các tài liệu",
       "So sánh các quan điểm và chỉ ra điểm mâu thuẫn",
@@ -475,6 +481,11 @@ const QUICK_PROMPTS = {
       "在庫数量が最も多い資材コードは何ですか？",
       "現在のWMS在庫状況はどうなっていますか？",
     ],
+    cctvai: [
+      "CCTVAIデータの概要：現在イベントは何件ありますか？",
+      "直近7日間の違反イベントを重要度別に教えてください。",
+      "システム内で稼働中のカメラ一覧を表示してください。",
+    ],
     research: [
       "資料から総合的な調査レポートを作成してください",
       "各見解を比較し、矛盾点を示してください",
@@ -483,7 +494,7 @@ const QUICK_PROMPTS = {
   },
 };
 
-const ACTIVE_MODE_KEYS = ["mkac", "mes", "wms", "research"];
+const ACTIVE_MODE_KEYS = ["mkac", "mes", "wms", "cctvai", "research"];
 
 const MODE_OPTIONS = {
   mkac: {
@@ -494,6 +505,9 @@ const MODE_OPTIONS = {
   },
   wms: {
     icon: Boxes,
+  },
+  cctvai: {
+    icon: Cctv,
   },
   research: {
     icon: FlaskConical,
@@ -511,6 +525,7 @@ const LEGACY_MODE_SESSION_STORAGE_KEYS = {
   mkac: "meibook-session-mkac",
   mes: "meibook-session-mes",
   wms: "meibook-session-wms",
+  cctvai: "meibook-session-cctvai",
   research: "meibook-session-research",
 };
 const SESSION_STORAGE_PREFIX = "meibook-session";
@@ -523,6 +538,8 @@ const THEME_STORAGE_KEY = "meibook-theme";
 const LANGUAGE_STORAGE_KEY = "meibook-language";
 const EMPLOYEE_STORAGE_KEY = "meibook-mkac-employee";
 const GUEST_EMPLOYEE_ID = "000000";
+// Fallback khi backend không trả short_answer_threshold cho mode nào đó.
+const DEFAULT_SHORT_ANSWER_THRESHOLD = 300;
 const THEME_OPTIONS = ["system", "light", "dark"];
 const LANGUAGE_OPTIONS = ["vi", "ja"];
 const THEME_ICONS = {
@@ -567,6 +584,18 @@ const UI_TEXT = {
         inputLabel: "Câu hỏi về WMS",
         placeholder: "Hỏi về tồn kho vật tư, công đoạn WMS...",
         unavailable: "WMS snapshot chưa sẵn sàng",
+      },
+      cctvai: {
+        label: "Camera CCTVAI",
+        shortLabel: "Camera",
+        title: "Hỏi đáp dữ liệu Camera CCTVAI",
+        empty: "Tra cứu sự kiện vi phạm, camera và tuyến từ dữ liệu báo cáo CCTVAI.",
+        metric: "Sự kiện CCTVAI",
+        authHint: "Nhập mã nhân viên để truy cập dữ liệu camera CCTVAI.",
+        inputLabel: "Câu hỏi về camera CCTVAI",
+        placeholder: "Hỏi về sự kiện vi phạm, camera hoặc tuyến CCTVAI...",
+        unavailable: "Dữ liệu CCTVAI chưa khả dụng",
+        hardwareUnavailable: "Giám sát phần cứng server CCTVAI chưa khả dụng",
       },
       research: {
         label: "Nghiên cứu tài liệu",
@@ -616,6 +645,7 @@ const UI_TEXT = {
       mkac: "Hành chính nhân sự mới",
       mes: "Phiên MES mới",
       wms: "Phiên WMS mới",
+      cctvai: "Phiên Camera CCTVAI mới",
       research: "Phiên nghiên cứu mới",
       researchDemo: "Tài liệu nghiên cứu demo",
     },
@@ -756,6 +786,8 @@ const UI_TEXT = {
       mesReport: "Báo cáo MES",
       wmsReport: "Báo cáo WMS",
       hrReport: "Báo cáo HR",
+      cctvaiReport: "Báo cáo CCTVAI",
+      cctvaiHardware: "Phần cứng CCTVAI",
       mesReportUnsupported: "Ngoài mẫu Report Agent",
       research: "Nghiên cứu",
       mkacSource: "Nguồn MKAC",
@@ -802,9 +834,12 @@ const UI_TEXT = {
       mes: "Dựa trên dữ liệu MES trực tiếp",
       mes_database: "Dựa trên MES snapshot cục bộ",
       wms_database: "Dựa trên tồn nguyên vật liệu tại kho công đoạn WMS MKHC",
+      cctvai_database: "Dựa trên dữ liệu báo cáo camera CCTVAI",
+      cctvai_hardware: "Dựa trên dữ liệu giám sát phần cứng server CCTVAI theo thời gian thực",
       mes_report: "Báo cáo được tổng hợp từ MES snapshot",
       wms_executive_report: "Báo cáo được tổng hợp từ current balance WMS",
       hr_executive_report: "Báo cáo được tổng hợp từ danh bạ nhân sự MKAC",
+      cctvai_report: "Báo cáo được tổng hợp từ replica báo cáo CCTVAI",
       mes_report_unsupported: "Yêu cầu chưa thuộc các mẫu báo cáo đã được kiểm chứng",
       research: "Dựa trên tài liệu nghiên cứu",
       mkac: "Dựa trên kho MKAC",
@@ -861,6 +896,18 @@ const UI_TEXT = {
         placeholder: "WMS在庫、工程、資材について質問...",
         unavailable: "WMSスナップショットはまだ利用できません",
       },
+      cctvai: {
+        label: "カメラ CCTVAI",
+        shortLabel: "カメラ",
+        title: "CCTVAIカメラデータQ&A",
+        empty: "CCTVAIレポートデータからカメラ違反イベント・カメラ・ラインを検索します。",
+        metric: "CCTVAIイベント",
+        authHint: "CCTVAIカメラデータにアクセスするには社員番号を入力してください。",
+        inputLabel: "CCTVAIカメラに関する質問",
+        placeholder: "違反イベント、カメラ、ラインについて質問...",
+        unavailable: "CCTVAIデータはまだ利用できません",
+        hardwareUnavailable: "CCTVAIサーバーのハードウェア監視はまだ利用できません",
+      },
       research: {
         label: "資料調査",
         shortLabel: "調査",
@@ -909,6 +956,7 @@ const UI_TEXT = {
       mkac: "新しい人事・総務セッション",
       mes: "新しいMESセッション",
       wms: "新しいWMSセッション",
+      cctvai: "新しいCCTVAIカメラセッション",
       research: "新しい資料調査セッション",
       researchDemo: "サンプル調査資料",
     },
@@ -1049,6 +1097,8 @@ const UI_TEXT = {
       mesReport: "MESレポート",
       wmsReport: "WMSレポート",
       hrReport: "HRレポート",
+      cctvaiReport: "CCTVAIレポート",
+      cctvaiHardware: "CCTVAIハードウェア",
       mesReportUnsupported: "Report Agent対象外",
       research: "調査",
       mkacSource: "MKACソース",
@@ -1095,9 +1145,12 @@ const UI_TEXT = {
       mes: "MESリアルタイムデータに基づく",
       mes_database: "ローカルMESスナップショットに基づく",
       wms_database: "MKHC WMS工程倉庫の資材在庫に基づく",
+      cctvai_database: "CCTVAIカメラレポートデータに基づく",
+      cctvai_hardware: "CCTVAIサーバーのリアルタイムハードウェア監視データに基づく",
       mes_report: "MESスナップショットから作成したレポート",
       wms_executive_report: "WMS現行残高から作成したレポート",
       hr_executive_report: "MKAC人事ディレクトリから作成したレポート",
+      cctvai_report: "CCTVAIレポートレプリカから作成したレポート",
       mes_report_unsupported: "検証済みのレポート形式には含まれていないリクエスト",
       research: "調査資料に基づく",
       mkac: "MKACナレッジベースに基づく",
@@ -1234,6 +1287,50 @@ async function authenticateEmployee(employeeId) {
   return response.json();
 }
 
+// Một số mode (CCTVAI, MES, WMS, các câu trả lời cấu trúc) gửi cả câu trả lời
+// trong đúng 1 event "token" thay vì stream dần từ LLM, nên chữ xuất hiện tức
+// thì thay vì "đang gõ". Chia mỗi event "token" thành tối đa
+// TOKEN_DRIP_MAX_CHUNKS đoạn, chèn delay giữa các đoạn để mô phỏng gõ dần.
+// Tổng thời gian thêm bị chặn trên ở TOKEN_DRIP_MAX_CHUNKS * TOKEN_DRIP_DELAY_MS
+// cho MỖI event, không phải cho cả tin nhắn — nên chỉ áp dụng khi 1 event đã
+// đủ lớn để chắc chắn là "cả câu trả lời dồn 1 lần", KHÔNG áp dụng cho token
+// stream thật từ LLM (mkac/research qua src/rag/rag_pipeline.py: mỗi delta chỉ
+// vài ký tự, mỗi delta là 1 event riêng). Nếu áp dụng cho cả 2 loại, độ trễ sẽ
+// cộng dồn theo số lượng delta (có thể hàng trăm) thay vì bị chặn trên.
+const TOKEN_DRIP_MIN_LENGTH = 60;
+const TOKEN_DRIP_MAX_CHUNKS = 24;
+const TOKEN_DRIP_DELAY_MS = 35;
+
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (signal) signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    }
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function splitForDrip(text) {
+  const chars = Array.from(text);
+  if (chars.length <= 1) return [text];
+  const chunkCount = Math.min(TOKEN_DRIP_MAX_CHUNKS, chars.length);
+  const size = Math.ceil(chars.length / chunkCount);
+  const parts = [];
+  for (let i = 0; i < chars.length; i += size) {
+    parts.push(chars.slice(i, i + size).join(""));
+  }
+  return parts;
+}
+
 async function streamQuery(payload, onEvent, signal) {
   const response = await api("/query/stream", {
     method: "POST",
@@ -1261,7 +1358,14 @@ async function streamQuery(payload, onEvent, signal) {
         } catch {
           continue;
         }
-        onEvent(event);
+        if (event.type === "token" && event.content?.length >= TOKEN_DRIP_MIN_LENGTH) {
+          for (const part of splitForDrip(event.content)) {
+            await sleep(TOKEN_DRIP_DELAY_MS, signal);
+            onEvent({ ...event, content: part });
+          }
+        } else {
+          onEvent(event);
+        }
       }
     }
   }
@@ -1384,7 +1488,12 @@ function quickPromptsFor(workspaceMode, language = "vi") {
 
 function localizedModelInfo(modelInfo, language = "vi") {
   if (!modelInfo) return modelInfo;
-  const localized = UI_TEXT[language]?.models?.[modelInfo.id];
+  // Backend /models trả id "auto" cho model local duy nhất hiện có, nhưng
+  // bảng dịch UI_TEXT.models dùng key "local". Không map thì tra cứu luôn
+  // miss và badge model bị đóng băng ở ngôn ngữ lúc /models fetch lần đầu
+  // (bootstrap effect chỉ chạy 1 lần, không refetch khi đổi ngôn ngữ UI).
+  const textKey = modelInfo.id === "auto" ? "local" : modelInfo.id;
+  const localized = UI_TEXT[language]?.models?.[textKey];
   if (!localized) return modelInfo;
   return {
     ...modelInfo,
@@ -1450,6 +1559,81 @@ function localizeErrorMessage(message, language = "vi") {
   return text;
 }
 
+/**
+ * Popup nhập địa chỉ email để gửi báo cáo.
+ * Mở khi nhấn nút "Gửi qua email" trên ReportArtifactCard.
+ * Nhấn Enter hoặc nút Gửi → gọi onSend(email).
+ * Gõ câu lệnh trực tiếp vào ô chat vẫn hoạt động như cũ.
+ */
+function EmailDialog({ language, onClose, onSend }) {
+  const [value, setValue] = useState("");
+  const inputRef = useRef(null);
+  const isJa = language === "ja";
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  function handleKeyDown(e) {
+    if (e.key === "Escape") { onClose(); return; }
+    if (e.key === "Enter") { submit(); }
+  }
+
+  function submit() {
+    const email = value.trim();
+    if (!email) return;
+    onSend(email);
+  }
+
+  return (
+    <div
+      className="confirm-backdrop"
+      role="presentation"
+      onClick={onClose}
+    >
+      <section
+        className="confirm-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="email-dialog-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="email-dialog-title">
+          {isJa ? "レポートをメールで送信" : "Gửi báo cáo qua email"}
+        </h2>
+        <p>
+          {isJa
+            ? "送信先のメールアドレスを入力してください。"
+            : "Nhập địa chỉ email người nhận, sau đó nhấn Enter hoặc Gửi."}
+        </p>
+        <input
+          ref={inputRef}
+          className="email-dialog-input"
+          type="email"
+          placeholder={isJa ? "例: tanaka@example.com" : "Ví dụ: 12wuu115@gmail.com"}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          autoComplete="email"
+        />
+        <div className="confirm-actions">
+          <button type="button" className="confirm-cancel" onClick={onClose}>
+            {isJa ? "キャンセル" : "Hủy"}
+          </button>
+          <button
+            type="button"
+            className="confirm-primary"
+            onClick={submit}
+            disabled={!value.trim()}
+          >
+            {isJa ? "送信" : "Gửi"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function App() {
   const [theme, setTheme] = useState(storedTheme);
   const [language, setLanguage] = useState(storedLanguage);
@@ -1458,7 +1642,8 @@ function App() {
     mkac: [],
     mes: [],
     wms: [],
-    threshold: 300,
+    cctvai: [],
+    threshold: {},
     max: 3,
   });
   const [sessionIds, setSessionIds] = useState(() =>
@@ -1529,6 +1714,19 @@ function App() {
     available: false,
     state: "UNAVAILABLE",
   });
+  const [cctvaiStatus, setCctvaiStatus] = useState({
+    enabled: false,
+    available: false,
+    state: "UNAVAILABLE",
+  });
+  // Trạng thái giám sát phần cứng server CCTVAI — nguồn độc lập với database
+  // report replica ở trên. Health load riêng để mất một bên không kéo theo
+  // ẩn tab hoặc hiểu nhầm là bên còn lại cũng lỗi.
+  const [cctvaiHardwareStatus, setCctvaiHardwareStatus] = useState({
+    enabled: false,
+    available: false,
+    state: "UNAVAILABLE",
+  });
   const [model, setModel] = useState("auto");
   const [mode, setMode] = useState("mkac");
   const [question, setQuestion] = useState("");
@@ -1555,6 +1753,8 @@ function App() {
   const [confirmDeleteFile, setConfirmDeleteFile] = useState("");
   const [confirmResearchUploadOpen, setConfirmResearchUploadOpen] = useState(false);
   const [researchUploadNoticeAccepted, setResearchUploadNoticeAccepted] = useState(false);
+  // { open: bool, artifactId: string|null, language: "vi"|"ja" }
+  const [emailDialog, setEmailDialog] = useState({ open: false, artifactId: null, language: "vi" });
   const [fileSearch, setFileSearch] = useState("");
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [employee, setEmployee] = useState(storedEmployee);
@@ -1624,7 +1824,20 @@ function App() {
     () => localizedModels.find((item) => item.id === model),
     [localizedModels, model],
   );
-  const visibleModes = visibleModeKeys(Boolean(wmsStatus.available));
+  const cctvaiAvailable = isCctvaiAvailable({
+    database: cctvaiStatus,
+    hardware: cctvaiHardwareStatus,
+  });
+  // DB và hardware cảnh báo riêng biệt: mất một bên không được hiển thị lẫn
+  // sang cảnh báo của bên còn lại đang hoạt động bình thường.
+  const cctvaiBannerVisibility = cctvaiHealthBannerVisibility({
+    database: cctvaiStatus,
+    hardware: cctvaiHardwareStatus,
+  });
+  const visibleModes = visibleModeKeys({
+    wms: Boolean(wmsStatus.available),
+    cctvai: cctvaiAvailable,
+  });
   const requestModel = model;
   const mkacModels = useMemo(
     () => localizedModels.filter((item) => !item.hidden_in_mkac && item.id !== "grok"),
@@ -1648,7 +1861,7 @@ function App() {
       ? files.length > 0
       : Boolean(researchTopicId && selectedTopic?.ready));
   const mkacAuthorized =
-    (mode !== "mkac" && mode !== "mes" && mode !== "wms") ||
+    (mode !== "mkac" && mode !== "mes" && mode !== "wms" && mode !== "cctvai") ||
     Boolean(employee?.id && employee?.name);
   const canAsk =
     Boolean(question.trim()) &&
@@ -1678,6 +1891,7 @@ function App() {
 
   function starterPromptEntries() {
     if (mode === "wms") return quickAnswersConfig.wms || [];
+    if (mode === "cctvai") return quickAnswersConfig.cctvai || [];
     const prompts = mode === "research"
       ? researchScope === "topic"
         ? researchQuickPrompts()
@@ -1686,19 +1900,8 @@ function App() {
     return prompts.map((prompt) => ({ question: prompt }));
   }
 
-  const getSuggestions = (text, currentMode, msgId) => {
-    const config = quickAnswersConfig;
-    if (!config || !config[currentMode] || config[currentMode].length === 0) return [];
-    if (text.length >= config.threshold) return [];
-    
-    const hash = msgId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    const pool = [...config[currentMode]];
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = (hash + i) % (i + 1);
-      [pool[i], pool[j]] = [pool[j], pool[i]];
-    }
-    return pool.slice(0, config.max);
-  };
+  const getSuggestions = (text, currentMode, msgId) =>
+    resolveSuggestions(text, currentMode, msgId, quickAnswersConfig);
 
   const handleQuickAnswerClick = (suggestion) => {
     if (busy) return;
@@ -1832,6 +2035,8 @@ function App() {
         }
         setMesStatus(healthData.mes_database || {});
         setWmsStatus(healthData.mes_wms_database || {});
+        setCctvaiStatus(healthData.cctvai_database || {});
+        setCctvaiHardwareStatus(healthData.cctvai_hardware || {});
         setModel((current) => {
           const nextDefault = modelData.default || "auto";
           return current === "auto" || current === "grok" ? nextDefault : current;
@@ -1902,29 +2107,39 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
-    setQuickAnswersConfig({ mkac: [], mes: [], wms: [], threshold: 300, max: 3 });
+    setQuickAnswersConfig({ mkac: [], mes: [], wms: [], cctvai: [], threshold: {}, max: 3 });
 
     async function loadQuickAnswers() {
       try {
-        const [qaMkacRes, qaMesRes, qaWmsRes] = await Promise.all([
+        const [qaMkacRes, qaMesRes, qaWmsRes, qaCctvaiRes] = await Promise.all([
           api(`/quick-answers?mode=mkac&language=${encodeURIComponent(language)}`),
           api(`/quick-answers?mode=mes&language=${encodeURIComponent(language)}`),
           api(`/quick-answers?mode=wms&language=${encodeURIComponent(language)}`),
+          api(`/quick-answers?mode=cctvai&language=${encodeURIComponent(language)}`),
         ]);
         const qaMkacData = await qaMkacRes.json();
         const qaMesData = await qaMesRes.json();
         const qaWmsData = await qaWmsRes.json();
+        const qaCctvaiData = await qaCctvaiRes.json();
         if (cancelled) return;
+        // Mỗi mode có ngưỡng riêng: cctvai luôn gắn thêm disclaimer freshness cố
+        // định vào cuối câu trả lời nên cần ngưỡng cao hơn mkac/mes/wms.
         setQuickAnswersConfig({
           mkac: qaMkacData.suggestions || [],
           mes: qaMesData.suggestions || [],
           wms: qaWmsData.suggestions || [],
-          threshold: qaMkacData.short_answer_threshold || 300,
+          cctvai: qaCctvaiData.suggestions || [],
+          threshold: {
+            mkac: qaMkacData.short_answer_threshold || DEFAULT_SHORT_ANSWER_THRESHOLD,
+            mes: qaMesData.short_answer_threshold || DEFAULT_SHORT_ANSWER_THRESHOLD,
+            wms: qaWmsData.short_answer_threshold || DEFAULT_SHORT_ANSWER_THRESHOLD,
+            cctvai: qaCctvaiData.short_answer_threshold || DEFAULT_SHORT_ANSWER_THRESHOLD,
+          },
           max: qaMkacData.max_suggestions || 3,
         });
       } catch {
         if (cancelled) return;
-        setQuickAnswersConfig({ mkac: [], mes: [], wms: [], threshold: 300, max: 3 });
+        setQuickAnswersConfig({ mkac: [], mes: [], wms: [], cctvai: [], threshold: {}, max: 3 });
       }
     }
 
@@ -2006,9 +2221,13 @@ function App() {
       setMode("mkac");
       return;
     }
+    if (mode === "cctvai" && !cctvaiAvailable) {
+      setMode("mkac");
+      return;
+    }
     const frame = window.requestAnimationFrame(revealActiveModeTab);
     return () => window.cancelAnimationFrame(frame);
-  }, [mode, language, wmsStatus.available]);
+  }, [mode, language, wmsStatus.available, cctvaiAvailable]);
 
   useEffect(() => {
     try {
@@ -2413,15 +2632,9 @@ function App() {
     );
   }
 
-  function prepareReportEmail(prefix) {
+  function openEmailDialog({ artifactId, language: lang } = {}) {
     if (busy) return;
-    setQuestion(prefix);
-    window.requestAnimationFrame(() => {
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-      textarea.focus();
-      textarea.setSelectionRange(prefix.length, prefix.length);
-    });
+    setEmailDialog({ open: true, artifactId: artifactId ?? null, language: lang ?? language });
   }
 
   function cycleTheme() {
@@ -2528,7 +2741,7 @@ function App() {
 
   async function sendMessage(prompt = question, { quickAnswerId } = {}) {
     const cleanQuestion = prompt.trim();
-    if (["mkac", "mes", "wms"].includes(mode) && !mkacAuthorized) {
+    if (["mkac", "mes", "wms", "cctvai"].includes(mode) && !mkacAuthorized) {
       setEmployeeCodeError(t("common.employeeRequired"));
       return;
     }
@@ -2569,7 +2782,9 @@ function App() {
               ? "mes_database"
               : requestMode === "wms"
                 ? "wms_database"
-                : "research",
+                : requestMode === "cctvai"
+                  ? "cctvai_database"
+                  : "research",
         researchScope: requestMode === "research" ? researchScope : undefined,
         sources: [],
         agentTimeline: null,
@@ -2589,7 +2804,7 @@ function App() {
           model: requestModel,
           mode: requestMode,
           ui_language: requestLanguage,
-          employee_id: ["mkac", "mes", "wms"].includes(requestMode)
+          employee_id: ["mkac", "mes", "wms", "cctvai"].includes(requestMode)
             ? employee?.id
             : undefined,
           quick_answer_id: requestMode === "wms" ? quickAnswerId || null : null,
@@ -2692,7 +2907,7 @@ function App() {
           }
           if (
             event.type === "artifact" &&
-            ["mes_report", "wms_executive_report", "hr_executive_report"].includes(event.artifact_type)
+            ["mes_report", "wms_executive_report", "hr_executive_report", "cctvai_report"].includes(event.artifact_type)
           ) {
             setModeMessages(
               requestMode,
@@ -2745,6 +2960,7 @@ function App() {
                         researchScope: event.research_scope || item.researchScope,
                         workflow: event.workflow || item.workflow,
                         wmsMetadata: event.wms_metadata || item.wmsMetadata,
+                        cctvaiMetadata: event.cctvai_metadata || item.cctvaiMetadata,
                         sourceKind: event.source_kind || item.sourceKind,
                         cache: event.cache ?? item.cache,
                       }
@@ -2886,7 +3102,7 @@ function App() {
     setEmployeeCodeInput("");
     setEmployeeCodeError("");
     setQuestion("");
-    for (const workspaceMode of ["mkac", "mes", "wms"]) {
+    for (const workspaceMode of ["mkac", "mes", "wms", "cctvai"]) {
       for (const item of LANGUAGE_OPTIONS) {
         setModeMessages(workspaceMode, [], item);
         setModeSources(workspaceMode, [], item);
@@ -2987,7 +3203,11 @@ function App() {
                             count: wmsStatus.distinct_process_codes || 0,
                           })}`
                         : modeText("wms").unavailable
-                      : researchScope === "upload"
+                      : mode === "cctvai"
+                        ? cctvaiStatus.available
+                          ? modeText("cctvai").metric
+                          : modeText("cctvai").unavailable
+                        : researchScope === "upload"
                         ? `${files.length} ${t("common.sessionDocuments")}`
                         : researchTopicId
                         ? formatText(modeText("research").scopeLabel, {
@@ -3077,7 +3297,7 @@ function App() {
 
             <span className="header-divider" role="separator" aria-hidden="true" />
 
-            {["mkac", "mes", "wms"].includes(mode) && employee && (
+            {["mkac", "mes", "wms", "cctvai"].includes(mode) && employee && (
               <button
                 className="icon-button header-tool"
                 type="button"
@@ -3115,6 +3335,23 @@ function App() {
           </div>
         )}
 
+        {mode === "cctvai" && cctvaiBannerVisibility.showDatabaseBanner && (
+          <div className={`wms-health-banner ${String(
+            cctvaiStatus.state || (cctvaiStatus.enabled ? "UNAVAILABLE" : "DISABLED"),
+          ).toLowerCase()}`} role="status">
+            {modeText("cctvai").unavailable}
+          </div>
+        )}
+
+        {mode === "cctvai" && cctvaiBannerVisibility.showHardwareBanner && (
+          <div className={`wms-health-banner ${String(
+            cctvaiHardwareStatus.state ||
+              (cctvaiHardwareStatus.enabled ? "UNAVAILABLE" : "DISABLED"),
+          ).toLowerCase()}`} role="status">
+            {modeText("cctvai").hardwareUnavailable}
+          </div>
+        )}
+
         <div className="workspace-body">
           <section
             id={`${mode}-conversation`}
@@ -3124,7 +3361,7 @@ function App() {
             aria-busy={busy}
           >
             <div className="conversation-scroll" ref={conversationScrollRef}>
-              {["mkac", "mes", "wms"].includes(mode) && !mkacAuthorized ? (
+              {["mkac", "mes", "wms", "cctvai"].includes(mode) && !mkacAuthorized ? (
                 <EmployeeLogin
                   mode={mode}
                   modeText={modeText}
@@ -3279,7 +3516,9 @@ function App() {
                               })} · ${formatText(modeText("wms").processCount, {
                                 count: wmsStatus.distinct_process_codes || 0,
                               })}`
-                            : researchScope === "upload"
+                            : mode === "cctvai"
+                              ? modeText("cctvai").metric
+                              : researchScope === "upload"
                             ? `${files.length} ${modeText("research").metric}`
                             : researchTopicId
                               ? `${
@@ -3333,7 +3572,7 @@ function App() {
                   MessageMarkdown={MessageMarkdown}
                   AgentTimeline={AgentTimeline}
                   ReportArtifactCard={ReportArtifactCard}
-                  onReportEmail={prepareReportEmail}
+                  onReportEmail={openEmailDialog}
                   Bot={Bot}
                 />
               )}
@@ -3581,6 +3820,20 @@ function App() {
             </div>
           </section>
         </div>
+      )}
+
+      {emailDialog.open && (
+        <EmailDialog
+          language={emailDialog.language}
+          onClose={() => setEmailDialog({ open: false, artifactId: null, language: "vi" })}
+          onSend={(toEmail) => {
+            setEmailDialog({ open: false, artifactId: null, language: "vi" });
+            const cmd = emailDialog.language === "ja"
+              ? `このレポートを メールで送信: ${toEmail}`
+              : `Gửi báo cáo này cho ${toEmail}`;
+            sendMessage(cmd);
+          }}
+        />
       )}
     </div>
   );

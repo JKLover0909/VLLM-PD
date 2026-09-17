@@ -70,12 +70,18 @@ export function MessageList({
                       ? t("common.mesSnapshot")
                     : message.answerScope === "wms_database"
                       ? t("common.wmsSnapshot")
+                    : message.answerScope === "cctvai_database"
+                      ? "CCTVAI"
+                    : message.answerScope === "cctvai_hardware"
+                      ? t("common.cctvaiHardware")
                     : message.answerScope === "mes_report"
                       ? t("common.mesReport")
                     : message.answerScope === "wms_executive_report"
                       ? t("common.wmsReport")
                     : message.answerScope === "hr_executive_report"
                       ? t("common.hrReport")
+                    : message.answerScope === "cctvai_report"
+                      ? t("common.cctvaiReport")
                     : message.answerScope === "mes_report_unsupported"
                       ? t("common.mesReportUnsupported")
                     : message.mode === "research"
@@ -166,12 +172,18 @@ export function MessageList({
                           ? t("answerScope.mes_database")
                         : message.answerScope === "wms_database"
                           ? t("answerScope.wms_database")
+                        : message.answerScope === "cctvai_database"
+                          ? t("answerScope.cctvai_database")
+                        : message.answerScope === "cctvai_hardware"
+                          ? t("answerScope.cctvai_hardware")
                         : message.answerScope === "mes_report"
                           ? t("answerScope.mes_report")
                         : message.answerScope === "wms_executive_report"
                           ? t("answerScope.wms_executive_report")
                         : message.answerScope === "hr_executive_report"
                           ? t("answerScope.hr_executive_report")
+                        : message.answerScope === "cctvai_report"
+                          ? t("answerScope.cctvai_report")
                         : message.answerScope === "mes_report_unsupported"
                           ? t("answerScope.mes_report_unsupported")
                         : message.answerScope === "research"
