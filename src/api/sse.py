@@ -20,6 +20,7 @@ QUERY_STREAM_STATUS_TEXT = {
         "calendar": "Đang kiểm tra lịch và phòng họp...",
         "mes": "Đang truy vấn dữ liệu MES...",
         "wms": "Đang chuẩn bị kiểm chứng dữ liệu WMS...",
+        "cctvai": "Đang truy vấn dữ liệu camera CCTVAI...",
         "report": "Đang tổng hợp báo cáo điều hành...",
         "rag": "Đang tìm nguồn tài liệu phù hợp...",
         "research_cache": "Đang phân tích tài liệu liên quan...",
@@ -37,6 +38,7 @@ QUERY_STREAM_STATUS_TEXT = {
         "calendar": "カレンダーと会議室を確認しています...",
         "mes": "MESデータを照会しています...",
         "wms": "WMSデータの検証を準備しています...",
+        "cctvai": "CCTVAIカメラデータを照会しています...",
         "report": "エグゼクティブレポートを集計しています...",
         "rag": "関連資料を検索しています...",
         "research_cache": "関連資料を分析しています...",
@@ -109,6 +111,8 @@ def query_processing_status_key(req: QueryRequest) -> str:
         return "mes"
     if req.mode == "wms":
         return "wms"
+    if req.mode == "cctvai":
+        return "cctvai"
     if req.mode == "mkac":
         return "rag"
     return "rag"

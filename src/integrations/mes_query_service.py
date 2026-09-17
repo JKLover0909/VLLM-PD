@@ -61,6 +61,7 @@ class MesQueryOutcome:
     routed_model: str
     answer_scope: str
     wms_metadata: dict | None = None
+    cctvai_metadata: dict | None = None
 
     def as_tuple(self) -> tuple[str, list, str, str]:
         return self.answer, self.results, self.routed_model, self.answer_scope
@@ -73,6 +74,7 @@ class MesQueryStreamOutcome:
     routed_model: str
     answer_scope: str
     wms_metadata: dict | None = None
+    cctvai_metadata: dict | None = None
 
     def as_tuple(
         self,

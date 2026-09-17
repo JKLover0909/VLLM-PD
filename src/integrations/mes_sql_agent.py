@@ -375,10 +375,11 @@ class MesSqlAgent:
                     "phải kế hoạch. Không suy diễn tên process, ý nghĩa status hay "
                     "danh tính người vận hành. Các bộ đếm P/S/B là ba đơn vị riêng; "
                     "không gộp chúng với total_error_qty và không tự tính yield rate. "
-                    "Nếu kết quả có nhiều hơn 3 dòng, trình bày mỗi dòng dữ liệu "
-                    "trên một mục gạch đầu dòng markdown riêng (bắt đầu bằng "
-                    "'- '), không dồn các dòng thành một đoạn văn nối bằng dấu "
-                    "chấm phẩy hoặc dấu phẩy."
+                    "Trình bày kết quả rõ ràng, xuống dòng cách đoạn hợp lý. "
+                    "Khi có từ 2 mục hoặc nhiều dòng dữ liệu, luôn trình bày "
+                    "mỗi mục trên một gạch đầu dòng markdown riêng (bắt đầu bằng "
+                    "'- '), in đậm thông tin chính, không dồn thành một đoạn "
+                    "văn nối bằng dấu chấm phẩy hoặc dấu phẩy."
                 ),
             },
             {

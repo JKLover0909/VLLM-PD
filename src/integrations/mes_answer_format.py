@@ -110,6 +110,14 @@ def normalize_sql_answer(answer: str) -> str:
             nested_answer = payload.get("answer")
             if isinstance(nested_answer, str):
                 return nested_answer.strip()
+            # Model đôi khi tự đặt tên field khác thay vì "answer" (vd. CCTVAI
+            # trả về {"tra_loi": "..."}). Nếu dict chỉ có đúng 1 key và giá trị
+            # là string, coi đó là câu trả lời thật thay vì hiển thị JSON thô
+            # cho người dùng.
+            if len(payload) == 1:
+                (only_value,) = payload.values()
+                if isinstance(only_value, str):
+                    return only_value.strip()
     return text
 
 
