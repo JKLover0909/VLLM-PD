@@ -2,7 +2,7 @@
 
 > **Phiên bản tài liệu:** 2026-09-17  
 > **Mục đích:** Hướng dẫn tích hợp backend cho frontend chatbot của hệ thống CCTVAI.  
-> **Trạng thái:** Draft gửi đối tác front-end.
+> **Trạng thái:** Gửi đối tác front-end.
 
 ---
 
@@ -25,9 +25,11 @@ Giao tiếp qua hai kiểu:
 ## 2. URL gốc và xác thực
 
 ```
-Base URL: https://<host>:<port>
+Base URL: http://192.84.106.87:8001
 ```
 
+> **Lưu ý mạng:** IP `192.84.106.87` là địa chỉ của máy chủ backend trong mạng nội bộ. Nếu frontend chạy ngoài mạng này, cần hỏi team backend về cấu hình tường lửa hoặc URL public (ngrok/cloudflared). API hiện chạy HTTP — nếu triển khai qua HTTPS reverse proxy, URL sẽ được cập nhật.
+>
 > Không dùng API Key hay Bearer token ở cấp request. Backend chặn bằng rate limit và session. Mọi yêu cầu về thông tin xác thực (CCTVAI DB, phần cứng) được cấu hình phía server — **frontend không cần và không được biết**.
 
 ---
@@ -514,7 +516,7 @@ Trước khi go-live, kiểm tra các mục sau:
 ### Hỏi về phần cứng máy chủ
 
 ```bash
-curl -X POST http://localhost:8001/query \
+curl -X POST http://192.84.106.87:8001/query \
   -H "Content-Type: application/json" \
   -d '{
     "session_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -541,7 +543,7 @@ curl -X POST http://localhost:8001/query \
 ### Hỏi về dữ liệu vi phạm
 
 ```bash
-curl -X POST http://localhost:8001/query \
+curl -X POST http://192.84.106.87:8001/query \
   -H "Content-Type: application/json" \
   -d '{
     "session_id": "550e8400-e29b-41d4-a716-446655440000",
@@ -556,7 +558,7 @@ curl -X POST http://localhost:8001/query \
 ### Hỏi streaming
 
 ```bash
-curl -X POST http://localhost:8001/query/stream \
+curl -X POST http://192.84.106.87:8001/query/stream \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream" \
   -d '{
