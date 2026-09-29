@@ -5,6 +5,10 @@
 !.env.docker.example
 !**/.env.example
 
+# Logs & temp files
+nohup.out
+*.log
+
 # Python bytecode and caches
 __pycache__/
 *.py[cod]
