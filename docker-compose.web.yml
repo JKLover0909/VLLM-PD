@@ -68,6 +68,7 @@ services:
       # Bind mount code read-only; credentials/token Calendar chỉ nằm trong ./data.
       - ./src:/app/src:ro
       - ./scripts:/app/scripts:ro
+      - ./tools:/app/tools:ro
       - ./data/gmail_credentials.json:/app/src/agent/node_modules/mcp-server-google-calendar/credentials.json:ro
       - ./data/calendar_token.json:/app/src/agent/node_modules/mcp-server-google-calendar/token.json:ro
       - ./frontend/dist:/app/frontend/dist:ro
