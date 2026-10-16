@@ -164,8 +164,11 @@ class CalendarActionService:
     @classmethod
     def is_room_availability_request(cls, question: str) -> bool:
         text = cls._normalize(question)
+        # "phong ban" (department) must NOT match "phong" (room).
+        # Strip the compound first so "phòng ban nhân sự" doesn't trigger.
+        room_text = re.sub(r"\bphong ban\b", "", text)
         has_room = bool(
-            re.search(r"\b(phong hop|phong|meeting room|room)\b", text)
+            re.search(r"\b(phong hop|phong|meeting room|room)\b", room_text)
         )
         has_check = any(
             marker in text
@@ -175,7 +178,8 @@ class CalendarActionService:
                 "con trong",
                 "trong khong",
                 "ranh",
-                "ban",
+                "ban khong",
+                "dang ban",
                 "availability",
                 "available",
                 "free",
@@ -197,8 +201,10 @@ class CalendarActionService:
         ):
             return False
         text = cls._normalize(question)
+        # Strip "phong ban" so "đặt phòng ban ..." doesn't match "đặt phòng".
+        create_text = re.sub(r"\bphong ban\b", "", text)
         has_create = any(
-            marker in text
+            marker in create_text
             for marker in (
                 "tao lich",
                 "tao su kien",
@@ -210,8 +216,10 @@ class CalendarActionService:
                 "book room",
             )
         ) or any(marker in (question or "") for marker in ("予定を作成", "会議室を予約"))
+        # Strip "phong ban" (department) so it doesn't match "phong" (room).
+        ctx_text = re.sub(r"\bphong ban\b", "", text)
         has_calendar_context = any(
-            marker in text
+            marker in ctx_text
             for marker in ("lich", "su kien", "phong", "hop", "event", "room")
         )
         return has_create and has_calendar_context
