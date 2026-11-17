@@ -138,7 +138,7 @@ Trước thay đổi trạng thái, kiểm tra thêm project/container, port và
 ## 4. Model endpoints
 
 Target routing giữ bốn alias nghiệp vụ: `auto-model`, `local-qwen-chat` (chat và
-helper/dịch), `local-qwen-coder` (MES/WMS/CCTVAI SQL) và `coding-model` (Coding
+helper/dịch), `local-qwen-coder` (MES/WMS/CCTVAI SQL, Dev: Ollama local `qwen3.5:9b`) và `coding-model` (Coding
 Agent). Target sau rollout là cả bốn gọi cùng một model Qwen3.5-9B Q4_K_M qua LiteLLM
 `openai` provider; Azure `gpt-5.4-mini` chỉ fallback tuần tự khi primary lỗi. Hiện
 Dev vẫn dùng Ollama vì endpoint TLS/VPN chưa được xác nhận/cấu hình; Production

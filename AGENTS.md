@@ -24,6 +24,7 @@ Tài liệu này là hướng dẫn chính thức (Onboarding Guide) dành cho b
 
 * Tên container, Docker network, host port và các bind-mount dữ liệu được tách nhờ hai checkout vật lý khác nhau.
 * Dev vẫn dùng chung Docker daemon, GPU/VRAM, image tag và các Docker volume cache HuggingFace/Torch/EasyOCR với Production.
+* **Dev hiện tại (2026-11-17):** `local-qwen-coder` và `coding-model` chạy local trên Ollama host `qwen3.5:9b` Q4_K_M (model general-purpose, không phải bản Coder chuyên dụng; một request/lần, context 8192, qua bridge `:11435`); chat/dịch vẫn trỏ remote primary (hiện không kết nối được, rơi sang Azure fallback). Production chưa đổi.
 * **Target sau rollout (chưa active):** mọi LLM role của Meibook dùng cùng một Qwen3.5-9B Q4_K_M remote primary qua LiteLLM. `auto-model`, `local-qwen-chat`, `local-qwen-coder`, `coding-model` là logical aliases tương thích, không phải nhiều model.
 * Azure `gpt-5.4-mini` chỉ là fallback tuần tự cho lỗi primary chat/coder; không có lựa chọn cloud trực tiếp, không chạy song song/hedge. Model legacy `openai` từ client cũ phải chuẩn hóa sang primary. Ảnh thử Qwen trước, Azure chỉ khi unsupported/failure.
 * `REMOTE_LLM_API_BASE`, `REMOTE_LLM_MODEL`, `REMOTE_LLM_API_KEY` chỉ được cấu hình sau khi người vận hành xác nhận endpoint TLS/VPN. Không nhúng HTTP endpoint thử nghiệm, không gửi dữ liệu thật cho tới khi TLS/VPN sẵn sàng. Production chưa rollout thì tài liệu/code target không chứng minh runtime đã đổi.

@@ -131,6 +131,10 @@ services:
       - ${MEIBOOK_ENV_FILE:-.env.docker}
     environment:
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # Code/SQL aliases use the shared host Ollama through the existing bridge.
+      OLLAMA_API_BASE: http://host.docker.internal:11435
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: ["--local", "--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
     ports:
       - "127.0.0.1:4001:4000"

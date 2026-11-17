@@ -146,7 +146,7 @@ FastAPI Dev :8002 / Production :8001
 LiteLLM Dev :4001 / Production :4002 (host; container nội bộ :4000)
         |
         |-- auto-model / local-qwen-chat -> one remote Qwen primary, Azure fallback
-        |-- local-qwen-coder / coding-model -> same remote Qwen primary, Azure fallback
+        |-- local-qwen-coder / coding-model -> local Ollama qwen3.5:9b (Dev), Azure coder fallback
         |-- image requests -> Qwen primary; Azure only if unsupported/failure
         |-- CCTVAI hardware -> deterministic renderer; no model call
         |-- no selectable/manual cloud route; Azure is failure fallback only
