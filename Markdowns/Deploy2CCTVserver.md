@@ -3,7 +3,7 @@
 > **Phiên bản tài liệu:** 2026-09-29
 > **Mục đích:** Hướng dẫn triển khai hệ thống hỏi đáp Chatbot CCTVAI (module của Meibook) lên máy chủ CCTV AI gốc tại `192.86.201.99`.
 > **Đối tượng:** Team vận hành server CCTV AI.
-> **Trạng thái:** Bản nháp — chưa triển khai.
+> **Trạng thái:** Bản nháp — chưa triển khai. Mô hình được đề xuất bên dưới là phương án riêng cho CCTV server, không mô tả routing hiện tại của Meibook Dev/Production trên `Machine 2`; nếu triển khai, phải quyết định lại model/endpoint và thay toàn bộ cấu hình mẫu đã lỗi thời bằng route được xác minh. Model labels `local-qwen-small` và `local-qwen-coder` trong các ví dụ cũng chỉ phản ánh draft đó, không phải alias hiện tại. Không dùng các model tags còn lại trong ví dụ như bằng chứng chúng đã cài trên host.
 
 ---
 

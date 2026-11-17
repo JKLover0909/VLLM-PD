@@ -680,8 +680,11 @@ class ReportPeriod:
         )
 
 
-def _has_domain_context(question: str, normalized: str) -> bool:
+def matched_domain_contexts(question: str) -> set[str]:
+    """Return domains with explicit context markers in a VI/JA question."""
     original = question or ""
+    normalized = normalized_text(original)
+    matches = set()
     has_mes = any(
         marker in normalized for marker in _MES_CONTEXT_MARKERS if marker != "ng"
     ) or bool(re.search(r"\bng\b", normalized)) or any(
@@ -696,7 +699,19 @@ def _has_domain_context(question: str, normalized: str) -> bool:
     has_cctvai = any(
         marker in normalized for marker in _CCTVAI_CONTEXT_MARKERS
     ) or any(marker in original for marker in _CCTVAI_CONTEXT_MARKERS_JA)
-    return has_mes or has_wms or has_hr or has_cctvai
+    if has_mes:
+        matches.add("mes")
+    if has_wms:
+        matches.add("wms")
+    if has_hr:
+        matches.add("mkac")
+    if has_cctvai:
+        matches.add("cctvai")
+    return matches
+
+
+def _has_domain_context(question: str, normalized: str) -> bool:
+    return bool(matched_domain_contexts(question))
 
 
 def is_executive_overview_request(question: str) -> bool:

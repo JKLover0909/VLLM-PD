@@ -53,7 +53,7 @@ from src.rag.vector_store import VectorStore
 from src.rag.rag_pipeline import RAGPipeline
 from src.rag.web_search import WebSearcher
 from src.rag.media_paths import resolve_processed_image_path
-from src.auth.employee_directory import EmployeeDirectory
+from src.auth.employee_directory import GUEST_EMPLOYEE_ID, EmployeeDirectory
 from src.auth.employee_intent import normalize_text
 from src.integrations.mes_database import MesDatabase
 from src.integrations.mes_query_service import (
@@ -67,6 +67,7 @@ from src.integrations.cctvai_hardware_service import (
     CctvaiHardwareService,
     classify_hardware_question,
 )
+from src.integrations.qa_agent_service import QaAgentError, QaAgentService
 from src.integrations.gmail_sender import (
     EmailDraft,
     EmailDraftStore,
@@ -80,6 +81,14 @@ from src.integrations.gmail_sender import (
 from src.i18n.translation import TranslationError, TranslationService
 
 from src.api import config
+from src.api.prompt_guard import (
+    history_is_unsafe,
+    is_disclosure_request,
+    payload_has_disclosure,
+    refusal_text,
+    safe_history,
+)
+from src.api.query_guard import guarded_query, guard_query_response, guardrail_response
 from src.api.config import (
     AGENT_API_KEY,
     DOCJP_COLLECTION_NAME,
@@ -130,6 +139,11 @@ from src.api.schemas import (
     ResearchTopicsResponse,
     SessionInfoResponse,
     SessionResponse,
+)
+from src.api.qa_handlers import (
+    guard_stream_response,
+    handle_qa_query,
+    handle_qa_stream,
 )
 from src.api.sse import (
     query_processing_status_key,
@@ -188,6 +202,7 @@ mes_database = MesDatabase.from_env()
 mes_wms_database = MesWmsDatabase.from_env()
 cctvai_query_service: Optional[CctvaiQueryService] = CctvaiQueryService.from_env()
 cctvai_hardware_service: Optional[CctvaiHardwareService] = CctvaiHardwareService.from_env()
+qa_agent_service = QaAgentService.from_env()
 gmail_sender = GmailSender.from_env()
 email_draft_store = EmailDraftStore()
 translation_service = TranslationService.from_env()
@@ -412,14 +427,32 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_hardware_health_loop())
         if cctvai_hardware_service is not None else None
     )
+
+    async def _qa_health_loop() -> None:
+        while True:
+            try:
+                await qa_agent_service.refresh_health()
+            except Exception:
+                logger.warning("QA agent health refresh failed.")
+            await asyncio.sleep(qa_agent_service.health_interval_seconds)
+
+    # Disabled/misconfigured QA makes zero outbound requests, probes included.
+    qa_health_task = (
+        asyncio.create_task(_qa_health_loop())
+        if qa_agent_service.enabled and qa_agent_service.configured else None
+    )
     try:
         yield
     finally:
-        if hardware_task is not None:
-            hardware_task.cancel()
-            await asyncio.gather(hardware_task, return_exceptions=True)
+        background_tasks = [
+            task for task in (hardware_task, qa_health_task) if task is not None
+        ]
+        for task in background_tasks:
+            task.cancel()
+        await asyncio.gather(*background_tasks, return_exceptions=True)
         if cctvai_hardware_service is not None:
             await cctvai_hardware_service.close()
+        await qa_agent_service.close()
     logger.info("Shutdown completed.")
 
 
@@ -465,7 +498,11 @@ async def set_cached_query_response(
     cache_key: Optional[str],
     response: QueryResponse,
 ) -> None:
-    if not cache_key:
+    if (not cache_key or response.answer_scope == "guardrail"
+            or payload_has_disclosure(response.model_dump(exclude_none=True))):
+        return
+    response = guard_query_response(response)
+    if response.answer_scope == "guardrail":
         return
     # Shared static corpora can use a longer mode-specific TTL. Uploaded
     # Research sessions never reach this function because their cache key is
@@ -485,6 +522,10 @@ async def set_cached_query_response(
 
 def build_query_cache_key(req: QueryRequest) -> Optional[str]:
     """Attach only the snapshot version relevant to the requested domain."""
+    # QA answers come from a live external agent and are never cached. The QA
+    # endpoints dispatch before the cache anyway; this is defence in depth.
+    if req.mode == "qa" or req.conversation_context:
+        return None
     if calendar_action_service and calendar_action_service.is_action_request(req.question):
         return None
     if question_uses_employee_context_reference(req.question):
@@ -536,7 +577,7 @@ def latest_referenced_employee(
 ) -> Optional[dict[str, Any]]:
     """Find the latest single employee mentioned in recent chat context."""
     for role in ("assistant", "user"):
-        for item in reversed(conversation_context or []):
+        for item in reversed(safe_history(conversation_context)):
             if item.get("role") != role:
                 continue
             content = str(item.get("content") or "").strip()
@@ -598,7 +639,7 @@ def question_uses_mes_lot_context_reference(question: str) -> bool:
 
 
 def latest_lot_id_in_context(conversation_context: list[dict[str, Any]]) -> str:
-    for item in reversed(conversation_context or []):
+    for item in reversed(safe_history(conversation_context)):
         content = str(item.get("content") or "")
         match = MesDatabase.LOT_PATTERN.search(content)
         if match:
@@ -623,7 +664,7 @@ def product_ids_in_text(text: str) -> list[str]:
 
 
 def latest_product_id_in_context(conversation_context: list[dict[str, Any]]) -> str:
-    for item in reversed(conversation_context or []):
+    for item in reversed(safe_history(conversation_context)):
         content = str(item.get("content") or "")
         products = product_ids_in_text(content)
         if products:
@@ -632,7 +673,7 @@ def latest_product_id_in_context(conversation_context: list[dict[str, Any]]) -> 
 
 
 def latest_mes_context_kind(conversation_context: list[dict[str, Any]]) -> str:
-    for item in reversed(conversation_context or []):
+    for item in reversed(safe_history(conversation_context)):
         content = str(item.get("content") or "")
         normalized = normalize_text(content)
         if product_ids_in_text(content) and any(
@@ -855,9 +896,17 @@ def verify_mkac_employee(employee_id: Optional[str]) -> EmployeeResponse:
 
 
 def authorize_query(req: QueryRequest) -> Optional[EmployeeResponse]:
-    if req.mode not in {"mkac", "mes", "wms", "cctvai"}:
+    if req.mode not in {"mkac", "mes", "wms", "cctvai", "qa"}:
         return None
-    return verify_mkac_employee(req.employee_id)
+    employee = verify_mkac_employee(req.employee_id)
+    if req.mode == "qa" and employee.id == GUEST_EMPLOYEE_ID:
+        # Distinct from INVALID_EMPLOYEE_ID so the UI does not log the user out.
+        error = QaAgentError("QA_GUEST_NOT_ALLOWED")
+        raise HTTPException(
+            status_code=error.http_status,
+            detail={"code": error.code, "message": error.message(req.ui_language)},
+        )
+    return employee
 
 
 def employee_context_for_query(
@@ -955,6 +1004,8 @@ async def translate_answer_for_ui(
     answer_scope: str = "",
 ) -> str:
     """Translate Vietnamese backend answers back to the selected UI language."""
+    if payload_has_disclosure(answer):
+        return refusal_text(req.ui_language)
     if req.ui_language != "ja" or translation_service is None:
         return answer
     if answer_scope == "wms_database":
@@ -1567,6 +1618,8 @@ async def store_report_artifact(
     html_content = report.get("html_content")
     has_inline_html = isinstance(html_content, str) and bool(html_content.strip())
     content = html_content if has_inline_html else render_html(report)
+    if payload_has_disclosure([content, report_artifact_payload(report), report.get("markdown", "")]):
+        raise HTTPException(status_code=422, detail=refusal_text(req.ui_language if req else "vi"))
     report_type = str(report.get("report_type") or "mes_report")
     filename_prefix = (
         "wms-report" if report_type == "wms_executive_report"
@@ -1930,6 +1983,9 @@ async def handle_email_send_query(
                 answer_scope="email_action",
             )
 
+        if payload_has_disclosure([draft.subject, draft.body_text]):
+            await email_draft_store.update_status(req.session_id, status="pending")
+            return guardrail_response(req)
         attachments = []
         if draft.artifact_id:
             artifact = await artifact_store.get(draft.artifact_id)
@@ -1944,6 +2000,9 @@ async def handle_email_send_query(
             ):
                 await email_draft_store.update_status(req.session_id, status="pending")
                 raise HTTPException(status_code=403, detail="Báo cáo không thuộc quyền sở hữu của người dùng hiện tại.")
+            if payload_has_disclosure([artifact.content, artifact.filename, artifact.meta]):
+                await email_draft_store.update_status(req.session_id, status="pending")
+                return guardrail_response(req)
             attachments.append(
                 {
                     "filename": artifact.filename,
@@ -2103,6 +2162,8 @@ async def handle_email_send_query(
             answer_scope=answer_scope,
         )
 
+    if payload_has_disclosure([subject, body_text]):
+        return guardrail_response(req)
     draft_id = str(uuid.uuid4())
     draft = EmailDraft(
         id=draft_id,
@@ -2158,6 +2219,8 @@ async def download_report(report_id: str):
         raise HTTPException(status_code=400, detail="Invalid report ID.") from exc
     artifact = await artifact_store.get(normalized_id)
     if artifact is None or artifact.kind != "report_html":
+        raise HTTPException(status_code=404, detail="Report not found or expired.")
+    if payload_has_disclosure([artifact.content, artifact.filename, artifact.meta]):
         raise HTTPException(status_code=404, detail="Report not found or expired.")
     return Response(
         content=artifact.content,
@@ -2306,6 +2369,9 @@ async def health():
             if cctvai_hardware_service is not None
             else {"available": False, "enabled": False}
         ),
+        # Snapshot of the background liveness probe only; it does not prove
+        # the agent's key, LLM or Oracle access works. Never exposes URL/key.
+        "qa": qa_agent_service.status(),
         "gmail_send": (
             gmail_sender.status()
             if gmail_sender is not None
@@ -2492,14 +2558,14 @@ async def list_models(language: Literal["vi", "ja"] = "vi"):
     model_text = {
         "vi": {
             "local": {
-                "name": "Local Model",
-                "description": "Chạy model nội bộ/local cho hỏi đáp dạng text.",
+                "name": "Qwen primary",
+                "description": "Dùng Qwen từ xa; Azure chỉ là tuyến dự phòng kỹ thuật.",
             },
         },
         "ja": {
             "local": {
-                "name": "ローカルモデル",
-                "description": "テキストQ&A向けに社内/ローカルモデルを使用します。",
+                "name": "Qwen メインモデル",
+                "description": "Qwenリモートモデルを使用し、Azureは技術的な障害時のみ使います。",
             },
         },
     }
@@ -2535,7 +2601,13 @@ def _load_quick_answers() -> dict:
 
 
 def safety_guard_response(req: QueryRequest) -> Optional[QueryResponse]:
-    """Block clearly unsafe cross-system requests before retrieval/model calls."""
+    """Block unsafe instructions in the current turn before routing."""
+    if is_disclosure_request(req.question):
+        return guardrail_response(req)
+    # Preserve QA's existing history rejection; for other modes, old turns are
+    # filtered independently and must not decide whether this turn is allowed.
+    if req.mode == "qa" and history_is_unsafe(req.conversation_context):
+        return guardrail_response(req)
     normalized = normalize_text(req.question)
     original = req.question or ""
     blocked = False
@@ -2606,9 +2678,40 @@ def safety_guard_response(req: QueryRequest) -> Optional[QueryResponse]:
     )
 
 
+def effective_conversation_context(req: QueryRequest) -> list[dict[str, Any]]:
+    """Keep safe reference turns without letting a rejected turn poison later turns."""
+    history = safe_history(req.conversation_context)
+    effective_history = []
+    previous_hardware_question = False
+    for item in history:
+        role = item.get("role")
+        content = str(item.get("content") or "")
+        is_hardware_turn = (
+            item.get("answer_scope") == "cctvai_hardware"
+            or (role == "user" and classify_hardware_question(content))
+            or (role == "assistant" and previous_hardware_question)
+        )
+        if role == "user":
+            previous_hardware_question = classify_hardware_question(content)
+        elif role == "assistant":
+            previous_hardware_question = False
+        if is_hardware_turn:
+            continue
+        if item.get("answer_scope") == "guardrail":
+            continue
+        turn_req = req.model_copy(
+            update={"question": content, "conversation_context": []}
+        )
+        if safety_guard_response(turn_req) is None:
+            effective_history.append(item)
+    # QA uses a separate agent, but it must not receive host telemetry history.
+    return effective_history
+
+
 def prepared_query_response(req: QueryRequest) -> Optional[QueryResponse]:
     """Return curated answers for known MKAC demo questions without calling LLM."""
-    if req.mode != "mkac" or try_parse_email_send_command(req.question) is not None:
+    if (req.mode != "mkac" or req.conversation_context
+            or try_parse_email_send_command(req.question) is not None):
         return None
 
     data = _load_quick_answers()
@@ -2933,6 +3036,7 @@ async def upload_document(
     response_model=QueryResponse,
     response_model_exclude_none=True,
 )
+@guarded_query
 async def query_documents(req: QueryRequest, request: Request):
     """
     Hỏi đáp dựa trên tài liệu (non-streaming).
@@ -2942,6 +3046,21 @@ async def query_documents(req: QueryRequest, request: Request):
     normalize_session_id(req.session_id)
     req = normalize_research_request(req)
     current_employee = await asyncio.to_thread(authorize_query, req)
+    guard_response = safety_guard_response(req)
+    if guard_response is not None:
+        return guard_response
+    req = req.model_copy(
+        update={"conversation_context": effective_conversation_context(req)}
+    )
+    if req.mode == "qa":
+        # QA is answered by the external Agent QMS only: no cache, translation,
+        # email/calendar/report interception, RAG or MES readiness.
+        return await handle_qa_query(
+            req,
+            qa_agent_service,
+            record_metric=record_query_metric,
+            started_at=request_started_at,
+        )
     if req.mode == "wms" and (
         req.quick_answer_id or resolve_wms_prepared_response(req) is not None
     ):
@@ -2952,7 +3071,9 @@ async def query_documents(req: QueryRequest, request: Request):
                 "/query/stream."
             ),
         )
-    research_cached_response = research_cached_query_response(req)
+    research_cached_response = (
+        research_cached_query_response(req) if not req.conversation_context else None
+    )
     if research_cached_response is not None:
         logger.info(
             "Research cached answer hit topic=%s language=%s",
@@ -2986,10 +3107,6 @@ async def query_documents(req: QueryRequest, request: Request):
         return cached_response.model_copy(update={"session_id": req.session_id})
 
     try:
-        guard_response = safety_guard_response(req)
-        if guard_response is not None:
-            await wait_for_min_query_latency(request_started_at)
-            return guard_response
 
         prepared_response = prepared_query_response(req)
         if prepared_response is not None:
@@ -2998,11 +3115,18 @@ async def query_documents(req: QueryRequest, request: Request):
                 req.mode,
                 req.ui_language,
             )
+            prepared_response = guard_query_response(
+                prepared_response,
+                req.ui_language,
+            )
             await set_cached_query_response(cache_key, prepared_response)
             await wait_for_min_query_latency(request_started_at)
             return prepared_response
 
         localized_req = await localize_query_request(req)
+        localized_guard_response = safety_guard_response(localized_req)
+        if localized_guard_response is not None:
+            return localized_guard_response
         current_user_context = await asyncio.to_thread(
             employee_context_for_query,
             localized_req,
@@ -3066,6 +3190,10 @@ async def query_documents(req: QueryRequest, request: Request):
                 req.mode,
                 req.ui_language,
             )
+            directory_response = guard_query_response(
+                directory_response,
+                req.ui_language,
+            )
             await set_cached_query_response(cache_key, directory_response)
             await wait_for_min_query_latency(request_started_at)
             return directory_response
@@ -3113,11 +3241,13 @@ async def query_documents(req: QueryRequest, request: Request):
             ),
             cctvai_metadata=cctvai_meta,
         )
-        await set_cached_query_response(cache_key, response)
+        response = guard_query_response(response, req.ui_language)
+        if response.answer_scope != "guardrail":
+            await set_cached_query_response(cache_key, response)
         await record_query_metric(
             mode=req.mode,
             ui_language=req.ui_language,
-            answer_scope=answer_scope,
+            answer_scope=response.answer_scope,
             cache_hit=False,
             latency_ms=(time.monotonic() - request_started_at) * 1000,
         )
@@ -3139,10 +3269,14 @@ async def query_documents(req: QueryRequest, request: Request):
             latency_ms=(time.monotonic() - request_started_at) * 1000,
             error=True,
         )
-        raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Query failed. Please try again.",
+        ) from None
 
 
 @app.post("/query/stream")
+@guarded_query
 async def query_stream(req: QueryRequest, request: Request):
     """
     Hỏi đáp dựa trên tài liệu dạng streaming SSE.
@@ -3152,7 +3286,23 @@ async def query_stream(req: QueryRequest, request: Request):
     normalize_session_id(req.session_id)
     req = normalize_research_request(req)
     current_employee = await asyncio.to_thread(authorize_query, req)
-    research_cached_response = research_cached_query_response(req)
+    guard_response = safety_guard_response(req)
+    if guard_response is not None:
+        return guard_stream_response(req, guard_response)
+    req = req.model_copy(
+        update={"conversation_context": effective_conversation_context(req)}
+    )
+    if req.mode == "qa":
+        # See query_documents(): QA bypasses every other pipeline stage.
+        return handle_qa_stream(
+            req,
+            qa_agent_service,
+            record_metric=record_query_metric,
+            started_at=request_started_at,
+        )
+    research_cached_response = (
+        research_cached_query_response(req) if not req.conversation_context else None
+    )
     if research_cached_response is not None:
         logger.info(
             "Streaming research cached answer hit topic=%s language=%s",
@@ -3261,25 +3411,6 @@ async def query_stream(req: QueryRequest, request: Request):
             },
         )
     try:
-        guard_response = safety_guard_response(req)
-        if guard_response is not None:
-            async def guard_event_generator():
-                yield sse_status(req, "received")
-                await wait_for_min_query_latency(request_started_at)
-                yield sse_event({"type": "sources", "sources": []})
-                yield sse_event({"type": "meta", "model": guard_response.model, "mode": guard_response.mode, "answer_scope": guard_response.answer_scope})
-                yield sse_event({"type": "token", "content": guard_response.answer})
-                yield sse_event({"type": "done"})
-
-            return StreamingResponse(
-                guard_event_generator(),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "X-Accel-Buffering": "no",
-                },
-            )
-
         if (
             req.mode == "wms"
             and not report_capability_for_mode(req.question, req.mode).is_report
@@ -3331,6 +3462,9 @@ async def query_stream(req: QueryRequest, request: Request):
             )
 
         localized_req = await localize_query_request(req)
+        localized_guard_response = safety_guard_response(localized_req)
+        if localized_guard_response is not None:
+            return guard_stream_response(req, localized_guard_response)
         localized_contextual_question = resolve_employee_context_question(
             localized_req,
             localized_req.question,

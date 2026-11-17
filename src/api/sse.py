@@ -21,6 +21,9 @@ QUERY_STREAM_STATUS_TEXT = {
         "mes": "Đang truy vấn dữ liệu MES...",
         "wms": "Đang chuẩn bị kiểm chứng dữ liệu WMS...",
         "cctvai": "Đang truy vấn dữ liệu camera CCTVAI...",
+        "qa": "Đang gửi câu hỏi tới Agent QMS 5M1E...",
+        "qa_queued": "Agent QMS đã nhận câu hỏi, đang chờ tới lượt xử lý...",
+        "qa_running": "Agent QMS đang phân tích dữ liệu chất lượng...",
         "report": "Đang tổng hợp báo cáo điều hành...",
         "rag": "Đang tìm nguồn tài liệu phù hợp...",
         "research_cache": "Đang phân tích tài liệu liên quan...",
@@ -39,6 +42,9 @@ QUERY_STREAM_STATUS_TEXT = {
         "mes": "MESデータを照会しています...",
         "wms": "WMSデータの検証を準備しています...",
         "cctvai": "CCTVAIカメラデータを照会しています...",
+        "qa": "Agent QMS 5M1E に質問を送信しています...",
+        "qa_queued": "Agent QMS が質問を受け付け、処理順を待っています...",
+        "qa_running": "Agent QMS が品質データを分析しています...",
         "report": "エグゼクティブレポートを集計しています...",
         "rag": "関連資料を検索しています...",
         "research_cache": "関連資料を分析しています...",
@@ -113,6 +119,8 @@ def query_processing_status_key(req: QueryRequest) -> str:
         return "wms"
     if req.mode == "cctvai":
         return "cctvai"
+    if req.mode == "qa":
+        return "qa"
     if req.mode == "mkac":
         return "rag"
     return "rag"

@@ -1,43 +1,180 @@
 import React from 'react';
 import { Loader2, Sparkles, Check, Copy, AlertCircle, Trash2, X } from "lucide-react";
+import {
+  getQaCitationEntries,
+  getQaElapsedSeconds,
+  isQaCitationListTruncated,
+} from "../qa-citations";
+import { qaEffectiveQuestion } from "../qa-mode";
+import { getQaMessageSuggestions } from "../qa-prompts";
 
-function wmsTranslation(t, group, value, fallback) {
-  const normalized = String(value || "").trim();
-  if (!normalized) return t(`common.${group}.${fallback}`);
-  const key = `common.${group}.${normalized}`;
-  const translated = t(key);
-  return translated === key ? t(`common.${group}.${fallback}`) : translated;
+function qaCitationTypeLabel(type, language) {
+  const labels = language === "ja"
+    ? { sql: "SQL参照", row: "レコード参照", semantic: "意味検索参照" }
+    : { sql: "Tham chiếu truy vấn", row: "Tham chiếu bản ghi", semantic: "Tham chiếu ngữ nghĩa" };
+  return labels[type] || labels.semantic;
 }
 
-function wmsReasonList(t, values) {
-  return (values || [])
-    .map((value) => wmsTranslation(t, "wmsReason", value, "fallback"))
-    .join(", ");
+function QaCitationList({ metadata, language }) {
+  const citations = getQaCitationEntries(metadata);
+  const truncated = isQaCitationListTruncated(metadata);
+  if (!citations.length && !truncated) return null;
+  const labels = language === "ja"
+    ? {
+        title: "Agent QMS 5M1E — 参照情報",
+        views: "ビュー",
+        keys: "キー",
+        inspections: "検査キー",
+        chunks: "関連チャンク",
+        truncatedNote: "参照情報の一部は件数上限または形式不正のため表示されていません。",
+        sourceNote: "参照情報は照合の手がかりであり、業務データの正確性を保証するものではありません。",
+      }
+    : {
+        title: "Nguồn tham chiếu — Agent QMS 5M1E",
+        views: "View",
+        keys: "Khóa bản ghi",
+        inspections: "Khóa kiểm tra",
+        chunks: "Đoạn ngữ nghĩa",
+        truncatedNote: "Một phần tham chiếu đã được lược bớt do vượt giới hạn hoặc sai định dạng.",
+        sourceNote: "Các tham chiếu hỗ trợ đối chiếu, không chứng minh số liệu đã được xác minh nghiệp vụ.",
+      };
+
+  return (
+    <section className="qa-citations" aria-label={labels.title}>
+      <h4>{labels.title}</h4>
+      {citations.map((citation, index) => (
+        <article className="qa-citation" key={`${citation.type}-${index}`}>
+          <strong className="qa-citation-type">{qaCitationTypeLabel(citation.type, language)}</strong>
+          {citation.views.length > 0 && (
+            <p><span>{labels.views}:</span> {citation.views.join(", ")}</p>
+          )}
+          {citation.fields.map((field) => (
+            <p key={field.name}><span>{field.name}:</span> {field.values.join(", ")}</p>
+          ))}
+          {citation.inspectionKeys.length > 0 && (
+            <p><span>{labels.inspections}:</span> {citation.inspectionKeys.join(", ")}</p>
+          )}
+          {citation.chunks.length > 0 && (
+            <p>
+              <span>{labels.chunks}:</span>{" "}
+              {citation.chunks.map((chunk, chunkIndex) => (
+                <span className="qa-citation-chunk" key={`${chunk.id}-${chunkIndex}`}>
+                  {[chunk.id, chunk.sourceView, chunk.sourceKey, chunk.inspectionKey].filter(Boolean).join(" · ")}
+                </span>
+              ))}
+            </p>
+          )}
+        </article>
+      ))}
+      {truncated && <p className="qa-citation-note">{labels.truncatedNote}</p>}
+      <p className="qa-citation-note">{labels.sourceNote}</p>
+    </section>
+  );
+}
+
+function answerScopeLabel(message, t) {
+  if (message.answerScope === "qa_agent") return t("answerScope.qa_agent");
+  if (message.answerScope === "general") return t("common.noResult");
+  if (message.answerScope === "web") return t("common.webSearch");
+  if (message.answerScope === "mes") return t("common.mesData");
+  if (message.answerScope === "mes_database") return t("common.mesSnapshot");
+  if (message.answerScope === "wms_database") return t("common.wmsSnapshot");
+  if (message.answerScope === "cctvai_database") return "CCTVAI";
+  if (message.answerScope === "cctvai_hardware") return t("common.cctvaiHardware");
+  if (message.answerScope === "mes_report") return t("common.mesReport");
+  if (message.answerScope === "wms_executive_report") return t("common.wmsReport");
+  if (message.answerScope === "hr_executive_report") return t("common.hrReport");
+  if (message.answerScope === "cctvai_report") return t("common.cctvaiReport");
+  if (message.answerScope === "mes_report_unsupported") return t("common.mesReportUnsupported");
+  if (message.mode === "research") return t("common.research");
+  return t("common.mkacSource");
+}
+
+function answerScopeDescription(message, t) {
+  if (message.answerScope === "qa_agent") return t("answerScope.qa_agent");
+  if (message.answerScope === "web") return t("answerScope.web");
+  if (message.answerScope === "mes") return t("answerScope.mes");
+  if (message.answerScope === "mes_database") return t("answerScope.mes_database");
+  if (message.answerScope === "wms_database") return t("answerScope.wms_database");
+  if (message.answerScope === "cctvai_database") return t("answerScope.cctvai_database");
+  if (message.answerScope === "cctvai_hardware") return t("answerScope.cctvai_hardware");
+  if (message.answerScope === "mes_report") return t("answerScope.mes_report");
+  if (message.answerScope === "wms_executive_report") return t("answerScope.wms_executive_report");
+  if (message.answerScope === "hr_executive_report") return t("answerScope.hr_executive_report");
+  if (message.answerScope === "cctvai_report") return t("answerScope.cctvai_report");
+  if (message.answerScope === "mes_report_unsupported") return t("answerScope.mes_report_unsupported");
+  if (message.answerScope === "research") return t("answerScope.research");
+  if (message.answerScope === "mkac") return t("answerScope.mkac");
+  return t("answerScope.fallback");
+}
+
+function QaAnswerDetails({ metadata, language }) {
+  const seconds = getQaElapsedSeconds(metadata);
+  const clarification = metadata?.clarification === true;
+  if (seconds === null && !clarification) return null;
+  const labels = language === "ja"
+    ? { time: "処理時間", clarification: "追加情報が必要" }
+    : { time: "Thời gian xử lý", clarification: "Agent cần thêm thông tin" };
+  return (
+    <>
+      {clarification && <span className="qa-clarification">{labels.clarification}</span>}
+      {seconds !== null && (
+        <span className="qa-processing-time">{labels.time}: {seconds.toFixed(1)}s</span>
+      )}
+    </>
+  );
+}
+
+function QaEffectiveQuestion({ metadata, question, language }) {
+  const effective = qaEffectiveQuestion(metadata, question);
+  if (!effective) return null;
+  const label = language === "ja" ? "前の質問を踏まえた解釈" : "Agent hiểu câu hỏi nối tiếp là";
+  return (
+    <p className="qa-effective-question">
+      <span>{label}:</span> {effective}
+    </p>
+  );
+}
+
+const EMPTY_SUGGESTIONS = [];
+const NOOP = () => {};
+const EmptyReportArtifactCard = () => null;
+const EmptyAgentTimeline = () => null;
+const EmptyBot = () => null;
+const EmptyMessageMarkdown = ({ content }) => content;
+const EmptyCopyAnswer = () => {};
+const EmptyScrollToEnd = () => {};
+
+export function getMessageSuggestions(message, mode, getSuggestions, askedQuestion = "", language = "vi") {
+  if (mode === "qa" || message.mode === "qa" || message.answerScope === "qa_agent") {
+    return getQaMessageSuggestions(message, askedQuestion, language);
+  }
+  return getSuggestions(message.content, mode, message.id);
 }
 
 export function MessageList({
-  messages,
-  mode,
-  busy,
-  language,
-  t,
+  messages = [],
+  mode = "mkac",
+  busy = false,
+  language = "vi",
+  t = (key) => key,
   latestAssistantMessage,
-  pendingAssistantId,
-  waitingMessageIndex,
-  text,
-  copiedMessageId,
-  copyAnswer,
-  openSourcePreview,
-  getSuggestions,
-  handleQuickAnswerClick,
+  pendingAssistantId = "",
+  waitingMessageIndex = 0,
+  text = { waiting: [] },
+  copiedMessageId = "",
+  copyAnswer = EmptyCopyAnswer,
+  openSourcePreview = NOOP,
+  getSuggestions = () => EMPTY_SUGGESTIONS,
+  handleQuickAnswerClick = NOOP,
   endRef,
-  onScrollToEnd,
-  error,
-  MessageMarkdown,
-  AgentTimeline,
-  ReportArtifactCard,
-  onReportEmail,
-  Bot
+  onScrollToEnd = EmptyScrollToEnd,
+  error = "",
+  MessageMarkdown = EmptyMessageMarkdown,
+  AgentTimeline = EmptyAgentTimeline,
+  ReportArtifactCard = EmptyReportArtifactCard,
+  onReportEmail = NOOP,
+  Bot = EmptyBot,
 }) {
   return (
     <div
@@ -46,9 +183,18 @@ export function MessageList({
       aria-live="polite"
       aria-relevant="additions text"
     >
-      {messages.map((message) => (
+      {messages.map((message, index) => {
+        const askedQuestion = messages[index - 1]?.role === "user" ? messages[index - 1].content : "";
+        const suggestions = message.role === "assistant" &&
+          message.id !== pendingAssistantId &&
+          message.content
+          ? getMessageSuggestions(message, mode, getSuggestions, askedQuestion, language)
+          : EMPTY_SUGGESTIONS;
+        const isQa = message.mode === "qa" || message.answerScope === "qa_agent";
+        const citations = isQa ? getQaCitationEntries(message.qaMetadata) : [];
+        return (
         <article
-          className={`message ${message.role}${message.artifact ? " has-report-artifact" : ""}`}
+          className={`message ${message.role}${message.artifact ? " has-report-artifact" : ""}${isQa ? " qa-message" : ""}`}
           key={message.id}
         >
           <div className="message-avatar">
@@ -59,35 +205,8 @@ export function MessageList({
               <div className="message-meta">
                 <span>{message.model}</span>
                 {message.stopped && <span>{t("common.stopped")}</span>}
-                <span>
-                  {message.answerScope === "general"
-                    ? t("common.noResult")
-                    : message.answerScope === "web"
-                      ? t("common.webSearch")
-                    : message.answerScope === "mes"
-                      ? t("common.mesData")
-                    : message.answerScope === "mes_database"
-                      ? t("common.mesSnapshot")
-                    : message.answerScope === "wms_database"
-                      ? t("common.wmsSnapshot")
-                    : message.answerScope === "cctvai_database"
-                      ? "CCTVAI"
-                    : message.answerScope === "cctvai_hardware"
-                      ? t("common.cctvaiHardware")
-                    : message.answerScope === "mes_report"
-                      ? t("common.mesReport")
-                    : message.answerScope === "wms_executive_report"
-                      ? t("common.wmsReport")
-                    : message.answerScope === "hr_executive_report"
-                      ? t("common.hrReport")
-                    : message.answerScope === "cctvai_report"
-                      ? t("common.cctvaiReport")
-                    : message.answerScope === "mes_report_unsupported"
-                      ? t("common.mesReportUnsupported")
-                    : message.mode === "research"
-                      ? t("common.research")
-                      : t("common.mkacSource")}
-                </span>
+                <span>{answerScopeLabel(message, t)}</span>
+                {isQa && <QaAnswerDetails metadata={message.qaMetadata} language={language} />}
               </div>
             )}
             {message.role === "assistant" && message.wmsMetadata && (
@@ -110,9 +229,16 @@ export function MessageList({
                 language={language}
               />
             )}
+            {isQa && message.role === "assistant" && (
+              <QaEffectiveQuestion
+                metadata={message.qaMetadata}
+                question={askedQuestion}
+                language={language}
+              />
+            )}
             {message.content ? (
               <div className="message-body">
-                <MessageMarkdown content={message.content} />
+                <MessageMarkdown content={message.content} qa={isQa && message.role === "assistant"} />
                 {busy &&
                   message.role === "assistant" &&
                   message.id === latestAssistantMessage?.id && (
@@ -134,7 +260,7 @@ export function MessageList({
                     <span key={message.status || waitingMessageIndex}>
                       {message.status || text.waiting[waitingMessageIndex]}
                     </span>
-                    {language === "ja" && (
+                    {language === "ja" && !isQa && (
                       <small>{t("common.languageConverting")}</small>
                     )}
                   </span>
@@ -146,6 +272,9 @@ export function MessageList({
                 </div>
               </div>
             ) : null}
+            {isQa && message.role === "assistant" && message.content && (
+              <QaCitationList metadata={message.qaMetadata} language={language} />
+            )}
             {message.role === "assistant" && message.artifact && (
               <ReportArtifactCard
                 artifact={message.artifact}
@@ -163,35 +292,8 @@ export function MessageList({
                   </summary>
                   <div>
                     <strong>{message.model}</strong>
-                    <span>
-                      {message.answerScope === "web"
-                        ? t("answerScope.web")
-                        : message.answerScope === "mes"
-                          ? t("answerScope.mes")
-                        : message.answerScope === "mes_database"
-                          ? t("answerScope.mes_database")
-                        : message.answerScope === "wms_database"
-                          ? t("answerScope.wms_database")
-                        : message.answerScope === "cctvai_database"
-                          ? t("answerScope.cctvai_database")
-                        : message.answerScope === "cctvai_hardware"
-                          ? t("answerScope.cctvai_hardware")
-                        : message.answerScope === "mes_report"
-                          ? t("answerScope.mes_report")
-                        : message.answerScope === "wms_executive_report"
-                          ? t("answerScope.wms_executive_report")
-                        : message.answerScope === "hr_executive_report"
-                          ? t("answerScope.hr_executive_report")
-                        : message.answerScope === "cctvai_report"
-                          ? t("answerScope.cctvai_report")
-                        : message.answerScope === "mes_report_unsupported"
-                          ? t("answerScope.mes_report_unsupported")
-                        : message.answerScope === "research"
-                          ? t("answerScope.research")
-                          : message.answerScope === "mkac"
-                            ? t("answerScope.mkac")
-                            : t("answerScope.fallback")}
-                    </span>
+                    <span>{answerScopeDescription(message, t)}</span>
+                    {isQa && <span>{t("answerScope.qa_disclaimer")}</span>}
                     {message.wmsMetadata && (
                       <dl className="wms-meta-details">
                         <div>
@@ -309,7 +411,7 @@ export function MessageList({
                 </button>
               </div>
             )}
-            {message.role === "assistant" && message.sources?.length > 0 && (
+            {message.role === "assistant" && !isQa && message.sources?.length > 0 && (
               <details className="message-sources">
                 <summary>{message.sources.length} {t("common.sources")}</summary>
                 {message.sources.map((source, index) => (
@@ -338,33 +440,43 @@ export function MessageList({
                 ))}
               </details>
             )}
-            {message.role === "assistant" &&
-              message.id !== pendingAssistantId &&
-              message.content &&
-              getSuggestions(message.content, mode, message.id).length > 0 && (
-                <div className="message-suggestions">
-                  <p>{t("common.suggestions")}</p>
-                  <ul className="suggestion-list">
-                    {getSuggestions(message.content, mode, message.id).map(
-                      (suggestion, i) => (
-                        <li key={i}>
-                          <button
-                            type="button"
-                            onClick={() => handleQuickAnswerClick(suggestion)}
-                            title={t("common.autoAsk")}
-                          >
-                            {suggestion.question}
-                          </button>
-                        </li>
-                      )
-                    )}
-                  </ul>
-                </div>
-              )}
+            {suggestions.length > 0 && (
+              <div className="message-suggestions">
+                <p>{t("common.suggestions")}</p>
+                <ul className="suggestion-list">
+                  {suggestions.map((suggestion, i) => (
+                    <li key={i}>
+                      <button
+                        type="button"
+                        onClick={() => handleQuickAnswerClick(suggestion)}
+                        title={t("common.autoAsk")}
+                      >
+                        {suggestion.label || suggestion.question}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </article>
-      ))}
+        );
+      })}
       <div ref={endRef} />
     </div>
   );
+}
+
+function wmsTranslation(t, group, value, fallback) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return t(`common.${group}.${fallback}`);
+  const key = `common.${group}.${normalized}`;
+  const translated = t(key);
+  return translated === key ? t(`common.${group}.${fallback}`) : translated;
+}
+
+function wmsReasonList(t, values) {
+  return (values || [])
+    .map((value) => wmsTranslation(t, "wmsReason", value, "fallback"))
+    .join(", ");
 }

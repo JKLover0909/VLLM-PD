@@ -3,7 +3,10 @@
 > **Ranh giới môi trường:** Phần 8 là runbook Dev cho
 > `/home/jkl/Code/VLLM-PD-dev` và `docker-compose.dev.yml`. Các phần dùng
 > `/home/jkl/Code/VLLM-PD`, port `8001` hoặc `docker-compose.web.yml` là
-> Production và không được chạy khi đang hoàn thiện WMS Phase 2C Dev.
+> Production. Target ngày 2026-11-17 là một remote Qwen primary, Azure chỉ fallback
+> sau lỗi; hardware telemetry deterministic. Chưa có endpoint TLS/VPN được xác nhận/
+> cấu hình nên Dev hiện vẫn dùng Ollama và Production chưa rollout. Tài liệu này không
+> cấp quyền chạy lệnh Production.
 
 Tài liệu này mô tả cách triển khai Meibook theo cấu hình Docker web hiện tại
 trong repository `VLLM-PD`. Chế độ này phục vụ web hỏi đáp MKAC/MES, Qdrant,
@@ -25,7 +28,7 @@ Các service trong `docker-compose.web.yml`:
 | `app` | FastAPI + React build + RAG/MES/Auth/Gmail |
 | `qdrant` | Vector database |
 | `litellm` | Model router |
-| `ollama-proxy` | Bridge container -> Ollama host local |
+| `ollama-proxy` | Legacy bridge; remove only after both stacks switch and consumer audit |
 
 Các cổng:
 
@@ -33,8 +36,8 @@ Các cổng:
 |---|---:|---|
 | `app` | `8001` | Publish ra LAN |
 | `qdrant` | `127.0.0.1:6333` | Chỉ nội bộ host |
-| `litellm` | `127.0.0.1:4000` | Chỉ nội bộ host |
-| `ollama-proxy` | `172.17.0.1:11435` | Docker gateway -> host Ollama |
+| `litellm` | `127.0.0.1:4002` | Production uses `LITELLM_PROXY_PORT`; container listens on `4000` |
+| Remote Qwen | HTTPS/VPN URL (operator supplied) | Shared single primary model endpoint; no HTTP default |
 
 ## 2. Thành phần cần chuẩn bị
 
@@ -85,90 +88,98 @@ Không commit các file này.
 
 ## 3. Cấu hình môi trường
 
-Tạo file `.env.docker`:
+Nếu chưa có `.env.docker`, tạo từ mẫu và điền credentials phù hợp với checkout.
+Không chạy lệnh `cp` để ghi đè file env hiện có:
 
 ```bash
-cp .env.docker.example .env.docker
+test -e .env.docker || cp .env.docker.example .env.docker
 nano .env.docker
 ```
 
-Các nhóm biến quan trọng:
+Target routing cho cả hai stack dùng một Qwen primary, Azure chỉ fallback tuần tự.
+Runtime chưa được bật vì endpoint HTTP hiện có không đủ bảo vệ; chỉ cấu hình URL
+HTTPS/VPN và credential sau khi người vận hành cung cấp/xác nhận. Các giá trị này
+nằm trong `.env.docker` ignored, không đưa secret vào Markdown hoặc commit. Chỉ tạo
+env từ ví dụ khi file thật chưa tồn tại.
 
 ```env
-MACHINE2_API_PORT=8001
-
-LITELLM_MASTER_KEY=sk-local
-OPENAI_API_KEY=...
-AZURE_OPENAI_API_KEY=...
-AZURE_OPENAI_ENDPOINT=...
-
-QWEN_CHAT_API_BASE=http://192.168.10.124:11434
-QWEN_CHAT_NGROK_API_BASE=https://carless-overarch-establish.ngrok-free.dev
-QWEN_SMALL_API_BASE=http://host.docker.internal:11435
-QWEN_CODER_LAN_API_BASE=http://192.168.10.14:11434/v1
-QWEN_CODER_LAN_API_KEY=sk-local
-QWEN_CODER_NGROK_API_BASE=https://your-qwen-coder-tunnel.example/v1
-QWEN_CODER_NGROK_API_KEY=sk-local
-
-# Role-specific cloud fallback credentials (Azure is attempted before OpenAI).
-OPENAI_API_KEY=...
-AZURE_OPENAI_API_KEY=...
-AZURE_OPENAI_ENDPOINT=https://your-resource-name.openai.azure.com/openai/v1
-CHAT_FALLBACK_MODEL=azure-chat-fallback
-
-TRANSLATION_MODEL=local-qwen-small
+REMOTE_LLM_API_BASE=
+REMOTE_LLM_MODEL=
+REMOTE_LLM_API_KEY=
+TRANSLATION_MODEL=local-qwen-chat
 MES_SQL_AGENT_MODEL=local-qwen-coder
+
+# Azure gpt-5.4-mini is used only after primary chat/coder failure.
+# Hardware telemetry is summarized deterministically; no LLM alias is configured.
 
 EMPLOYEE_DIRECTORY_DB_PATH=data/employee_directory.sqlite
 MES_DATABASE_PATH=data/mes.sqlite
-
 GMAIL_SEND_ENABLED=true
 GMAIL_CREDENTIALS_PATH=data/gmail_credentials.json
 GMAIL_TOKEN_PATH=data/gmail_token.json
 ```
 
-Trong `docker-compose.web.yml`, các biến model cũng được truyền trực tiếp vào
-service `litellm` để đảm bảo container thấy đúng endpoint.
-
-## 4. Ollama local model phụ trên máy host
-
-Model phụ `qwen2.5:3b-instruct` chạy trên host qua systemd Ollama. Container
-LiteLLM gọi qua `ollama-proxy`:
-
-```text
-http://host.docker.internal:11435
-```
-
-Kiểm tra host Ollama:
+Production local hiện dùng host port `4002` qua `LITELLM_PROXY_PORT`; Dev dùng
+host port `4001`. Nếu không đặt biến, Compose mapping fallback là host `4000` —
+đây không phải host port hiện tại của hai stack. LiteLLM trong container luôn nghe
+cổng `4000`. `env_file:` của service không tự cấp biến cho Compose interpolation,
+nên các lệnh Production phải truyền cả `--env-file`:
 
 ```bash
-curl -fsS http://localhost:11434/api/tags | jq .
+MEIBOOK_ENV_FILE=.env.docker docker compose --env-file .env.docker \
+  -f docker-compose.web.yml config -q
 ```
 
-Kiểm tra qua proxy sau khi Docker chạy:
+Trước thay đổi trạng thái, kiểm tra thêm project/container, port và bind source
+đã resolve; không in toàn bộ config vì có thể lộ secret. Không cấu hình
+`LOCAL_CHAT_NUM_CTX`, `LOCAL_AUX_NUM_CTX`, `CHAT_LAN_API_BASE` hoặc
+`CHAT_LAN_API_KEY`; các biến này không còn được sử dụng.
 
-```bash
-curl -fsS http://172.17.0.1:11435/api/tags | jq .
-```
+## 4. Model endpoints
+
+Target routing giữ bốn alias nghiệp vụ: `auto-model`, `local-qwen-chat` (chat và
+helper/dịch), `local-qwen-coder` (MES/WMS/CCTVAI SQL) và `coding-model` (Coding
+Agent). Target sau rollout là cả bốn gọi cùng một model Qwen3.5-9B Q4_K_M qua LiteLLM
+`openai` provider; Azure `gpt-5.4-mini` chỉ fallback tuần tự khi primary lỗi. Hiện
+Dev vẫn dùng Ollama vì endpoint TLS/VPN chưa được xác nhận/cấu hình; Production
+chưa rollout. API không cung cấp lựa chọn cloud trực tiếp; `model="openai"` từ
+client cũ chuẩn hóa về primary.
+
+Endpoint API được cấu hình bằng `REMOTE_LLM_API_BASE`, `REMOTE_LLM_MODEL` và
+`REMOTE_LLM_API_KEY`. **Không có HTTP mặc định.** Chỉ điền sau khi người vận hành
+cung cấp/xác nhận HTTPS hoặc VPN/tunnel bảo vệ và cho phép rollout. Key chỉ nằm
+trong secret config ignored. Không smoke-test dữ liệu thật trước khi TLS/VPN được
+xác minh.
+
+Primary nhận `chat_template_kwargs.enable_thinking=false` trong LiteLLM config;
+không dùng Ollama `think` hoặc `reasoning_effort`. `max_parallel_requests: 1` và
+timeout hiện giữ bảo thủ; token/context budgets app không tăng theo context tối đa
+server quảng bá. Kiểm thử bằng upstream giả phải xác nhận extension Qwen được forward
+chỉ tới primary, không tới Azure. Ảnh thử Qwen trước; lỗi capability có thể đi theo
+fallback Azure tuần tự.
+
+Hardware metrics **không có model alias**: `CctvaiHardwareService` render số liệu
+trực tiếp trên Meibook. Không gửi snapshot, câu hỏi hardware, câu trả lời hay lượt
+history hardware tới Qwen/Azure/translation. BGE-M3 và Docling/OCR vẫn chạy local.
+
+Sau khi Dev và Production đều được rollout, người dùng duyệt riêng việc dừng Ollama
+host/proxy. Trước mốc đó không xóa model, không stop service và không kết luận GPU đã
+được giải phóng. QA Agent/QMS là microservice độc lập ngoài routing này.
 
 ## 5. Build và chạy
 
-Chạy script deploy:
+Runbook này không dùng script deploy chung vì script đó build/up toàn bộ services.
+Sau preflight và approval riêng cho Production, dùng Compose với env file rõ ràng;
+chỉ build/recreate đúng service bị ảnh hưởng:
 
 ```bash
-./scripts/docker-deploy.sh
+MEIBOOK_ENV_FILE=.env.docker docker compose --env-file .env.docker \
+  -f docker-compose.web.yml config -q
 ```
 
-Hoặc chạy thủ công:
-
-```bash
-set -a
-source .env.docker
-set +a
-
-MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml build
-MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml up -d
-```
+Chỉ chạy `up -d <service>` hoặc `build <service>` sau khi xác định rõ checkout,
+branch, Compose project, host port và bind mounts. Dev dùng riêng
+`docker-compose.dev.yml`; không trộn hai stack.
 
 Kiểm tra:
 
@@ -461,39 +472,20 @@ gửi mail thật hàng loạt.
 
 ## 11. Kiểm tra model
 
-Kiểm tra LiteLLM models:
+Chưa có lệnh request mẫu runnable, vì endpoint duy nhất đã thử hiện dùng HTTP và
+người dùng yêu cầu TLS/VPN trước khi gửi nội dung thật. Chỉ sau khi tuyến HTTPS/VPN
+được xác minh, secret đã nạp an toàn và rollout Dev được cho phép mới chạy smoke test
+với dữ liệu tổng hợp, `fallbacks: []`, lần lượt qua các alias Qwen. Không ghi API key
+trong shell history, process listing hoặc log.
 
-```bash
-KEY=$(sed -n 's/^LITELLM_MASTER_KEY=//p' .env.docker)
+Khi rollout được duyệt, LiteLLM host ports là Dev `4001` và Production `4002`
+(container `4000`). `/v1/models` chỉ xác nhận alias đã nạp, không chứng minh upstream
+request hoạt động. Test cần xác minh response header upstream, Qwen nhận
+`chat_template_kwargs.enable_thinking=false`, Azure không nhận extension đó và fallback
+chỉ xảy ra tuần tự sau primary error.
 
-curl -fsS http://localhost:4000/v1/models \
-  -H "Authorization: Bearer $KEY" | jq .
-```
-
-Test chat qua LiteLLM:
-
-```bash
-curl -fsS http://localhost:4000/v1/chat/completions \
-  -H "Authorization: Bearer $KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "auto-model",
-    "messages": [{"role": "user", "content": "Trả lời ngắn gọn: OK"}],
-    "max_tokens": 16
-  }' | jq .
-```
-
-Endpoint gốc cần biết:
-
-| Endpoint | Vai trò |
-|---|---|
-| `http://192.168.10.124:11434` | Qwen3 IP tĩnh, route chính nếu sống |
-| `https://carless-overarch-establish.ngrok-free.dev` | Qwen3 ngrok fallback |
-| `http://host.docker.internal:11435` | Qwen small qua host Ollama proxy |
-| `https://d3d2-...ngrok-free.app/v1` | Qwen Coder OpenAI-compatible |
-
-Nếu IP tĩnh Qwen3 `connection refused`, LiteLLM sẽ fallback sang ngrok rồi
-OpenAI theo `litellm_config.yaml`.
+Azure `gpt-5.4-mini` chỉ là fallback chat/coder. Không có alias hardware LLM hoặc
+provider OpenAI song song. Hardware summary deterministic trên Meibook.
 
 ## 12. Kiểm tra API chính
 
@@ -681,26 +673,13 @@ MEIBOOK_ENV_FILE=.env.docker docker compose -f docker-compose.web.yml ps
 
 Mở firewall cho cổng `8001` nếu cần.
 
-### LiteLLM không gọi được Qwen3 IP tĩnh
+### LiteLLM không gọi được remote Qwen primary
 
-Nếu endpoint `192.168.10.124:11434` lỗi, kiểm tra trực tiếp:
-
-```bash
-curl -fsS http://192.168.10.124:11434/api/tags | jq .
-```
-
-Nếu lỗi `connection refused`, hệ thống vẫn có thể chạy qua ngrok fallback. Tuy
-nhiên nên khôi phục server Qwen3 để giảm phụ thuộc ngrok/cloud fallback.
-
-### Qwen3 trả reasoning nhưng rỗng content
-
-Không gọi Qwen3 qua Ollama `/v1`. Trong LiteLLM phải dùng:
-
-```yaml
-model: ollama_chat/qwen3:14b
-api_base: http://...:11434
-think: false
-```
+Chỉ debug sau khi HTTPS/VPN endpoint đã được xác nhận. Kiểm tra certificate/tunnel,
+route, `REMOTE_LLM_MODEL`, secret injection và response headers; không in secret,
+payload nội bộ hoặc gọi HTTP endpoint thử nghiệm. Khi primary lỗi, chat/coder fallback
+tuần tự sang Azure `gpt-5.4-mini`. Hardware telemetry không tham gia fallback và
+không đi qua model.
 
 ### Đăng nhập nhân viên lỗi
 

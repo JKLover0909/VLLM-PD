@@ -17,9 +17,8 @@ if TYPE_CHECKING:  # pragma: no cover - chỉ dùng cho type hint
 MODEL_ROUTES = {
     "auto": "auto-model",
     "local": "local-qwen-chat",
-    # Explicit UI cloud choice uses the role-specific chat fallback alias.
-    "openai": "openai-chat-fallback",
-    "grok": "grok-model",
+    # Legacy clients may still send "openai"; keep routing through the primary.
+    "openai": "auto-model",
 }
 
 LOCAL_CHAT_MODEL_ALIASES = {"auto-model", "local-qwen-chat"}
@@ -36,8 +35,6 @@ def env_int(name: str, default: int, *, minimum: int = 1, maximum: int = 4096) -
 
 
 def resolve_model(model: str) -> str:
-    if model == "grok":
-        return "openai-chat-fallback"
     try:
         return MODEL_ROUTES[model]
     except KeyError as exc:
@@ -59,9 +56,7 @@ def resolve_wms_sql_agent_model(model: str) -> str:
 
 
 def provider_options(routed_model: str) -> dict[str, Any]:
-    if routed_model in LOCAL_CHAT_MODEL_ALIASES:
-        num_ctx = int(os.getenv("LOCAL_CHAT_NUM_CTX", "16384"))
-        return {"extra_body": {"think": False, "num_ctx": num_ctx}}
+    """Keep upstream-specific request bodies in LiteLLM configuration."""
     return {}
 
 

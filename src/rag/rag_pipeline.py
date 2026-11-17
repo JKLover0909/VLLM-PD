@@ -35,6 +35,7 @@ from src.integrations.mes_sql_agent import (
 from src.integrations.mes_query_service import MesQueryService
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from src.agent.mcp_client import get_mcp_tools
+from src.api.prompt_guard import DISCLOSURE_INSTRUCTION, history_prompt_messages
 from src.rag.prompts import (
     GENERAL_SYSTEM_PROMPT,
     MES_DATABASE_SYSTEM_PROMPT,
@@ -48,6 +49,43 @@ MES_UNSUPPORTED_ANSWER = (
     "Chưa nhận diện được truy vấn MES này. Bạn có thể hỏi về thông tin một Lot, "
     "chi tiết lỗi theo Lot, tên mã lỗi hoặc thống kê lỗi theo mã hàng."
 )
+MKAC_NO_INFORMATION_ANSWER = "Chưa tìm thấy thông tin phù hợp về nội dung này."
+RESEARCH_NO_INFORMATION_ANSWER = (
+    "Không tìm thấy thông tin phù hợp trong nhóm tài liệu đã chọn."
+)
+MKAC_WEB_CONTEXT_MARKERS = (
+    "mkac", "meiko", "công ty", "doanh nghiệp", "website", "trang web",
+    "lĩnh vực hoạt động", "ngành nghề", "hồ sơ đăng ký", "đăng ký đầu tư",
+    "dự án đầu tư", "business", "company", "corporate", "事業", "会社",
+    "企業", "公式サイト",
+)
+
+
+def _has_mkac_web_context(question: str) -> bool:
+    normalized = (question or "").lower()
+    return any(marker in normalized for marker in MKAC_WEB_CONTEXT_MARKERS)
+
+
+def _is_japanese_text(text: str) -> bool:
+    return bool(re.search(r"[\\u3040-\\u30ff\\u3400-\\u9fff]", text or ""))
+
+
+def _no_information_answer(mode: str) -> str:
+    if mode == "research":
+        return RESEARCH_NO_INFORMATION_ANSWER
+    return MKAC_NO_INFORMATION_ANSWER
+
+
+
+
+def _fixed_token_stream(answer: str):
+    async def generate():
+        yield ("token", answer)
+
+    return generate()
+
+
+
 
 
 def env_int(name: str, default: int, *, minimum: int = 1, maximum: int = 4096) -> int:
@@ -62,14 +100,13 @@ def env_int(name: str, default: int, *, minimum: int = 1, maximum: int = 4096) -
 MODEL_ROUTES = {
     "auto": "auto-model",
     "local": "local-qwen-chat",
-    # Explicit UI cloud choice uses the role-specific chat fallback alias.
-    "openai": "openai-chat-fallback",
-    "grok": "grok-model",
+    # Legacy clients may still send "openai"; normalize to the shared primary.
+    "openai": "auto-model",
 }
 
 LOCAL_CHAT_MODEL_ALIASES = {"auto-model", "local-qwen-chat"}
 LOCAL_MODEL_ALIASES = LOCAL_CHAT_MODEL_ALIASES | {"local-qwen-coder", "coding-model"}
-PRIMARY_CHAT_MODELS = {"auto-model", "local-qwen-chat"}
+PRIMARY_CHAT_MODELS = LOCAL_CHAT_MODEL_ALIASES
 CHAT_FALLBACK_MODEL = (
     os.getenv("CHAT_FALLBACK_MODEL", "azure-chat-fallback").strip()
     or "azure-chat-fallback"
@@ -269,23 +306,29 @@ class RAGPipeline:
                     search_results = []
                     image_paths = []
 
-        messages = (
-            build_rag_prompt(
-                question,
-                search_results,
-                mode=mode,
-                image_paths=image_paths,
-                answer_scope=answer_scope,
-                current_user=current_user,
-                conversation_context=conversation_context,
-            )
-            if answer_scope != "general" or current_user
-            else self._general_messages(question)
-        )
         routed_model = self._resolve_model(
             model,
             has_images=bool(image_paths),
             mode=mode,
+        )
+        if answer_scope == "general" or (
+            mode == "research" and not search_results and not image_paths
+        ):
+            return (
+                _no_information_answer(mode, question),
+                [],
+                routed_model,
+                answer_scope,
+            )
+
+        messages = build_rag_prompt(
+            question,
+            search_results,
+            mode=mode,
+            image_paths=image_paths,
+            answer_scope=answer_scope,
+            current_user=current_user,
+            conversation_context=conversation_context,
         )
 
         try:
@@ -462,23 +505,29 @@ class RAGPipeline:
                     search_results = []
                     image_paths = []
 
-        messages = (
-            build_rag_prompt(
-                question,
-                search_results,
-                mode=mode,
-                image_paths=image_paths,
-                answer_scope=answer_scope,
-                current_user=current_user,
-                conversation_context=conversation_context,
-            )
-            if answer_scope != "general" or current_user
-            else self._general_messages(question)
-        )
         routed_model = self._resolve_model(
             model,
             has_images=bool(image_paths),
             mode=mode,
+        )
+        if answer_scope == "general" or (
+            mode == "research" and not search_results and not image_paths
+        ):
+            return (
+                _fixed_token_stream(_no_information_answer(mode, question)),
+                [],
+                routed_model,
+                answer_scope,
+            )
+
+        messages = build_rag_prompt(
+            question,
+            search_results,
+            mode=mode,
+            image_paths=image_paths,
+            answer_scope=answer_scope,
+            current_user=current_user,
+            conversation_context=conversation_context,
         )
 
         try:
@@ -734,15 +783,18 @@ class RAGPipeline:
                     "Nếu người dùng hỏi lịch theo ngày/tuần, hãy gọi get-events với timeMin và timeMax tương ứng. "
                     "Trả lời ngắn gọn, nêu rõ thời gian, tiêu đề và trạng thái rảnh/bận chính xác từ kết quả công cụ. "
                     "Nếu công cụ lỗi, nói rõ không đọc được Calendar và không suy đoán. "
-                    f"Thời điểm hiện tại là {now}."
+                    f"Thời điểm hiện tại là {now}.\n\n"
+                    + DISCLOSURE_INSTRUCTION
                 ),
             }
         ]
-        for item in (conversation_context or [])[-4:]:
-            role = item.get("role")
-            content = item.get("content")
-            if role in {"user", "assistant"} and isinstance(content, str):
-                messages.append({"role": role, "content": content[:2000]})
+        messages.extend(
+            history_prompt_messages(
+                conversation_context or [],
+                max_turns=4,
+                max_chars=2000,
+            )
+        )
         messages.append({"role": "user", "content": question})
         return messages
 
@@ -1391,7 +1443,10 @@ class RAGPipeline:
         self,
         question: str,
     ) -> Tuple[List[SearchResult], List[Path], str]:
-        if self.web_searcher is not None:
+        if (
+            self.web_searcher is not None
+            and _has_mkac_web_context(question)
+        ):
             web_results = self.web_searcher.search(question)
             if web_results:
                 return web_results, [], "web"
@@ -1633,11 +1688,8 @@ class RAGPipeline:
         has_images: bool = False,
         mode: str = "mkac",
     ) -> str:
-        """Ánh xạ lựa chọn từ UI sang model logic của LiteLLM."""
-        if has_images and model in {"auto", "grok"}:
-            return "grok-model"
-        if has_images:
-            return "openai-chat-fallback"
+        """Map legacy UI choices to the shared primary; never pre-route cloud."""
+        del has_images, mode
         try:
             return MODEL_ROUTES[model]
         except KeyError as exc:
@@ -1795,12 +1847,7 @@ class RAGPipeline:
 
     @staticmethod
     def _provider_options(routed_model: str) -> Dict[str, Any]:
-        """Provider-specific safeguards for LiteLLM upstream models."""
-        if routed_model in LOCAL_CHAT_MODEL_ALIASES:
-            # Some Ollama chat models may spend the generation budget in
-            # message.thinking, leaving message.content empty or truncated.
-            num_ctx = int(os.getenv("LOCAL_CHAT_NUM_CTX", "16384"))
-            return {"extra_body": {"think": False, "num_ctx": num_ctx}}
+        """No caller-specific body options; LiteLLM owns upstream parameters."""
         return {}
 
     @staticmethod
@@ -1809,7 +1856,7 @@ class RAGPipeline:
 
     @staticmethod
     def _clean_model_answer(answer: str) -> str:
-        """Remove local reasoning traces that some Qwen/Ollama responses leak."""
+        """Remove reasoning traces that an upstream may include in its answer."""
         text = (answer or "").strip()
         if not text:
             return ""

@@ -1,8 +1,9 @@
 # Kiến trúc hệ thống Meibook
 
-> Tài liệu tóm tắt kiến trúc `VLLM-PD`. Trạng thái vận hành (số chunk, model
-> endpoint, URL ngrok) có thể thay đổi — xác nhận bằng lệnh ở phần **Vận hành**.
-> Runtime phải xác định theo checkout thực tế, không suy từ tài liệu này.
+> Trạng thái target ngày 2026-11-17: mọi alias LLM thông thường dùng chung remote
+> Qwen primary, Azure chỉ fallback khi lỗi; hardware telemetry deterministic. Runtime
+> chưa chuyển cho đến khi có HTTPS/VPN xác nhận. BGE/OCR vẫn local. Trạng thái runtime
+> phải được xác minh theo checkout, Compose và container, không suy từ target này.
 
 ---
 
@@ -24,23 +25,25 @@
 graph TB
     Browser["🌐 Browser / React SPA"]
     GW["FastAPI Gateway\n8001 Production · 8002 Dev"]
-    LLM["LiteLLM Proxy\n4000 Production · 4001 Dev"]
+    LLM["LiteLLM Proxy\n4002 Production · 4001 Dev (host)"]
+    Ollama["Current Dev upstream: host Ollama\nRemote target not configured"]
     Qdrant["Qdrant\n6333 Production · 6334 Dev"]
     SQLite["SQLite\ndata/*.sqlite"]
     PG["PostgreSQL Replica\ncctvai schema · read-only"]
-    OllamaProxy["ollama-proxy\n→ host Ollama :11435"]
-    OllamaExt["Ollama / Qwen\nLAN / ngrok"]
-    Cloud["Azure · OpenAI\nfallback"]
+    Qwen["Target: remote Qwen3.5-9B Q4_K_M\nTLS/VPN pending; Dev runtime still Ollama"]
+    Cloud["Azure gpt-5.4-mini\nsequential failure fallback"]
+    Hardware["Deterministic hardware renderer"]
 
     Browser <-->|"HTTP/SSE"| GW
     GW --> LLM
     GW --> Qdrant
     GW --> SQLite
     GW --> PG
-    LLM --> OllamaProxy
-    LLM --> OllamaExt
-    LLM --> Cloud
-    OllamaProxy --> OllamaExt
+    LLM --> Ollama
+    LLM -. future TLS/VPN rollout .-> Qwen
+    Qwen -->|failure only| Cloud
+    PG --> Hardware
+    Hardware --> GW
 ```
 
 ---
@@ -61,7 +64,7 @@ flowchart LR
     DB --> LLM["LiteLLM\nlocal-qwen-chat"]
     QD --> LLM
     LLM --> I18N{"UI = JP?"}
-    I18N -->|Có| TR["Dịch\nqwen-small"]
+    I18N -->|Có| TR["Dịch\nlocal-qwen-chat (Qwen3.5 9B)"]
     I18N -->|Không| R
     TR --> R
 ```
@@ -89,7 +92,7 @@ flowchart LR
     Q["Query"] --> Auth["Auth"]
     Auth --> DET{"Deterministic\ncurrent-balance?"}
     DET -->|Khớp| SNAP["mes_wms.sqlite\ncontract v4"]
-    DET -->|Không khớp| FB["LLM fallback\n(độ tin cậy thấp)"]
+    DET -->|Không khớp| FB["Shared remote Qwen SQL fallback\n(low confidence)"]
     SNAP --> VAL["Validate\nsnapshot + scope"]
     VAL -->|Lỗi| SUP["SUPPRESSED\nfail-closed"]
     VAL -->|OK| SSE["SSE\nwms_verification"]
@@ -107,7 +110,7 @@ flowchart LR
     DET -->|Có| PSQL["Parameterized SQL\ndel_flag trong ON"]
     DET -->|Không| AGT{"SQL Agent\nbật?"}
     AGT -->|Không| REJ["Từ chối\nnêu phạm vi"]
-    AGT -->|Có| GEN["LLM sinh SQL\nqwen-coder"]
+    AGT -->|Có| GEN["LLM sinh SQL\nlocal-qwen-coder (Qwen3.5 9B)"]
     GEN --> VAL["sqlglot validate\n+ read-only + timeout"]
     VAL -->|Từ chối| RT["Thử lại\nrồi từ chối"]
     PSQL --> ANS["Trả lời"]
@@ -140,21 +143,35 @@ flowchart LR
 
 ```mermaid
 graph LR
-    APP["App"] -->|"auto / local-qwen-chat"| C14["Qwen3 14B\nIP tĩnh LAN"]
-    C14 -->|fail| CNG["Qwen3 14B\nngrok fallback"]
-    CNG -->|fail| AZ["Azure fallback"]
-    AZ -->|fail| OAI["OpenAI fallback"]
+    APP["App"] -->|"auto-model / local-qwen-chat"| QWEN["Target: remote Qwen3.5-9B Q4_K_M\nTLS/VPN pending; Dev runtime still Ollama"]
+    QWEN -->|"primary failure only"| AZ["azure-chat-fallback\ngpt-5.4-mini"]
 
-    APP -->|"local-qwen-small"| S3["Qwen2.5 3B\nollama-proxy :11435"]
-    S3 -->|fail| C14
+    APP -->|"translation default: local-qwen-chat"| QWEN
+    APP -->|"image request"| QWEN
 
-    APP -->|"local-qwen-coder"| COD["Qwen2.5 Coder 14B\nLAN OpenAI-compat"]
-    COD -->|fail| CODNG["Coder ngrok"]
-    CODNG -->|fail| AZ
+    APP -->|"local-qwen-coder / coding-model"| QWEN
+    QWEN -->|"primary failure only"| AZC["azure-coder-fallback\ngpt-5.4-mini"]
+
+    APP -->|"CCTVAI hardware"| HW["Deterministic renderer\nno LLM / no export"]
+    LOCAL["BGE-M3 + Docling remain local"] --- APP
 ```
 
-> Qwen3 **phải** dùng provider `ollama_chat` (không phải `/v1`); `/v1` trả
-> reasoning nhưng rỗng `message.content`.
+> **Target, pending TLS/VPN and rollout:** `auto-model`, `local-qwen-chat`,
+> `local-qwen-coder` and `coding-model` are intended to use one remote Qwen3.5-9B
+> Q4_K_M primary. Dev runtime currently remains on Ollama; Production has not been
+> rolled out. Configure `REMOTE_LLM_API_BASE`, `REMOTE_LLM_MODEL` and
+> `REMOTE_LLM_API_KEY` only with an operator-approved HTTPS/VPN endpoint. No HTTP
+> endpoint is defaulted or used with real data. LiteLLM sets
+> `chat_template_kwargs.enable_thinking=false` only for Qwen; Azure fallbacks do not
+> receive it. Chat/coder fallback sequentially to Azure `gpt-5.4-mini` on primary
+> failure; no cloud selector, parallel request, or hedge. Keep context/output budgets
+> conservative (model metadata 8192 input); do not rely on advertised max context.
+>
+> Hardware metrics use the deterministic Meibook renderer and never enter an LLM
+> request, translation prompt or later conversation history. The Qwen endpoint is not
+> used for this data. BGE-M3 and Docling/OCR remain local. Ollama remains installed
+> and active until both stacks are migrated, consumers audited and a separate stop
+> approval granted; stopping it is not part of Dev preparation.
 
 ---
 
@@ -163,7 +180,7 @@ graph LR
 | Thành phần | Production | Dev |
 |---|:---:|:---:|
 | FastAPI + React SPA | `8001` | `8002` |
-| LiteLLM Proxy | `4000` | `4001` |
+| LiteLLM Proxy (host) | `4002` (`LITELLM_PROXY_PORT`; container `4000`) | `4001` (container `4000`) |
 | Qdrant | `6333` | `6334` |
 | Compose file | `docker-compose.web.yml` | `docker-compose.dev.yml` |
 | Checkout | `/home/jkl/Code/VLLM-PD` · `main` | `/home/jkl/Code/VLLM-PD-dev` · `dev` |

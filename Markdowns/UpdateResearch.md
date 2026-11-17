@@ -1,5 +1,10 @@
 # Kế hoạch triển khai nâng cấp Research Mode theo 4 nhóm tài liệu cố định
 
+> **Tài liệu lịch sử:** nội dung checklist và phân tích bên dưới được ghi nhận
+> qua nhiều giai đoạn; mọi nhắc tới Grok/`grok-model` mô tả vấn đề hoặc trạng thái
+> cũ, không phải cấu hình runtime hiện hành. Route hiện tại được xác định từ
+> `litellm_config.yaml` và tài liệu model routing đang áp dụng.
+
 ## 1. Context và mục tiêu
 
 ### 1.1. Trạng thái hiện tại

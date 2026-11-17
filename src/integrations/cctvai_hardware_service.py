@@ -1,33 +1,16 @@
 """Service layer for CCTVAI host hardware-metrics questions.
 
 Talks to the independent ``tools/host_metrics`` HTTPS service on the CCTVAI
-Ubuntu server via ``CctvaiHardwareClient``. Deliberately independent of the
-PostgreSQL-backed replica (``cctvai_query_service.py`` / ``cctvai_database.py``):
-a different transport, a different availability model, and it must keep
-answering hardware questions even when RAG/MES/the replica are all down (see
-AGENTS.md section 4.2b and the approved plan).
-
-Design constraints carried over from the plan:
-    * The answer is built from a deterministic, bilingual rendering of the
-      validated snapshot first. A local-only LLM (``CCTVAI_HARDWARE_MODEL``,
-      never in ``litellm_config.yaml``'s ``fallbacks:``) may only rephrase
-      those same facts — its output is rejected if it introduces a number
-      that was not already in the deterministic text, and any LLM failure
-      falls back to the deterministic answer.
-    * If the snapshot fetch itself fails, the LLM is never called — the
-      service must not let a model guess at hardware state it cannot see.
-    * Nothing here performs remote shell, restart, or any other control
-      action; this module can only read ``GET /metrics``.
+Ubuntu server via ``CctvaiHardwareClient``. Hardware snapshots are rendered
+locally and deterministically; they are never sent to any LLM or translation
+service. The service is independent of the PostgreSQL-backed CCTVAI replica.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import re
 import time
-
-from openai import AsyncOpenAI
 
 from tools.host_metrics.schemas import ComponentState, HostMetricsSnapshot
 
@@ -40,53 +23,52 @@ from .mes_query_service import MesQueryOutcome, MesQueryStreamOutcome
 
 log = logging.getLogger(__name__)
 
-
-def _env_int(name: str, default: int, *, minimum: int, maximum: int) -> int:
-    try:
-        value = int(os.getenv(name, str(default)))
-    except (TypeError, ValueError):
-        return default
-    return max(minimum, min(maximum, value))
-
-
 # ---------------------------------------------------------------------------
 # classify_hardware_question — pure, bilingual, deliberately narrow so the
 # existing CCTVAI-replica intents (events/cameras/violations) are never
 # shadowed by a stray keyword.
 # ---------------------------------------------------------------------------
 
-_HARDWARE_KEYWORDS = (
-    # English
+# Latin keywords must match as whole words: a plain substring test let
+# "ram" fire on "program" and returned the full hardware snapshot. ASCII-only
+# lookarounds (not ``\\b``) because Japanese characters are ``\\w`` too, so
+# "サーバーのCPU" has no ``\\b`` before "CPU".
+_HARDWARE_LATIN_KEYWORDS = (
     "cpu", "ram", "memory", "gpu", "vram", "disk", "storage", "network",
     "bandwidth", "uptime", "docker", "container", "hardware", "processor",
     "filesystem",
-    # Vietnamese
+)
+_HARDWARE_LATIN_PATTERN = re.compile(
+    r"(?<![a-z0-9])(?:" + "|".join(_HARDWARE_LATIN_KEYWORDS) + r")(?![a-z0-9])"
+)
+_HARDWARE_PHRASES = (
     "bộ nhớ", "ổ đĩa", "ổ cứng", "dung lượng", "phần cứng", "băng thông",
     "thời gian hoạt động", "tiến trình", "vi xử lý", "card đồ họa",
-    "nhiệt độ",
-    # Japanese
     "メモリ", "ディスク", "ハードウェア", "ネットワーク", "稼働時間",
-    "コンテナ", "プロセス", "温度",
+    "コンテナ", "プロセス",
 )
+_TEMPERATURE_PHRASES = ("nhiệt độ", "温度", "temperature")
+_HOST_CONTEXT_PHRASES = ("server", "máy chủ", "host", "サーバ", "ホスト")
 
 
 def classify_hardware_question(question: str) -> bool:
-    """True when ``question`` plainly asks about the CCTVAI host's own
-    resource usage (CPU/RAM/GPU/disk/network/uptime/Docker/processes).
-
-    Pure keyword match, no I/O. Only meaningful inside ``mode="cctvai"`` —
-    the caller in ``main.py`` gates on the mode separately.
-    """
+    """True when ``question`` plainly asks about CCTVAI host resources."""
     if not question or not question.strip():
         return False
     normalized = question.lower()
-    return any(keyword in normalized for keyword in _HARDWARE_KEYWORDS)
+    if _HARDWARE_LATIN_PATTERN.search(normalized):
+        return True
+    if any(phrase in normalized for phrase in _HARDWARE_PHRASES):
+        return True
+    return any(phrase in normalized for phrase in _TEMPERATURE_PHRASES) and any(
+        phrase in normalized for phrase in _HOST_CONTEXT_PHRASES
+    )
 
 
 # ---------------------------------------------------------------------------
-# Deterministic bilingual rendering — the single source of truth for the
-# numbers in the answer. The LLM pass (if used) may only rephrase this text.
+# Deterministic bilingual rendering — no model sees the snapshot.
 # ---------------------------------------------------------------------------
+
 
 def _gb(value: int | None) -> str:
     if value is None:
@@ -157,8 +139,7 @@ def _render_gpus(snapshot: HostMetricsSnapshot, *, is_ja: bool) -> str | None:
         )
         temp = f"{gpu.temperature_celsius:.0f}°C" if gpu.temperature_celsius is not None else "N/A"
         parts.append(f"{name} {util}, VRAM {vram}, {temp}")
-    joined = "; ".join(parts)
-    return f"- **GPU:** {joined}"
+    return f"- **GPU:** {'; '.join(parts)}"
 
 
 def _render_disks(snapshot: HostMetricsSnapshot, *, is_ja: bool) -> str | None:
@@ -173,7 +154,6 @@ def _render_disks(snapshot: HostMetricsSnapshot, *, is_ja: bool) -> str | None:
         key=lambda d: d.percent if d.percent is not None else -1.0,
         reverse=True,
     )
-    # Lọc các mountpoint trùng dung lượng với root / (như /tmp, /var/tmp, /var/lib/...) để tránh lặp dư thừa
     seen_sizes = set()
     unique_disks = []
     for disk in disks_sorted:
@@ -190,8 +170,7 @@ def _render_disks(snapshot: HostMetricsSnapshot, *, is_ja: bool) -> str | None:
         f"({_gb(disk.used_bytes)}/{_gb(disk.total_bytes)})"
         for disk in unique_disks
     ]
-    joined = "; ".join(parts)
-    return f"{prefix}{joined}"
+    return f"{prefix}{'; '.join(parts)}"
 
 
 def _render_network(snapshot: HostMetricsSnapshot, *, is_ja: bool) -> str | None:
@@ -204,9 +183,8 @@ def _render_network(snapshot: HostMetricsSnapshot, *, is_ja: bool) -> str | None
         f"`{iface.interface}` ↓{_rate(iface.rx_bytes_per_sec)} ↑{_rate(iface.tx_bytes_per_sec)}"
         for iface in snapshot.network[:4]
     ]
-    joined = "; ".join(parts)
     prefix = "- **ネットワーク:** " if is_ja else "- **Mạng:** "
-    return f"{prefix}{joined}"
+    return prefix + "; ".join(parts)
 
 
 def _render_uptime(snapshot: HostMetricsSnapshot, *, is_ja: bool) -> str | None:
@@ -248,9 +226,7 @@ def _render_docker(snapshot: HostMetricsSnapshot, *, is_ja: bool) -> str | None:
 
 
 def render_deterministic_answer(result: HardwareSnapshotResult, *, language: str) -> str:
-    """Build the tất định (fully-computed) bilingual answer from a validated
-    snapshot. Trình bày dưới dạng danh sách gạch đầu dòng Markdown rõ ràng,
-    xuống dòng cách đoạn ngăn nắp."""
+    """Render a validated snapshot as a bilingual, fully computed answer."""
     is_ja = language == "ja"
     snapshot = result.snapshot
     header = (
@@ -267,9 +243,7 @@ def render_deterministic_answer(result: HardwareSnapshotResult, *, language: str
         _render_docker(snapshot, is_ja=is_ja),
         _render_uptime(snapshot, is_ja=is_ja),
     ]
-    body_lines = [segment for segment in segments if segment]
-    body = "\n".join(body_lines)
-
+    body = "\n".join(segment for segment in segments if segment)
     notes = []
     if result.is_truncated:
         section_label = ", ".join(result.truncated_sections)
@@ -283,18 +257,11 @@ def render_deterministic_answer(result: HardwareSnapshotResult, *, language: str
             f"*(データ取得から約{age:.0f}秒経過)*" if is_ja
             else f"*(dữ liệu cách đây khoảng {age:.0f}s)*"
         )
-    parts = [header, body]
-    if notes:
-        parts.append(" ".join(notes))
-    return "\n\n".join(parts).strip()
+    return "\n\n".join(part for part in [header, body, " ".join(notes)] if part).strip()
 
 
 def _unavailable_answer(language: str, exc: CctvaiHardwareClientError) -> str:
-    """Bilingual refusal when the snapshot itself could not be fetched.
-
-    Only the exception *class name* is exposed — never the message, which
-    may embed a hostname, path, or other internal detail.
-    """
+    """Bilingual refusal exposing only the exception class, never its message."""
     reason = exc.__class__.__name__
     if language == "ja":
         return (
@@ -307,86 +274,19 @@ def _unavailable_answer(language: str, exc: CctvaiHardwareClientError) -> str:
     )
 
 
-_NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)?")
-
-
-def _answer_numbers_are_grounded(candidate: str, deterministic: str) -> bool:
-    """Reject an LLM paraphrase that invents a number not already present
-    in the deterministic text it was asked to rephrase."""
-    candidate_numbers = _NUMBER_RE.findall(candidate)
-    if not candidate_numbers:
-        return True
-    deterministic_numbers = set(_NUMBER_RE.findall(deterministic))
-    return all(number in deterministic_numbers for number in candidate_numbers)
-
-
-def _paraphrase_messages(deterministic: str, *, language: str) -> list[dict]:
-    is_ja = language == "ja"
-    system = (
-        "あなたはサーバー監視アシスタントです。与えられた数値だけを使って、"
-        "見やすく整理されたMarkdown形式（箇条書き）で状態を分かりやすく説明してください。"
-        "新しい数値を作ったり、原因を推測したりしないでください。"
-        if is_ja
-        else (
-            "Bạn là trợ lý giám sát máy chủ. Hãy trình bày tình trạng máy chủ "
-            "bằng định dạng Markdown rõ ràng, chia từng mục gạch đầu dòng (- **Mục:** ...) "
-            "xuống dòng ngăn nắp, dễ đọc. Chỉ dùng đúng các số liệu được cung cấp bên dưới, "
-            "không được bịa thêm số liệu hoặc suy đoán nguyên nhân."
-        )
-    )
-    return [
-        {"role": "system", "content": system},
-        {"role": "user", "content": deterministic},
-    ]
-
-
 class CctvaiHardwareService:
-    """Answer CCTVAI host hardware-metrics questions.
-
-    Dependency-injection pattern mirrors ``CctvaiQueryService``: pass a fake
-    client/openai_client in tests; ``from_env()`` builds the real ones.
-    """
+    """Answer hardware questions using a deterministic renderer only."""
 
     HEALTH_TTL = 30.0
 
-    def __init__(
-        self,
-        *,
-        client: CctvaiHardwareClient | None = None,
-        openai_client: AsyncOpenAI | None = None,
-        model: str | None = None,
-        answer_max_tokens: int | None = None,
-    ) -> None:
+    def __init__(self, *, client: CctvaiHardwareClient | None = None) -> None:
         self._client = client if client is not None else CctvaiHardwareClient.from_env()
-        self.openai_client = openai_client or AsyncOpenAI(
-            api_key=os.getenv("LITELLM_MASTER_KEY", "sk-local"),
-            base_url=os.getenv("LITELLM_URL", "http://localhost:4000/v1"),
-        )
-        # Fixed, local-only model — deliberately not taken from the
-        # caller's ``model``/``req.model`` so a user's cloud model choice
-        # can never route hardware data off-box.
-        self._model_name = (
-            model
-            or os.getenv("CCTVAI_HARDWARE_MODEL", "local-hardware-summary").strip()
-            or "local-hardware-summary"
-        )
-        self._answer_max_tokens = (
-            answer_max_tokens
-            if answer_max_tokens is not None
-            else _env_int(
-                "CCTVAI_HARDWARE_ANSWER_MAX_TOKENS", 384, minimum=128, maximum=800
-            )
-        )
         self._last_health_ok: bool | None = None
         self._last_health_at: float | None = None
 
     @classmethod
     def from_env(cls) -> "CctvaiHardwareService | None":
-        """Return ``None`` when hardware monitoring is disabled/unconfigured.
-
-        Only reads env via ``CctvaiHardwareClient.from_env()`` — zero I/O,
-        safe to call at import time.
-        """
+        """Return ``None`` when hardware monitoring is disabled/unconfigured."""
         client = CctvaiHardwareClient.from_env()
         if client is None:
             return None
@@ -394,12 +294,7 @@ class CctvaiHardwareService:
 
     @property
     def available(self) -> bool:
-        """Cached freshness of the last ``refresh_health()`` probe.
-
-        Zero I/O. Mirrors ``CctvaiDatabase.available``: a probe older than
-        ``HEALTH_TTL`` is treated as stale/unavailable rather than trusted
-        indefinitely.
-        """
+        """Cached freshness of the last ``refresh_health()`` probe."""
         if self._last_health_at is None:
             return False
         if (time.monotonic() - self._last_health_at) >= self.HEALTH_TTL:
@@ -413,8 +308,7 @@ class CctvaiHardwareService:
         return {"enabled": True, "available": self.available}
 
     async def refresh_health(self) -> None:
-        """Do the actual I/O probe. Call only from a background task (the
-        lifespan's ``_hardware_health_loop``), never the hot request path."""
+        """Probe the internal host-metrics service in the background."""
         if self._client is None:
             return
         try:
@@ -438,73 +332,30 @@ class CctvaiHardwareService:
         model: str,
         language: str = "vi",
     ) -> MesQueryOutcome:
-        """Answer a hardware question from the live snapshot.
-
-        ``model``/``question`` are accepted for interface symmetry with the
-        other query services, but the actual model used is always the
-        fixed, local-only ``self._model_name`` — never the caller's model
-        choice — and the answer always covers the full snapshot rather than
-        trying to guess a narrower scope from ``question`` wording.
-        """
-        del question  # answer always covers the full snapshot, see above
-        del model  # local-only model is fixed; see self._model_name
+        """Render metrics directly; the question/model never leave this service."""
+        del question, model
         if self._client is None:
-            return MesQueryOutcome(
-                answer=(
-                    "CCTVAI機能は有効化されていません。"
-                    if language == "ja"
-                    else "Chức năng giám sát phần cứng CCTVAI chưa được kích hoạt."
-                ),
-                results=[],
-                routed_model=self._model_name,
-                answer_scope="cctvai_hardware",
+            answer = (
+                "CCTVAI機能は有効化されていません。"
+                if language == "ja"
+                else "Chức năng giám sát phần cứng CCTVAI chưa được kích hoạt."
             )
-
-        try:
-            snapshot_result = await self._client.get_snapshot()
-        except CctvaiHardwareClientError as exc:
-            log.warning(
-                "CCTVAI hardware snapshot fetch failed: %s", exc.__class__.__name__
-            )
-            return MesQueryOutcome(
-                answer=_unavailable_answer(language, exc),
-                results=[],
-                routed_model=self._model_name,
-                answer_scope="cctvai_hardware",
-            )
-
-        deterministic = render_deterministic_answer(snapshot_result, language=language)
-        answer = await self._maybe_paraphrase(deterministic, language=language)
+        else:
+            try:
+                snapshot_result = await self._client.get_snapshot()
+            except CctvaiHardwareClientError as exc:
+                log.warning(
+                    "CCTVAI hardware snapshot fetch failed: %s", exc.__class__.__name__
+                )
+                answer = _unavailable_answer(language, exc)
+            else:
+                answer = render_deterministic_answer(snapshot_result, language=language)
         return MesQueryOutcome(
             answer=answer,
             results=[],
-            routed_model=self._model_name,
+            routed_model="hardware-deterministic",
             answer_scope="cctvai_hardware",
         )
-
-    async def _maybe_paraphrase(self, deterministic: str, *, language: str) -> str:
-        """Ask the local model to rephrase the deterministic facts.
-
-        Falls back to the deterministic text verbatim on any LLM failure,
-        an empty response, or a response that introduces a number not
-        already present in the deterministic text (grounding check).
-        """
-        try:
-            response = await self.openai_client.chat.completions.create(
-                model=self._model_name,
-                messages=_paraphrase_messages(deterministic, language=language),
-                temperature=0.2,
-                max_tokens=self._answer_max_tokens,
-            )
-            candidate = (response.choices[0].message.content or "").strip()
-        except Exception as exc:  # noqa: BLE001 - any LLM/network failure falls back
-            log.warning(
-                "CCTVAI hardware LLM paraphrase failed: %s", exc.__class__.__name__
-            )
-            return deterministic
-        if not candidate or not _answer_numbers_are_grounded(candidate, deterministic):
-            return deterministic
-        return candidate
 
     async def query_hardware_stream_outcome(
         self,
@@ -513,13 +364,7 @@ class CctvaiHardwareService:
         model: str,
         language: str = "vi",
     ) -> MesQueryStreamOutcome:
-        """Wrap the non-streaming outcome in a one-token generator.
-
-        Same pattern as ``query_wms_stream_outcome`` /
-        ``query_cctvai_stream_outcome``: compute the full answer first, then
-        expose it as a single-yield async generator so the SSE
-        ``event_generator`` in ``main.py`` unwraps it like any other mode.
-        """
+        """Wrap the deterministic answer in a one-token async generator."""
         outcome = await self.query_hardware_outcome(
             question=question, model=model, language=language
         )

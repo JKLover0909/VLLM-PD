@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { countCodePoints, QA_MAX_CODE_POINTS } from "../qa-mode";
 
 const PROMPT_HISTORY_KEY = "meibook_prompt_history";
 
@@ -54,12 +55,20 @@ export function ChatInput({
   Paperclip,
   Search,
   userPrompts = [],
+  isOpen = true,
 }) {
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const questionLength = mode === "qa" ? countCodePoints(question) : question.length;
+  const questionLimit = mode === "qa" ? QA_MAX_CODE_POINTS : 4000;
+  const questionTooLong = questionLength > questionLimit;
   const draftRef = useRef("");
   const historyRef = useRef([]);
 
   const refreshHistory = () => {
+    if (mode === "qa") {
+      historyRef.current = [];
+      return [];
+    }
     const stored = getStoredPromptHistory();
     const combined = [];
     for (const item of [...stored, ...userPrompts]) {
@@ -146,6 +155,11 @@ export function ChatInput({
     }
   };
 
+  if (!isOpen) {
+    if (question) draftRef.current = question;
+    return null;
+  }
+
   return (
     <>
       <form className="composer" onSubmit={onSubmit}>
@@ -165,7 +179,12 @@ export function ChatInput({
           value={question}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder={modeText(mode).inputPlaceholder}
+          maxLength={mode === "qa" ? undefined : 4000}
+          aria-label={modeText(mode).inputLabel}
+          onBlur={(event) => { draftRef.current = event.currentTarget.value; }}
+          placeholder={mode === "research"
+            ? (researchReady ? modeText(mode).placeholderReady : modeText(mode).placeholderEmpty)
+            : modeText(mode).placeholder}
           disabled={
             (["mkac", "mes", "wms", "cctvai"].includes(mode) && !mkacAuthorized) ||
             (mode === "research" && !researchReady)
@@ -179,15 +198,17 @@ export function ChatInput({
             </span>
           </div>
           <div className="composer-actions">
-            {question.length > 0 && (
-              <span className="char-count">{question.length}/4000</span>
+            {questionLength > 0 && (
+              <span className={`char-count${questionTooLong ? " over-limit" : ""}`}>
+                {questionLength}/{questionLimit}
+              </span>
             )}
             <button
               className={busy ? "send-button stopping" : "send-button"}
               type={busy ? "button" : "submit"}
               title={busy ? t("common.stop") : t("common.send")}
               onClick={busy ? stopGeneration : undefined}
-              disabled={busy ? false : !canAsk}
+              disabled={busy ? false : !canAsk || questionTooLong}
             >
               {busy ? (
                 <Square size={16} fill="currentColor" />

@@ -29,16 +29,14 @@ Meibook là ứng dụng hỏi đáp nội bộ cho MKAC, gồm:
 
 ```text
 Browser
-  -> FastAPI :8001
+  -> FastAPI :8002 Dev / :8001 Production
        -> React SPA
-       -> Qdrant :6333
+       -> Qdrant :6334 Dev / :6333 Production
        -> SQLite data/*.sqlite
-       -> LiteLLM :4000
-            -> Qwen3 chat static IP
-            -> Qwen3 chat ngrok fallback
-            -> Qwen2.5 3B local helper
-            -> Qwen2.5 Coder
-            -> OpenAI fallback
+       -> LiteLLM :4001 Dev / :4002 Production (host; container :4000)
+            -> Remote Qwen3.5-9B Q4_K_M primary (HTTPS/VPN only after approval)
+            -> Azure gpt-5.4-mini sequential fallback on primary failure
+       -> Hardware CCTVAI summary deterministic in Meibook; no model egress
 ```
 
 Trong Docker web:
@@ -46,7 +44,7 @@ Trong Docker web:
 - `app`: FastAPI + React build + RAG/MES/Auth/Gmail.
 - `qdrant`: vector database.
 - `litellm`: model proxy.
-- `ollama-proxy`: bridge để container gọi Ollama host tại `11435`.
+- Remote Qwen endpoint: shared single-model primary; configure only via verified TLS/VPN route.
 
 ## 3. Những file quan trọng
 
@@ -68,7 +66,7 @@ Trong Docker web:
 | `src/integrations/mes_intent.py` | Intent/time SQL helper |
 | `src/integrations/mes_answer_format.py` | Format/fallback MES |
 | `src/integrations/gmail_sender.py` | Gmail send-only integration |
-| `src/i18n/translation.py` | Dịch VI/JP bằng local model |
+| `src/i18n/translation.py` | Dịch VI/JP qua LiteLLM alias (Dev hiện resolve sang Ollama) |
 | `frontend/src/main.jsx` | React UI |
 | `frontend/src/styles.css` | CSS desktop/mobile |
 | `litellm_config.yaml` | Model routing/fallback |
@@ -123,7 +121,7 @@ Query MKAC
   -> EmployeeDirectory nếu là câu nhân sự có cấu trúc
   -> RAG Qdrant mkac_knowledge
   -> ddgs web fallback nếu không có nguồn nội bộ
-  -> LiteLLM local chat model
+  -> LiteLLM (Dev runtime currently Ollama; remote target pending TLS/VPN)
 ```
 
 ### 6.2. EmployeeDirectory
@@ -295,7 +293,7 @@ src/i18n/translation.py
 Model mặc định:
 
 ```text
-local-qwen-small
+local-qwen-chat
 ```
 
 Nguyên tắc:
@@ -307,47 +305,45 @@ Nguyên tắc:
 
 ## 10. Model routing
 
-Trong `litellm_config.yaml`:
+Trong `litellm_config.yaml` có bốn logical aliases cho một remote primary:
 
-| Model | Tác vụ |
+| Alias | Tác vụ |
 |---|---|
-| `auto-model` | route mặc định UI |
-| `local-qwen-chat` | Qwen3 14B qua IP tĩnh |
-| `local-qwen-chat-ngrok` | cùng Qwen3 qua ngrok fallback |
-| `local-qwen-small` | dịch/intent/rewrite/format ngắn |
-| `local-qwen-coder` | SQL Agent/Coding |
-| `coding-model` | tên logic ổn định cho Coding Agent |
-| `azure-*-fallback` | cloud fallback Azure theo role Chat / Small / Coder |
-| `openai-*-fallback` | cloud fallback OpenAI theo role Chat / Small / Coder |
-| `grok-model` | route cũ vision/dự phòng |
+| `auto-model` / `local-qwen-chat` | Chat, RAG, helper và dịch |
+| `local-qwen-coder` | SQL agents MES/WMS/CCTVAI |
+| `coding-model` | Coding Agent (web deployment vẫn tắt theo `ENABLE_AGENT=false`) |
+| `azure-chat-fallback` / `azure-coder-fallback` | Azure `gpt-5.4-mini`, chỉ sau lỗi primary tương ứng |
 
-Fallback quan trọng: local là primary; ngrok cùng role, Azure, rồi OpenAI.
+Target model là một Qwen3.5-9B Q4_K_M qua LiteLLM OpenAI-compatible provider.
+Endpoint/model/key được đưa qua `REMOTE_LLM_API_BASE`, `REMOTE_LLM_MODEL` và
+`REMOTE_LLM_API_KEY`; example mặc định để trống. Chỉ cấu hình HTTPS/VPN đã được
+người vận hành xác nhận; HTTP endpoint thử nghiệm không được dùng với dữ liệu thật.
+
+LiteLLM đặt `chat_template_kwargs.enable_thinking=false` cho Qwen primary. Không
+đưa extension này hoặc Ollama options sang Azure. Giữ `max_parallel_requests: 1`,
+context metadata và token budgets bảo thủ. Alias client `openai` legacy chuẩn hóa
+thành `auto-model`; không có route chọn cloud trực tiếp, OpenAI aliases thứ hai,
+hedging hoặc request chạy song song.
+
+Fallback tuần tự duy nhất:
 
 ```yaml
 auto-model:
-  - local-qwen-chat-ngrok
   - azure-chat-fallback
-  - openai-chat-fallback
 local-qwen-chat:
-  - local-qwen-chat-ngrok
   - azure-chat-fallback
-  - openai-chat-fallback
-local-qwen-small:
-  - local-qwen-chat
-  - azure-small-fallback
-  - openai-small-fallback
 local-qwen-coder:
-  - local-qwen-coder-ngrok
   - azure-coder-fallback
-  - openai-coder-fallback
 coding-model:
-  - local-qwen-coder-ngrok
   - azure-coder-fallback
-  - openai-coder-fallback
 ```
 
-Lưu ý: `auto-model` và `local-qwen-chat` bản chất là cùng Qwen3 14B, khác nhau ở
-tên logic và fallback.
+Ảnh thử primary trước; chỉ lỗi/capability unsupported mới sang Azure. CCTVAI
+hardware summary dùng renderer deterministic tại API, không có model alias và không
+gửi telemetry/history tới bất kỳ LLM nào. BGE-M3 và OCR/Docling giữ local.
+
+Runtime chưa chuyển cho tới khi có TLS/VPN được xác minh. Dev cần smoke dữ liệu tổng
+hợp qua LiteLLM với fallback tắt; Production và dừng Ollama cần phê duyệt riêng.
 
 ## 11. Gmail
 
@@ -391,7 +387,7 @@ frontend/src/styles.css
 - Research hiển thị topic selector, ưu tiên DocJP; demo/upload cũ vẫn còn.
 - UI có toggle `VN / JP`.
 - Lịch sử tách theo mode/ngôn ngữ để tránh đổi ngôn ngữ làm lẫn context.
-- Model label trên UI là `Local Model`, không lộ tên Qwen/OpenAI/Grok.
+- Model label trên UI thể hiện Qwen primary; cloud fallback không phải lựa chọn người dùng.
 - Source preview mở ảnh trang từ backend.
 
 ## 13. Test quan trọng

@@ -33,12 +33,7 @@ class TranslationService:
 
     SUPPORTED_LANGUAGES = {"vi", "ja"}
     JAPANESE_SCRIPT_PATTERN = re.compile(r"[\u3040-\u30ff\u3400-\u9fff]")
-    LOCAL_MODEL_ALIASES = {
-        "auto-model",
-        "local-qwen-chat",
-        "local-qwen-small",
-    }
-    DEFAULT_MODEL = "local-qwen-small"
+    DEFAULT_MODEL = "local-qwen-chat"
     GLOSSARY = (
         "- Meibook: Meibook\n"
         "- MKAC / Meiko Automation: Meiko Automation\n"
@@ -78,8 +73,6 @@ class TranslationService:
     ):
         self.enabled = enabled
         self.model = model or os.getenv("TRANSLATION_MODEL", self.DEFAULT_MODEL)
-        self.num_ctx = int(os.getenv("LOCAL_CHAT_NUM_CTX", "16384"))
-        self.aux_num_ctx = int(os.getenv("LOCAL_AUX_NUM_CTX", "4096"))
         self.temperature = float(os.getenv("TRANSLATION_TEMPERATURE", "0.1"))
         self.client = client or AsyncOpenAI(
             api_key=os.getenv("LITELLM_MASTER_KEY", "sk-local"),
@@ -264,9 +257,7 @@ class TranslationService:
         return self._clean_completion(content)
 
     def _provider_options(self) -> dict[str, Any]:
-        if self.model in self.LOCAL_MODEL_ALIASES:
-            num_ctx = self.aux_num_ctx if self.model == "local-qwen-small" else self.num_ctx
-            return {"extra_body": {"think": False, "num_ctx": num_ctx}}
+        """Keep upstream-specific request bodies in LiteLLM configuration."""
         return {}
 
     @classmethod

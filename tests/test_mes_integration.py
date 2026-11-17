@@ -481,7 +481,7 @@ def test_mes_query_service_does_not_fallback_time_bound_lot_to_overall_snapshot(
     assert "SNAPSHOT-LOT" not in answer
     assert "Lot" in answer
     assert results == []
-    assert routed_model == "openai-chat-fallback"
+    assert routed_model == "auto-model"
     assert answer_scope == "mes_database"
     assert mes_database.calls == []
 
@@ -593,7 +593,7 @@ def test_mes_query_service_falls_back_compound_highest_lot_to_snapshot():
     )
 
     assert results == []
-    assert routed_model == "openai-chat-fallback"
+    assert routed_model == "auto-model"
     assert answer_scope == "mes_database"
     assert "Snapshot Lot" in answer
     assert mes_database.calls[-1] == (question, True)

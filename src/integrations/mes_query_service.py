@@ -19,6 +19,7 @@ from dataclasses import dataclass
 import inspect
 import logging
 import os
+import re
 from typing import AsyncGenerator
 
 from openai import AsyncOpenAI
@@ -48,6 +49,8 @@ from src.integrations.mes_config import (
 from src.integrations.mes_prompts import (
     MES_GENERAL_FALLBACK_ANSWER,
     MES_GENERAL_SYSTEM_PROMPT,
+    MES_NO_DOMAIN_CONTEXT_ANSWER,
+    MES_NO_DOMAIN_CONTEXT_ANSWER_JA,
     MES_UNSUPPORTED_ANSWER,
 )
 
@@ -211,6 +214,14 @@ class MesQueryService:
         model: str,
     ) -> tuple[str, str]:
         routed_model = self.resolve_model(model)
+        if not mes_prompts.has_mes_domain_context(question):
+            answer = (
+                MES_NO_DOMAIN_CONTEXT_ANSWER_JA
+                if re.search(r"[぀-ヿ㐀-鿿]", question)
+                else MES_NO_DOMAIN_CONTEXT_ANSWER
+            )
+            return answer, routed_model
+
         fallback_answer = MES_GENERAL_FALLBACK_ANSWER
         if routed_model in LOCAL_MODEL_ALIASES:
             return fallback_answer, routed_model

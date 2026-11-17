@@ -1,126 +1,70 @@
 model_list:
-  # Default web route. Qwen3 must use LiteLLM's ollama_chat provider against
-  # the Ollama root URL, not Ollama's OpenAI-compatible /v1 endpoint.
+  # Qwen is one remote primary configured over TLS/VPN. The HTTP-only LAN
+  # endpoint is intentionally not embedded here or activated by default.
+  # Thinking control must be applied only to the Qwen primary, never Azure.
   - model_name: auto-model
     litellm_params:
-      model: ollama_chat/qwen3:14b
-      api_base: os.environ/QWEN_CHAT_API_BASE
-      timeout: 12
-      think: false
+      model: os.environ/REMOTE_LLM_MODEL
+      custom_llm_provider: openai
+      api_base: os.environ/REMOTE_LLM_API_BASE
+      api_key: os.environ/REMOTE_LLM_API_KEY
+      timeout: 120
+      allowed_openai_params: ["extra_body"]
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
       stream: true
       max_parallel_requests: 1
     model_info:
-      max_input_tokens: 16384
+      max_input_tokens: 8192
       max_output_tokens: 4096
       input_cost_per_token: 0.0
       output_cost_per_token: 0.0
       cache_creation_input_token_cost: 0.0
       cache_read_input_token_cost: 0.0
 
-  # Local Qwen3 chat model served by the external Ollama host. Use the
-  # official Ollama qwen3:14b tag because it includes the correct chat
-  # template, stop tokens, and thinking controls. Do not point
-  # QWEN_CHAT_API_BASE to /v1; direct Ollama /v1 may return reasoning with
-  # empty message content for Qwen3.
   - model_name: local-qwen-chat
     litellm_params:
-      model: ollama_chat/qwen3:14b
-      api_base: os.environ/QWEN_CHAT_API_BASE
+      model: os.environ/REMOTE_LLM_MODEL
+      custom_llm_provider: openai
+      api_base: os.environ/REMOTE_LLM_API_BASE
+      api_key: os.environ/REMOTE_LLM_API_KEY
       timeout: 120
-      think: false
+      allowed_openai_params: ["extra_body"]
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
       stream: true
       max_parallel_requests: 1
     model_info:
-      max_input_tokens: 16384
+      max_input_tokens: 8192
       max_output_tokens: 4096
       input_cost_per_token: 0.0
       output_cost_per_token: 0.0
       cache_creation_input_token_cost: 0.0
       cache_read_input_token_cost: 0.0
 
-  # Same Qwen3 chat model through the public ngrok tunnel. This is not the
-  # primary route; it is only used when the static server IP is unavailable.
-  - model_name: local-qwen-chat-ngrok
-    litellm_params:
-      model: ollama_chat/qwen3:14b
-      api_base: os.environ/QWEN_CHAT_NGROK_API_BASE
-      headers:
-        ngrok-skip-browser-warning: "true"
-      timeout: 120
-      think: false
-      stream: true
-      max_parallel_requests: 1
-    model_info:
-      max_input_tokens: 16384
-      max_output_tokens: 4096
-      input_cost_per_token: 0.0
-      output_cost_per_token: 0.0
-      cache_creation_input_token_cost: 0.0
-      cache_read_input_token_cost: 0.0
-
-  # Small local helper model for cheap tasks such as short translation, intent
-  # classification, query rewrite, and answer formatting. It runs on the
-  # Machine 2 Ollama system service, so it stays available after SSH exits.
-  - model_name: local-qwen-small
-    litellm_params:
-      model: ollama_chat/qwen2.5:3b-instruct
-      api_base: os.environ/QWEN_SMALL_API_BASE
-      timeout: 30
-      stream: true
-      max_parallel_requests: 2
-    model_info:
-      max_input_tokens: 32768
-      max_output_tokens: 1024
-      input_cost_per_token: 0.0
-      output_cost_per_token: 0.0
-      cache_creation_input_token_cost: 0.0
-      cache_read_input_token_cost: 0.0
-
-  # Primary Qwen Coder route: Ollama OpenAI-compatible API on the LAN.
   - model_name: local-qwen-coder
     litellm_params:
-      model: openai/qwen2.5-coder:14b
-      api_base: os.environ/QWEN_CODER_LAN_API_BASE
-      api_key: os.environ/QWEN_CODER_LAN_API_KEY
+      model: os.environ/REMOTE_LLM_MODEL
+      custom_llm_provider: openai
+      api_base: os.environ/REMOTE_LLM_API_BASE
+      api_key: os.environ/REMOTE_LLM_API_KEY
       timeout: 120
+      allowed_openai_params: ["extra_body"]
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
       stream: true
       max_parallel_requests: 1
     model_info:
-      max_input_tokens: 16384
+      max_input_tokens: 8192
       max_output_tokens: 4096
       input_cost_per_token: 0.0
       output_cost_per_token: 0.0
       cache_creation_input_token_cost: 0.0
       cache_read_input_token_cost: 0.0
 
-  # Q5 Coder fallback served by llama.cpp through the ngrok tunnel.
-  - model_name: local-qwen-coder-ngrok
-    litellm_params:
-      model: openai//home/jkl0909/models/qwen2.5-coder-14b/Qwen2.5-Coder-14B-Instruct-Q5_K_M.gguf
-      api_base: os.environ/QWEN_CODER_NGROK_API_BASE
-      api_key: os.environ/QWEN_CODER_NGROK_API_KEY
-      headers:
-        ngrok-skip-browser-warning: "true"
-      timeout: 120
-      stream: true
-      max_parallel_requests: 1
-    model_info:
-      max_input_tokens: 16384
-      max_output_tokens: 4096
-      input_cost_per_token: 0.0
-      output_cost_per_token: 0.0
-      cache_creation_input_token_cost: 0.0
-      cache_read_input_token_cost: 0.0
-
-  # Role-specific cloud fallbacks. The existing Azure endpoint is configured
-  # as OpenAI-compatible, so preserve its verified provider/model form. Each
-  # role has a separate alias even when it initially shares the same Azure
-  # deployment; aliases can later point to different deployments independently.
-  # Switched 2026-09-04 from the grok-4-20-reasoning deployment to gpt-5.4-mini
-  # (same Azure AI Foundry resource/api_base/api_key, different deployment
-  # name) per explicit user request, mirroring the same change verified on Dev.
-  # The legacy grok-model route below is intentionally left on
-  # grok-4-20-reasoning (out of scope for this change).
   - model_name: azure-chat-fallback
     litellm_params:
       model: openai/gpt-5.4-mini
@@ -128,14 +72,6 @@ model_list:
       api_base: os.environ/AZURE_OPENAI_ENDPOINT
       timeout: 120
       max_parallel_requests: 1
-
-  - model_name: azure-small-fallback
-    litellm_params:
-      model: openai/gpt-5.4-mini
-      api_key: os.environ/AZURE_OPENAI_API_KEY
-      api_base: os.environ/AZURE_OPENAI_ENDPOINT
-      timeout: 60
-      max_parallel_requests: 2
 
   - model_name: azure-coder-fallback
     litellm_params:
@@ -145,68 +81,23 @@ model_list:
       timeout: 120
       max_parallel_requests: 1
 
-  - model_name: openai-chat-fallback
-    litellm_params:
-      model: openai/gpt-5.4-mini
-      api_key: os.environ/OPENAI_API_KEY
-      timeout: 120
-      max_parallel_requests: 1
-
-  - model_name: openai-small-fallback
-    litellm_params:
-      model: openai/gpt-5.4-mini
-      api_key: os.environ/OPENAI_API_KEY
-      timeout: 60
-      max_parallel_requests: 2
-
-  - model_name: openai-coder-fallback
-    litellm_params:
-      model: openai/gpt-5.4-mini
-      api_key: os.environ/OPENAI_API_KEY
-      timeout: 120
-      max_parallel_requests: 1
-
-  # Legacy vision route. It is not used by the text fallback chains below.
-  - model_name: grok-model
-    litellm_params:
-      model: openai/grok-4-20-reasoning
-      api_key: os.environ/AZURE_OPENAI_API_KEY
-      api_base: os.environ/AZURE_OPENAI_ENDPOINT
-      timeout: 120
-
-  # Coding Agent keeps a stable logical name and uses the same LAN primary.
+  # Coding Agent retains its logical alias on the shared remote primary.
   - model_name: coding-model
     litellm_params:
-      model: openai/qwen2.5-coder:14b
-      api_base: os.environ/QWEN_CODER_LAN_API_BASE
-      api_key: os.environ/QWEN_CODER_LAN_API_KEY
+      model: os.environ/REMOTE_LLM_MODEL
+      custom_llm_provider: openai
+      api_base: os.environ/REMOTE_LLM_API_BASE
+      api_key: os.environ/REMOTE_LLM_API_KEY
       timeout: 120
+      allowed_openai_params: ["extra_body"]
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
       stream: true
       max_parallel_requests: 1
     model_info:
-      max_input_tokens: 16384
+      max_input_tokens: 8192
       max_output_tokens: 4096
-      input_cost_per_token: 0.0
-      output_cost_per_token: 0.0
-      cache_creation_input_token_cost: 0.0
-      cache_read_input_token_cost: 0.0
-
-  # CCTVAI host hardware summariser. Same local Qwen3 upstream as
-  # local-qwen-chat, but a separate model_name on purpose: it is deliberately
-  # absent from router_settings.fallbacks below, so a local outage returns an
-  # error instead of shipping server telemetry to Azure/OpenAI. Do not add this
-  # alias to any fallback chain, and do not reuse local-qwen-* for hardware.
-  - model_name: local-hardware-summary
-    litellm_params:
-      model: ollama_chat/qwen3:14b
-      api_base: os.environ/QWEN_CHAT_API_BASE
-      timeout: 60
-      think: false
-      stream: true
-      max_parallel_requests: 1
-    model_info:
-      max_input_tokens: 16384
-      max_output_tokens: 1024
       input_cost_per_token: 0.0
       output_cost_per_token: 0.0
       cache_creation_input_token_cost: 0.0
@@ -214,16 +105,11 @@ model_list:
 
 router_settings:
   fallbacks:
-    # Keep the local model for each role primary. Azure is the last cloud
-    # provider in the chain. OpenAI fallback removed 2026-09-04: the shared
-    # OpenAI account (OPENAI_API_KEY) has no credits left, so
-    # openai-*-fallback only added dead retries/latency before final 500.
-    # Re-add once the account is topped up.
-    - auto-model: ["local-qwen-chat-ngrok", "azure-chat-fallback"]
-    - local-qwen-chat: ["local-qwen-chat-ngrok", "azure-chat-fallback"]
-    - local-qwen-small: ["local-qwen-chat", "azure-small-fallback"]
-    - local-qwen-coder: ["local-qwen-coder-ngrok", "azure-coder-fallback"]
-    - coding-model: ["local-qwen-coder-ngrok", "azure-coder-fallback"]
+    # Azure is called only when the shared remote Qwen primary fails.
+    - auto-model: ["azure-chat-fallback"]
+    - local-qwen-chat: ["azure-chat-fallback"]
+    - local-qwen-coder: ["azure-coder-fallback"]
+    - coding-model: ["azure-coder-fallback"]
   num_retries: 1
   timeout: 120
   routing_strategy: simple-shuffle

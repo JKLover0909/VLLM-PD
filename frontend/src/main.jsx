@@ -1,12 +1,18 @@
 import { StrictMode, memo, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
+import { getMessageMarkdownOptions } from "./markdown-tables";
+import AgentPresence from "./components/AgentPresence.jsx";
+import TaskLauncher from "./components/TaskLauncher.jsx";
+import { buildTaskGroups, prepareTaskRun } from "./task-launcher.js";
+import { resolveAgentPresence } from "./agent-presence.js";
 
 // Memo hoá theo nội dung: khi stream token, chỉ message đang thay đổi mới
 // parse lại markdown; các message cũ giữ nguyên nên không re-parse (tránh
 // O(n) lần parse markdown cho mỗi token khi hội thoại dài).
-const MessageMarkdown = memo(function MessageMarkdown({ content }) {
-  return <ReactMarkdown>{content}</ReactMarkdown>;
+// Bảng Markdown chỉ bật cho câu trả lời QA để không đổi hiển thị các mode khác.
+const MessageMarkdown = memo(function MessageMarkdown({ content, qa = false }) {
+  return <ReactMarkdown {...getMessageMarkdownOptions({ qa })}>{content}</ReactMarkdown>;
 });
 import {
   Activity,
@@ -16,6 +22,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  ClipboardCheck,
   Copy,
   Database,
   FileCode,
@@ -56,10 +63,12 @@ import { SourcePreviewDialog } from "./components/SourcePreviewDialog";
 import { ResearchSidebar } from "./components/ResearchSidebar";
 import { MessageList } from "./components/MessageList";
 import { ChatInput, pushStoredPromptHistory } from "./components/ChatInput";
+import { streamQuery } from "./query-stream";
+import { buildQaPayload, isValidQaQuestion, QA_MAX_CODE_POINTS } from "./qa-mode";
+import { getQaStarterPrompts, QA_STARTER_PROMPTS } from "./qa-prompts";
 import { quickAnswerRequestOptions } from "./quick-answer-request";
 import { getSuggestions as resolveSuggestions } from "./suggestions";
 import {
-  getModeTabScrollLeft,
   shouldClearEmployeeAuth,
   visibleModeKeys,
   isCctvaiAvailable,
@@ -459,6 +468,7 @@ const QUICK_PROMPTS = {
       "7 ngày qua sự kiện vi phạm theo mức độ nghiêm trọng như thế nào?",
       "Danh sách camera đang hoạt động trong hệ thống?",
     ],
+    qa: QA_STARTER_PROMPTS,
     research: [
       "Lập báo cáo nghiên cứu tổng hợp từ các tài liệu",
       "So sánh các quan điểm và chỉ ra điểm mâu thuẫn",
@@ -486,6 +496,8 @@ const QUICK_PROMPTS = {
       "直近7日間の違反イベントを重要度別に教えてください。",
       "システム内で稼働中のカメラ一覧を表示してください。",
     ],
+    // Agent QA nhận tiếng Việt; nhãn Nhật được map riêng trước khi gửi câu Việt.
+    qa: getQaStarterPrompts("ja").map((item) => item.label),
     research: [
       "資料から総合的な調査レポートを作成してください",
       "各見解を比較し、矛盾点を示してください",
@@ -494,7 +506,7 @@ const QUICK_PROMPTS = {
   },
 };
 
-const ACTIVE_MODE_KEYS = ["mkac", "mes", "wms", "cctvai", "research"];
+const ACTIVE_MODE_KEYS = ["mkac", "mes", "wms", "cctvai", "qa", "research"];
 
 const MODE_OPTIONS = {
   mkac: {
@@ -509,6 +521,9 @@ const MODE_OPTIONS = {
   cctvai: {
     icon: Cctv,
   },
+  qa: {
+    icon: ClipboardCheck,
+  },
   research: {
     icon: FlaskConical,
   },
@@ -518,7 +533,6 @@ const MODEL_ACCENTS = {
   auto: "accent-auto",
   local: "accent-local",
   openai: "accent-openai",
-  grok: "accent-grok",
 };
 
 const LEGACY_MODE_SESSION_STORAGE_KEYS = {
@@ -526,6 +540,7 @@ const LEGACY_MODE_SESSION_STORAGE_KEYS = {
   mes: "meibook-session-mes",
   wms: "meibook-session-wms",
   cctvai: "meibook-session-cctvai",
+  qa: "meibook-session-qa",
   research: "meibook-session-research",
 };
 const SESSION_STORAGE_PREFIX = "meibook-session";
@@ -584,6 +599,19 @@ const UI_TEXT = {
         inputLabel: "Câu hỏi về WMS",
         placeholder: "Hỏi về tồn kho vật tư, công đoạn WMS...",
         unavailable: "WMS snapshot chưa sẵn sàng",
+      },
+      qa: {
+        label: "Quản lý chất lượng",
+        shortLabel: "QA",
+        title: "Hỏi đáp Quản lý chất lượng — Agent QMS 5M1E",
+        empty: "Tra cứu thông tin chất lượng từ Agent QMS 5M1E.",
+        metric: "Agent QMS 5M1E",
+        authHint: "Nhập mã nhân viên để truy cập dữ liệu quản lý chất lượng.",
+        inputLabel: "Câu hỏi về chất lượng",
+        placeholder: "Hỏi theo mã máy (vd. B302-01) hoặc mã phiếu kiểm tra (vd. MMSHB B0121-01)...",
+        guidance: "Agent trả lời bằng tiếng Việt và hiểu câu hỏi nối tiếp trong cùng cuộc trò chuyện; câu đầu tiên nên ghi đủ mã máy hoặc mã phiếu kiểm tra, khoảng thời gian và điều kiện. Tạo cuộc trò chuyện mới để hỏi chủ đề khác.",
+        unavailable: "Agent QMS 5M1E hiện chưa khả dụng. Vui lòng thử lại sau.",
+        misconfigured: "Agent QMS chưa được cấu hình. Vui lòng liên hệ quản trị viên.",
       },
       cctvai: {
         label: "Camera CCTVAI",
@@ -646,6 +674,7 @@ const UI_TEXT = {
       mes: "Phiên MES mới",
       wms: "Phiên WMS mới",
       cctvai: "Phiên Camera CCTVAI mới",
+      qa: "Phiên QA mới",
       research: "Phiên nghiên cứu mới",
       researchDemo: "Tài liệu nghiên cứu demo",
     },
@@ -691,6 +720,7 @@ const UI_TEXT = {
       employeeCode: "Mã nhân viên",
       invalidEmployee: "Mã nhân viên không hợp lệ.",
       employeeRequired: "Vui lòng nhập mã nhân viên hợp lệ trước khi tiếp tục.",
+      qaQuestionLimit: "Câu hỏi QA phải có từ 1 đến {limit} ký tự Unicode.",
       guestWelcome: "Chào mừng đến với hệ thống Meibook.",
       languageConverting: "Đang chuyển đổi ngôn ngữ...",
       continue: "Tiếp tục",
@@ -830,12 +860,14 @@ const UI_TEXT = {
       groundedBadge: "Trả lời dựa trên tài liệu",
     },
     answerScope: {
+      qa_agent: "Câu trả lời từ Agent QMS 5M1E; nội dung tham khảo, chưa được xác minh nghiệp vụ.",
+      qa_disclaimer: "Tham chiếu không đảm bảo dữ liệu chính xác hoặc còn mới; hãy đối chiếu với quy trình và nguồn QMS có thẩm quyền.",
       web: "Tổng hợp từ nguồn web",
       mes: "Dựa trên dữ liệu MES trực tiếp",
       mes_database: "Dựa trên MES snapshot cục bộ",
       wms_database: "Dựa trên tồn nguyên vật liệu tại kho công đoạn WMS MKHC",
       cctvai_database: "Dựa trên dữ liệu báo cáo camera CCTVAI",
-      cctvai_hardware: "Dựa trên dữ liệu giám sát phần cứng server CCTVAI theo thời gian thực",
+      cctvai_hardware: "Tổng hợp tất định từ dữ liệu giám sát phần cứng CCTVAI",
       mes_report: "Báo cáo được tổng hợp từ MES snapshot",
       wms_executive_report: "Báo cáo được tổng hợp từ current balance WMS",
       hr_executive_report: "Báo cáo được tổng hợp từ danh bạ nhân sự MKAC",
@@ -847,16 +879,12 @@ const UI_TEXT = {
     },
     models: {
       local: {
-        name: "Local Model",
-        description: "Chạy model nội bộ/local cho hỏi đáp dạng text.",
+        name: "Qwen primary",
+        description: "Dùng Qwen từ xa; Azure chỉ dự phòng khi có lỗi kỹ thuật.",
       },
       openai: {
         name: "Model dự phòng",
         description: "Chỉ dùng làm tuyến dự phòng kỹ thuật.",
-      },
-      grok: {
-        name: "Model nghiên cứu",
-        description: "Chỉ dùng khi bật lại chế độ nghiên cứu tài liệu.",
       },
     },
   },
@@ -895,6 +923,19 @@ const UI_TEXT = {
         inputLabel: "WMSに関する質問",
         placeholder: "WMS在庫、工程、資材について質問...",
         unavailable: "WMSスナップショットはまだ利用できません",
+      },
+      qa: {
+        label: "品質管理",
+        shortLabel: "QA",
+        title: "品質管理Q&A — Agent QMS 5M1E",
+        empty: "Agent QMS 5M1Eから品質情報を検索します。",
+        metric: "Agent QMS 5M1E",
+        authHint: "品質管理データにアクセスするには社員番号を入力してください。",
+        inputLabel: "品質に関する質問",
+        placeholder: "設備コード（例: B302-01）またはチェックシートコード（例: MMSHB B0121-01）で質問してください...",
+        guidance: "Agentはベトナム語で回答し、同じ会話内の続けての質問を理解します。最初の質問には設備コードまたはチェックシートコード、期間、条件を含めてください。別の話題は新しい会話で質問してください。",
+        unavailable: "Agent QMS 5M1Eは現在利用できません。後でもう一度お試しください。",
+        misconfigured: "Agent QMSが設定されていません。管理者にお問い合わせください。",
       },
       cctvai: {
         label: "カメラ CCTVAI",
@@ -957,6 +998,7 @@ const UI_TEXT = {
       mes: "新しいMESセッション",
       wms: "新しいWMSセッション",
       cctvai: "新しいCCTVAIカメラセッション",
+      qa: "新しいQAセッション",
       research: "新しい資料調査セッション",
       researchDemo: "サンプル調査資料",
     },
@@ -1002,6 +1044,7 @@ const UI_TEXT = {
       employeeCode: "社員番号",
       invalidEmployee: "社員番号が正しくありません。",
       employeeRequired: "続行する前に有効な社員番号を入力してください。",
+      qaQuestionLimit: "QAの質問はUnicode文字数で1〜{limit}文字にしてください。",
       guestWelcome: "Meibookシステムへようこそ。",
       languageConverting: "言語を変換しています...",
       continue: "続行",
@@ -1141,12 +1184,14 @@ const UI_TEXT = {
       groundedBadge: "資料に基づいて回答",
     },
     answerScope: {
+      qa_agent: "Agent QMS 5M1Eによる回答です。業務上の正確性は未検証です。",
+      qa_disclaimer: "参照情報はデータの正確性や最新性を保証しません。正式なQMS情報と照合してください。",
       web: "Webソースに基づく要約",
       mes: "MESリアルタイムデータに基づく",
       mes_database: "ローカルMESスナップショットに基づく",
       wms_database: "MKHC WMS工程倉庫の資材在庫に基づく",
       cctvai_database: "CCTVAIカメラレポートデータに基づく",
-      cctvai_hardware: "CCTVAIサーバーのリアルタイムハードウェア監視データに基づく",
+      cctvai_hardware: "CCTVAIハードウェアデータの決定的な集計",
       mes_report: "MESスナップショットから作成したレポート",
       wms_executive_report: "WMS現行残高から作成したレポート",
       hr_executive_report: "MKAC人事ディレクトリから作成したレポート",
@@ -1158,16 +1203,12 @@ const UI_TEXT = {
     },
     models: {
       local: {
-        name: "ローカルモデル",
-        description: "テキストQ&A向けに社内/ローカルモデルを使用します。",
+        name: "Qwen メインモデル",
+        description: "Qwenリモートモデルを使い、Azureは障害時のみ使用します。",
       },
       openai: {
         name: "予備モデル",
         description: "技術的な予備ルートとしてのみ使用します。",
-      },
-      grok: {
-        name: "資料調査モデル",
-        description: "資料調査モードを再度有効にした場合のみ使用します。",
       },
     },
   },
@@ -1287,92 +1328,19 @@ async function authenticateEmployee(employeeId) {
   return response.json();
 }
 
-// Một số mode (CCTVAI, MES, WMS, các câu trả lời cấu trúc) gửi cả câu trả lời
-// trong đúng 1 event "token" thay vì stream dần từ LLM, nên chữ xuất hiện tức
-// thì thay vì "đang gõ". Chia mỗi event "token" thành tối đa
-// TOKEN_DRIP_MAX_CHUNKS đoạn, chèn delay giữa các đoạn để mô phỏng gõ dần.
-// Tổng thời gian thêm bị chặn trên ở TOKEN_DRIP_MAX_CHUNKS * TOKEN_DRIP_DELAY_MS
-// cho MỖI event, không phải cho cả tin nhắn — nên chỉ áp dụng khi 1 event đã
-// đủ lớn để chắc chắn là "cả câu trả lời dồn 1 lần", KHÔNG áp dụng cho token
-// stream thật từ LLM (mkac/research qua src/rag/rag_pipeline.py: mỗi delta chỉ
-// vài ký tự, mỗi delta là 1 event riêng). Nếu áp dụng cho cả 2 loại, độ trễ sẽ
-// cộng dồn theo số lượng delta (có thể hàng trăm) thay vì bị chặn trên.
-const TOKEN_DRIP_MIN_LENGTH = 60;
-const TOKEN_DRIP_MAX_CHUNKS = 24;
-const TOKEN_DRIP_DELAY_MS = 35;
-
-function sleep(ms, signal) {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new DOMException("Aborted", "AbortError"));
-      return;
-    }
-    const timer = setTimeout(() => {
-      if (signal) signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    function onAbort() {
-      clearTimeout(timer);
-      reject(new DOMException("Aborted", "AbortError"));
-    }
-    if (signal) signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
-function splitForDrip(text) {
-  const chars = Array.from(text);
-  if (chars.length <= 1) return [text];
-  const chunkCount = Math.min(TOKEN_DRIP_MAX_CHUNKS, chars.length);
-  const size = Math.ceil(chars.length / chunkCount);
-  const parts = [];
-  for (let i = 0; i < chars.length; i += size) {
-    parts.push(chars.slice(i, i + size).join(""));
-  }
-  return parts;
-}
-
-async function streamQuery(payload, onEvent, signal) {
-  const response = await api("/query/stream", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    signal,
-  });
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const blocks = buffer.split("\n\n");
-    buffer = blocks.pop() || "";
-
-    for (const block of blocks) {
-      for (const line of block.split("\n")) {
-        if (!line.startsWith("data: ")) continue;
-        let event;
-        try {
-          event = JSON.parse(line.slice(6));
-        } catch {
-          continue;
-        }
-        if (event.type === "token" && event.content?.length >= TOKEN_DRIP_MIN_LENGTH) {
-          for (const part of splitForDrip(event.content)) {
-            await sleep(TOKEN_DRIP_DELAY_MS, signal);
-            onEvent({ ...event, content: part });
-          }
-        } else {
-          onEvent(event);
-        }
-      }
-    }
-  }
-}
 
 function buildConversationContext(messages, limit = 16) {
+  const excludedHardwareTurns = new Set();
+  messages.forEach((message, index) => {
+    if (message.answerScope === "cctvai_hardware") {
+      excludedHardwareTurns.add(index);
+      if (index > 0 && messages[index - 1]?.role === "user") {
+        excludedHardwareTurns.add(index - 1);
+      }
+    }
+  });
   return messages
+    .filter((message, index) => !excludedHardwareTurns.has(index))
     .filter((message) => message.role === "user" || message.role === "assistant")
     .filter((message) => message.content?.trim() || message.artifact?.id)
     .slice(-limit)
@@ -1727,6 +1695,12 @@ function App() {
     available: false,
     state: "UNAVAILABLE",
   });
+  const [qaStatus, setQaStatus] = useState({
+    enabled: false,
+    configured: false,
+    state: "UNKNOWN",
+    max_question_chars: QA_MAX_CODE_POINTS,
+  });
   const [model, setModel] = useState("auto");
   const [mode, setMode] = useState("mkac");
   const [question, setQuestion] = useState("");
@@ -1769,28 +1743,6 @@ function App() {
   const generationControllerRef = useRef(null);
   const endRef = useRef(null);
   const conversationScrollRef = useRef(null);
-  const modeTabsRef = useRef(null);
-
-  function revealActiveModeTab() {
-    const container = modeTabsRef.current;
-    const activeTab = container?.querySelector(`[data-mode="${mode}"]`);
-    if (!container || !activeTab) return;
-
-    const containerRect = container.getBoundingClientRect();
-    const tabRect = activeTab.getBoundingClientRect();
-    const left = getModeTabScrollLeft({
-      scrollLeft: container.scrollLeft,
-      clientWidth: container.clientWidth,
-      scrollWidth: container.scrollWidth,
-      tabLeft: container.scrollLeft + tabRect.left - containerRect.left,
-      tabWidth: tabRect.width,
-    });
-    if (left === container.scrollLeft) return;
-    const reduceMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    container.scrollTo({ left, behavior: reduceMotion ? "auto" : "smooth" });
-  }
 
   // Cuộn trực tiếp trong container hội thoại thay vì endRef.scrollIntoView().
   // scrollIntoView() có thể leo lên các ancestor scrolling box khác (kể cả
@@ -1837,10 +1789,11 @@ function App() {
   const visibleModes = visibleModeKeys({
     wms: Boolean(wmsStatus.available),
     cctvai: cctvaiAvailable,
+    qa: Boolean(qaStatus.enabled),
   });
-  const requestModel = model;
+  const requestModel = mode === "qa" ? "auto" : model;
   const mkacModels = useMemo(
-    () => localizedModels.filter((item) => !item.hidden_in_mkac && item.id !== "grok"),
+    () => localizedModels.filter((item) => !item.hidden_in_mkac),
     [localizedModels],
   );
 
@@ -1860,11 +1813,13 @@ function App() {
     (researchScope === "upload"
       ? files.length > 0
       : Boolean(researchTopicId && selectedTopic?.ready));
-  const mkacAuthorized =
-    (mode !== "mkac" && mode !== "mes" && mode !== "wms" && mode !== "cctvai") ||
-    Boolean(employee?.id && employee?.name);
+  const employeeProtectedMode = ["mkac", "mes", "wms", "cctvai", "qa"].includes(mode);
+  const qaAuthorized = Boolean(employee?.id && employee?.name && !isGuestEmployee(employee));
+  const mkacAuthorized = !employeeProtectedMode || (mode === "qa" ? qaAuthorized : Boolean(employee?.id && employee?.name));
+  const qaQuestionValid = mode !== "qa" || isValidQaQuestion(question);
   const canAsk =
     Boolean(question.trim()) &&
+    qaQuestionValid &&
     !busy &&
     Boolean(sessionId) &&
     researchReady &&
@@ -1873,9 +1828,48 @@ function App() {
     () => pendingFiles.reduce((total, file) => total + file.size, 0),
     [pendingFiles],
   );
+  const [agentMotion, setAgentMotion] = useState(true);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [taskInfoOpen, setTaskInfoOpen] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [taskPreviewDraft, setTaskPreviewDraft] = useState("");
+  const [freeComposer, setFreeComposer] = useState(false);
+  const composerDraftRef = useRef("");
+  const taskGroups = useMemo(
+    () => buildTaskGroups(mode, starterPromptEntries(), language),
+    [mode, language, quickAnswersConfig, researchTopics, researchTopicId, researchScope],
+  );
+  useEffect(() => {
+    setSelectedTask(null);
+    setTaskInfoOpen(false);
+    setComposerOpen(false);
+    setQuestion("");
+    setTaskPreviewDraft("");
+    setFreeComposer(false);
+    composerDraftRef.current = "";
+  }, [mode, language, currentWorkspaceKey, researchTopicId, researchScope]);
+  useEffect(() => {
+    if (!messages.length) return;
+    setSelectedTask(null);
+    setComposerOpen(true);
+  }, [messages.length]);
+
+  useEffect(() => {
+    if (question) composerDraftRef.current = question;
+  }, [question]);
+
+  useEffect(() => {
+    if (composerOpen) {
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+  }, [composerOpen]);
   const latestAssistantMessage = [...messages]
     .reverse()
     .find((item) => item.role === "assistant");
+  const agentPresence = resolveAgentPresence({
+    busy, pendingId: pendingAssistantId, message: latestAssistantMessage,
+    question, error, needsSelection: !researchReady,
+  });
   const latestSources = sources.length
     ? sources
     : latestAssistantMessage?.sources || [];
@@ -1890,6 +1884,7 @@ function App() {
   }
 
   function starterPromptEntries() {
+    if (mode === "qa") return getQaStarterPrompts(language);
     if (mode === "wms") return quickAnswersConfig.wms || [];
     if (mode === "cctvai") return quickAnswersConfig.cctvai || [];
     const prompts = mode === "research"
@@ -1998,30 +1993,39 @@ function App() {
   useEffect(() => {
     async function bootstrap() {
       try {
-        const [
-          healthResponse,
-          modelResponse,
-          mkacResponse,
-          researchDemoResponse,
-          researchTopicsResponse,
-        ] = await Promise.all([
-          api("/health"),
-          api(`/models?language=${encodeURIComponent(language)}`),
-          api("/knowledge/mkac/status"),
-          api("/research/demo"),
-          api("/research/topics").catch(() => null),
+        const results = await Promise.allSettled([
+          api("/health").then((response) => response.json()),
+          api(`/models?language=${encodeURIComponent(language)}`).then((response) => response.json()),
+          api("/knowledge/mkac/status").then((response) => response.json()),
+          api("/research/demo").then((response) => response.json()),
+          api("/research/topics").then((response) => response.json()),
         ]);
-        const healthData = await healthResponse.json();
-        const modelData = await modelResponse.json();
-        const mkacData = await mkacResponse.json();
-        const researchDemoData = await researchDemoResponse.json();
-        const researchTopicsData = researchTopicsResponse
-          ? await researchTopicsResponse.json().catch(() => null)
-          : null;
+        const [healthResult, modelResult, mkacResult, demoResult, topicsResult] = results;
+        const healthData = healthResult.status === "fulfilled" ? healthResult.value : null;
+        const modelData = modelResult.status === "fulfilled" ? modelResult.value : null;
+        const mkacData = mkacResult.status === "fulfilled" ? mkacResult.value : null;
+        const researchDemoData = demoResult.status === "fulfilled" ? demoResult.value : null;
+        const researchTopicsData = topicsResult.status === "fulfilled" ? topicsResult.value : null;
 
-        setModels(modelData.models || []);
-        setMkacStatus(mkacData);
-        setResearchDemo(researchDemoData);
+        if (healthData) {
+          setMesStatus(healthData.mes_database || {});
+          setWmsStatus(healthData.mes_wms_database || {});
+          setCctvaiStatus(healthData.cctvai_database || {});
+          setCctvaiHardwareStatus(healthData.cctvai_hardware || {});
+          setQaStatus(healthData.qa || { enabled: false, configured: false, state: "UNKNOWN" });
+          setHealth("online");
+        } else {
+          setHealth("offline");
+        }
+        if (modelData) {
+          setModels(modelData.models || []);
+          setModel((current) => {
+            const nextDefault = modelData.default || "auto";
+            return current === "auto" ? nextDefault : current;
+          });
+        }
+        if (mkacData) setMkacStatus(mkacData);
+        if (researchDemoData) setResearchDemo(researchDemoData);
         if (researchTopicsData) {
           setResearchTopics(researchTopicsData);
           // UI demo chỉ cho chọn 4 nhóm chuyên đề. Backend vẫn có thể hỗ trợ
@@ -2033,15 +2037,6 @@ function App() {
             current && validIds.has(current) ? current : "",
           );
         }
-        setMesStatus(healthData.mes_database || {});
-        setWmsStatus(healthData.mes_wms_database || {});
-        setCctvaiStatus(healthData.cctvai_database || {});
-        setCctvaiHardwareStatus(healthData.cctvai_hardware || {});
-        setModel((current) => {
-          const nextDefault = modelData.default || "auto";
-          return current === "auto" || current === "grok" ? nextDefault : current;
-        });
-        setHealth("online");
 
         const legacySession = localStorage.getItem(LEGACY_SESSION_STORAGE_KEY);
         const resolvedSessions = {};
@@ -2223,11 +2218,8 @@ function App() {
     }
     if (mode === "cctvai" && !cctvaiAvailable) {
       setMode("mkac");
-      return;
     }
-    const frame = window.requestAnimationFrame(revealActiveModeTab);
-    return () => window.cancelAnimationFrame(frame);
-  }, [mode, language, wmsStatus.available, cctvaiAvailable]);
+  }, [mode, wmsStatus.available, cctvaiAvailable]);
 
   useEffect(() => {
     try {
@@ -2392,6 +2384,13 @@ function App() {
     }));
     setModeMessages(workspaceMode, [], uiLanguage);
     setModeSources(workspaceMode, [], uiLanguage);
+    if (workspaceKey(workspaceMode, uiLanguage) === currentWorkspaceKey) {
+      setSelectedTask(null);
+      setComposerOpen(false);
+      setTaskPreviewDraft("");
+      setQuestion("");
+      composerDraftRef.current = "";
+    }
     if (workspaceMode === "research" && uiLanguage === language) {
       setFiles([]);
       setPendingFiles([]);
@@ -2458,6 +2457,11 @@ function App() {
     if (busy || uploading || !["topic", "upload"].includes(nextScope)) return;
     if (nextScope === researchScope) return;
     setResearchScope(nextScope);
+    setSelectedTask(null);
+    setTaskInfoOpen(false);
+    setComposerOpen(false);
+    setQuestion("");
+    composerDraftRef.current = "";
     try {
       localStorage.setItem(researchScopeStorageKey(language), nextScope);
     } catch {
@@ -2480,6 +2484,11 @@ function App() {
   function clearResearchTopic() {
     if (busy) return;
     setResearchTopicId("");
+    setSelectedTask(null);
+    setTaskInfoOpen(false);
+    setComposerOpen(false);
+    setQuestion("");
+    composerDraftRef.current = "";
     try {
       localStorage.removeItem(researchTopicStorageKey(language));
     } catch {
@@ -2520,7 +2529,11 @@ function App() {
     if (!visibleModes.includes(nextMode)) return;
     if (nextMode === mode || busy || uploading) return;
     setMode(nextMode);
+    setSelectedTask(null);
+    setTaskInfoOpen(false);
+    setComposerOpen(false);
     setQuestion("");
+    composerDraftRef.current = "";
     setError("");
     setSidebarOpen(false);
     setSourcePanelOpen(false);
@@ -2569,24 +2582,6 @@ function App() {
       mode: sourceMode,
       imageFailed: false,
     });
-  }
-
-  function onModeTabKeyDown(event, currentModeKey) {
-    const modeKeys = visibleModes;
-    const currentIndex = modeKeys.indexOf(currentModeKey);
-    let nextIndex = currentIndex;
-
-    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % modeKeys.length;
-    else if (event.key === "ArrowLeft") {
-      nextIndex = (currentIndex - 1 + modeKeys.length) % modeKeys.length;
-    } else if (event.key === "Home") nextIndex = 0;
-    else if (event.key === "End") nextIndex = modeKeys.length - 1;
-    else return;
-
-    event.preventDefault();
-    const nextMode = modeKeys[nextIndex];
-    switchMode(nextMode);
-    modeTabsRef.current?.querySelector(`[data-mode="${nextMode}"]`)?.focus();
   }
 
   async function copyAnswer(message) {
@@ -2647,6 +2642,12 @@ function App() {
   function cycleLanguage() {
     if (busy || uploading) return;
     setQuestion("");
+    composerDraftRef.current = "";
+    setSelectedTask(null);
+    setTaskInfoOpen(false);
+    setComposerOpen(false);
+    setTaskPreviewDraft("");
+    setFreeComposer(false);
     setError("");
     setSourcePanelOpen(false);
     setSourcePreview(null);
@@ -2741,8 +2742,12 @@ function App() {
 
   async function sendMessage(prompt = question, { quickAnswerId } = {}) {
     const cleanQuestion = prompt.trim();
-    if (["mkac", "mes", "wms", "cctvai"].includes(mode) && !mkacAuthorized) {
+    if (["mkac", "mes", "wms", "cctvai", "qa"].includes(mode) && !mkacAuthorized) {
       setEmployeeCodeError(t("common.employeeRequired"));
+      return;
+    }
+    if (mode === "qa" && !isValidQaQuestion(cleanQuestion)) {
+      setError(t("common.qaQuestionLimit", { limit: QA_MAX_CODE_POINTS }));
       return;
     }
     if (!cleanQuestion || busy || !sessionId) return;
@@ -2751,16 +2756,17 @@ function App() {
     const requestLanguage = language;
     const requestWorkspaceKey = workspaceKey(requestMode, requestLanguage);
     const requestSessionId = sessionId;
-    const conversationContext = buildConversationContext(messages);
+    const conversationContext = requestMode === "qa" ? [] : buildConversationContext(messages);
     if (messages.length === 0) {
       const title = sessionTitleFromQuestion(cleanQuestion);
       setSessionTitles((current) => ({ ...current, [requestWorkspaceKey]: title }));
       persistSessionTitle(requestSessionId, title);
     }
     const assistantId = createClientId();
+    const requestQuestion = cleanQuestion;
     const controller = new AbortController();
     generationControllerRef.current = controller;
-    pushStoredPromptHistory(cleanQuestion);
+    if (requestMode !== "qa") pushStoredPromptHistory(cleanQuestion);
     setQuestion("");
     setError("");
     setModeSources(requestMode, [], requestLanguage);
@@ -2776,15 +2782,17 @@ function App() {
         model: selectedModel?.name || model,
         mode: requestMode,
         answerScope:
-          requestMode === "mkac"
-            ? "mkac"
-            : requestMode === "mes"
-              ? "mes_database"
-              : requestMode === "wms"
-                ? "wms_database"
-                : requestMode === "cctvai"
-                  ? "cctvai_database"
-                  : "research",
+          requestMode === "qa"
+            ? "qa_agent"
+            : requestMode === "mkac"
+              ? "mkac"
+              : requestMode === "mes"
+                ? "mes_database"
+                : requestMode === "wms"
+                  ? "wms_database"
+                  : requestMode === "cctvai"
+                    ? "cctvai_database"
+                    : "research",
         researchScope: requestMode === "research" ? researchScope : undefined,
         sources: [],
         agentTimeline: null,
@@ -2794,10 +2802,17 @@ function App() {
     setWaitingMessageIndex(0);
     setPendingAssistantId(assistantId);
     setBusy(true);
-
-    try {
-      await streamQuery(
-        {
+    const requestPayload = requestMode === "qa"
+      ? buildQaPayload({
+          sessionId: requestSessionId,
+          question: cleanQuestion,
+          employeeId: employee?.id,
+          language: requestLanguage,
+          // An empty QA screen (new chat, clear, reload) starts a new agent
+          // thread instead of continuing the one kept by the server.
+          resetContext: messages.length === 0,
+        })
+      : {
           session_id: requestSessionId,
           question: cleanQuestion,
           stream: true,
@@ -2814,7 +2829,11 @@ function App() {
               ? researchTopicId || null
               : null,
           research_scope: requestMode === "research" ? researchScope : null,
-        },
+        };
+
+    try {
+      await streamQuery(
+        requestPayload,
         (event) => {
           if (event.type === "status") {
             setModeMessages(
@@ -2961,6 +2980,7 @@ function App() {
                         workflow: event.workflow || item.workflow,
                         wmsMetadata: event.wms_metadata || item.wmsMetadata,
                         cctvaiMetadata: event.cctvai_metadata || item.cctvaiMetadata,
+                        qaMetadata: event.qa_metadata || item.qaMetadata,
                         sourceKind: event.source_kind || item.sourceKind,
                         cache: event.cache ?? item.cache,
                       }
@@ -3031,7 +3051,9 @@ function App() {
         }
       }
       const localizedMessage = localizeErrorMessage(queryError.message, requestLanguage);
-      if (!wasStopped) setError(localizedMessage);
+      const isCurrentRequest = generationControllerRef.current === controller;
+      if (!wasStopped && isCurrentRequest) setError(localizedMessage);
+      if (requestMode === "qa" && isCurrentRequest) setQuestion(requestQuestion);
       setModeMessages(
         requestMode,
         (current) =>
@@ -3051,9 +3073,11 @@ function App() {
         requestLanguage,
       );
     } finally {
-      generationControllerRef.current = null;
-      setPendingAssistantId("");
-      setBusy(false);
+      if (generationControllerRef.current === controller) {
+        generationControllerRef.current = null;
+        setPendingAssistantId("");
+        setBusy(false);
+      }
     }
   }
 
@@ -3102,7 +3126,7 @@ function App() {
     setEmployeeCodeInput("");
     setEmployeeCodeError("");
     setQuestion("");
-    for (const workspaceMode of ["mkac", "mes", "wms", "cctvai"]) {
+    for (const workspaceMode of ["mkac", "mes", "wms", "cctvai", "qa"]) {
       for (const item of LANGUAGE_OPTIONS) {
         setModeMessages(workspaceMode, [], item);
         setModeSources(workspaceMode, [], item);
@@ -3114,6 +3138,74 @@ function App() {
     } catch {
       // Ignore storage failures.
     }
+  }
+
+  function taskInfoItems() {
+    if (mode === "mkac") return [`${mkacStatus.num_documents} ${modeText("mkac").metric}`];
+    if (mode === "mes") return [`${mesStatus.lots || 0} ${modeText("mes").metric}`];
+    if (mode === "wms") return [
+      `${formatText(modeText("wms").itemCount, { count: wmsStatus.distinct_items || 0 })} · ${formatText(modeText("wms").processCount, { count: wmsStatus.distinct_process_codes || 0 })}`,
+      t(`common.wmsHealth.${wmsStatus.state || (wmsStatus.enabled ? "UNAVAILABLE" : "DISABLED")}`),
+    ];
+    if (mode === "cctvai") return [
+      cctvaiStatus.available ? modeText("cctvai").metric : modeText("cctvai").unavailable,
+      ...(!cctvaiHardwareStatus.available && cctvaiHardwareStatus.enabled ? [modeText("cctvai").hardwareUnavailable] : []),
+    ];
+    if (mode === "qa") return [
+      qaStatus.configured ? (qaStatus.state === "ONLINE" ? modeText("qa").metric : modeText("qa").unavailable) : modeText("qa").misconfigured,
+    ];
+    if (researchScope === "upload") return [`${files.length} ${modeText("research").metric}`];
+    return researchTopicId
+      ? [`${selectedResearchTopic()?.num_files ?? 0} ${modeText("research").metric}`]
+      : [formatText(modeText("research").documentsSummary, { count: researchTopicsTotalFiles(), topics: researchTopics.topics.length })];
+  }
+
+  function chooseTask(task) {
+    if (busy || uploading || !mkacAuthorized || !researchReady) return;
+    setSelectedTask(task);
+    setTaskPreviewDraft(task.question);
+    setComposerOpen(false);
+  }
+
+  function runSelectedTask(task, editedQuestion) {
+    if (!task || busy || uploading || !mkacAuthorized || !researchReady) return;
+    const { question: questionToRun, valid, usePreparedAnswer, quickAnswerId } = prepareTaskRun(task, editedQuestion);
+    if (!valid || (mode === "qa" && !isValidQaQuestion(questionToRun))) {
+      setError(mode === "qa" ? t("common.qaQuestionLimit", { limit: QA_MAX_CODE_POINTS }) : "Vui lòng nhập câu hỏi.");
+      return;
+    }
+    setSelectedTask(null);
+    setTaskPreviewDraft("");
+    if (mode === "wms" && usePreparedAnswer) {
+      handleQuickAnswerClick({ ...task, id: quickAnswerId, question: task.sourceQuestion || task.question });
+      return;
+    }
+    sendMessage(questionToRun);
+  }
+
+  function editSelectedTask() {
+    if (!selectedTask || busy) return;
+    setQuestion(taskPreviewDraft || selectedTask.sourceQuestion || selectedTask.question);
+    composerDraftRef.current = taskPreviewDraft || selectedTask.sourceQuestion || selectedTask.question;
+    setFreeComposer(false);
+    setSelectedTask(null);
+    setTaskPreviewDraft("");
+    setComposerOpen(true);
+  }
+
+  function openFreeComposer() {
+    if (busy || uploading || !mkacAuthorized) return;
+    setSelectedTask(null);
+    setFreeComposer(true);
+    setQuestion(composerDraftRef.current);
+    setComposerOpen(true);
+  }
+
+  function closeFreeComposer() {
+    if (!composerOpen || messages.length > 0) return;
+    composerDraftRef.current = question;
+    setComposerOpen(false);
+    setFreeComposer(false);
   }
 
   function onSubmit(event) {
@@ -3173,7 +3265,7 @@ function App() {
       />
 
       <main className={`workspace ${sourcePanelOpen ? "" : "sources-collapsed"}`}>
-        <header className="workspace-header">
+        <header className={`workspace-header ${messages.length === 0 ? "is-welcome" : ""}`}>
           <div className="header-title">
             <div
               className={`mode-mark ${
@@ -3207,7 +3299,9 @@ function App() {
                         ? cctvaiStatus.available
                           ? modeText("cctvai").metric
                           : modeText("cctvai").unavailable
-                        : researchScope === "upload"
+                        : mode === "qa"
+                          ? modeText("qa").metric
+                          : researchScope === "upload"
                         ? `${files.length} ${t("common.sessionDocuments")}`
                         : researchTopicId
                         ? formatText(modeText("research").scopeLabel, {
@@ -3219,38 +3313,23 @@ function App() {
           </div>
 
           <div className="header-actions">
-            <div
-              className="mode-tabs"
-              ref={modeTabsRef}
-              role="tablist"
-              aria-label={t("common.qaModes")}
-            >
-              {visibleModes.map((key) => {
-                const option = MODE_OPTIONS[key];
-                const Icon = option.icon;
-                const optionText = modeText(key);
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    data-mode={key}
-                    className={mode === key ? `active ${key}` : ""}
-                    onClick={() => switchMode(key)}
-                    onKeyDown={(event) => onModeTabKeyDown(event, key)}
-                    disabled={busy || uploading}
-                    role="tab"
-                    aria-selected={mode === key}
-                    aria-controls={`${key}-conversation`}
-                    aria-label={optionText.label}
-                    tabIndex={mode === key ? 0 : -1}
-                    title={optionText.title}
-                  >
-                    <Icon size={17} />
-                    <span className="mode-label-full">{optionText.label}</span>
-                    <span className="mode-label-short">{optionText.shortLabel}</span>
-                  </button>
-                );
-              })}
+            <div className={`mode-selector-wrap ${mode}`}>
+              <ModeIcon className="mode-selector-icon" size={17} aria-hidden="true" />
+              <select
+                className="mode-selector"
+                value={mode}
+                onChange={(event) => switchMode(event.target.value)}
+                disabled={busy || uploading}
+                aria-label={t("common.qaModes")}
+                title={currentMode.label}
+              >
+                {visibleModes.map((key) => (
+                  <option key={key} value={key}>
+                    {modeText(key).label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="mode-selector-chevron" size={15} aria-hidden="true" />
             </div>
 
             <button
@@ -3297,7 +3376,7 @@ function App() {
 
             <span className="header-divider" role="separator" aria-hidden="true" />
 
-            {["mkac", "mes", "wms", "cctvai"].includes(mode) && employee && (
+            {["mkac", "mes", "wms", "cctvai", "qa"].includes(mode) && employee && (
               <button
                 className="icon-button header-tool"
                 type="button"
@@ -3352,16 +3431,32 @@ function App() {
           </div>
         )}
 
+        {mode === "qa" && qaStatus.enabled && !qaStatus.configured && (
+          <div className="wms-health-banner disabled" role="status">
+            {modeText("qa").misconfigured}
+          </div>
+        )}
+        {mode === "qa" && qaStatus.enabled && qaStatus.configured && qaStatus.state !== "ONLINE" && (
+          <div className="wms-health-banner unavailable" role="status">
+            {modeText("qa").unavailable}
+          </div>
+        )}
+
         <div className="workspace-body">
           <section
             id={`${mode}-conversation`}
-            className="conversation"
+            className={`conversation agent-workspace ${messages.length ? "has-conversation" : "is-welcome"}`}
+            data-motion={agentMotion}
             role="tabpanel"
             aria-label={currentMode.title}
             aria-busy={busy}
           >
+            {mkacAuthorized && messages.length > 0 && (
+              <AgentPresence presence={agentPresence} compact mode={mode} language={language}
+                motion={agentMotion} onMotionChange={setAgentMotion} />
+            )}
             <div className="conversation-scroll" ref={conversationScrollRef}>
-              {["mkac", "mes", "wms", "cctvai"].includes(mode) && !mkacAuthorized ? (
+              {["mkac", "mes", "wms", "cctvai", "qa"].includes(mode) && !mkacAuthorized ? (
                 <EmployeeLogin
                   mode={mode}
                   modeText={modeText}
@@ -3375,14 +3470,8 @@ function App() {
               ) : messages.length === 0 ? (
                 <div className="empty-conversation">
                   <div className="empty-copy">
-                    <div className={`empty-icon ${mode}`}>
-                      <ModeIcon size={30} />
-                    </div>
-                    <h1>
-                      {mode === "mkac" && employee?.name
-                        ? employeeGreetingFor(employee, language, t)
-                        : currentMode.title}
-                    </h1>
+                    <AgentPresence presence={agentPresence} mode={mode} language={language}
+                      motion={agentMotion} onMotionChange={setAgentMotion} onOpenComposer={openFreeComposer} />
                     {mode === "research" && (
                       <div className="research-source-choice" role="tablist">
                         <button
@@ -3408,9 +3497,6 @@ function App() {
                           <span>{modeText("research").sourceUpload}</span>
                         </button>
                       </div>
-                    )}
-                    {mode !== "research" && (
-                      <p>{modeText(mode).empty}</p>
                     )}
                     {mode === "research" && researchScope === "topic" && !researchTopicId && (
                       <div className="research-topic-grid">
@@ -3476,79 +3562,31 @@ function App() {
                   </div>
 
                   {mode !== "research" || researchScope === "upload" || researchTopicId ? (
-                    <div className="prompt-section">
-                      <div className="prompt-grid">
-                        {starterPromptEntries().map((prompt) => (
-                          <button
-                            key={prompt.id || prompt.question}
-                            type="button"
-                            onClick={() =>
-                              mode === "wms"
-                                ? handleQuickAnswerClick(prompt)
-                                : sendMessage(prompt.question)
-                            }
-                            disabled={!researchReady || !mkacAuthorized}
-                          >
-                            <Search size={16} />
-                            <span>{prompt.question}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="empty-status">
-                    <span
-                      className={`status-dot ${health === "online" ? "ready" : "offline"}`}
+                    <TaskLauncher
+                      mode={mode}
+                      language={language}
+                      groups={taskGroups}
+                      selectedTask={selectedTask}
+                      previewQuestion={taskPreviewDraft}
+                      onPreviewChange={setTaskPreviewDraft}
+                      onSelect={chooseTask}
+                      onRun={runSelectedTask}
+                      onPreviewQuestionChange={(value) => setTaskPreviewDraft(value)}
+                      onEdit={editSelectedTask}
+                      onBack={() => { setSelectedTask(null); setTaskPreviewDraft(""); }}
+                      onFreeInput={openFreeComposer}
+                      onBackToTasks={closeFreeComposer}
+                      showFreeInput={freeComposer}
+                      onToggleInfo={() => setTaskInfoOpen((open) => !open)}
+                      showInfo={taskInfoOpen}
+                      qaGuidance={mode === "qa" ? modeText("qa").guidance : ""}
+                      modeDescription={modeText(mode).empty}
+                      researchContext={mode === "research" && researchScope === "topic" && researchTopicId
+                        ? formatText(modeText("research").scopeLabel, { topic: researchTopicLabel(selectedResearchTopic()) })
+                        : mode === "research" && researchScope === "upload" ? `${files.length} ${modeText("research").metric}` : ""}
+                      infoItems={taskInfoItems()}
                     />
-                    <span>
-                      {health === "online" ? t("common.ready") : t("common.notReady")}
-                    </span>
-                    <span className="status-sep" aria-hidden="true">·</span>
-                    <span>
-                      {mode === "mkac"
-                        ? `${mkacStatus.num_documents} ${modeText("mkac").metric}`
-                        : mode === "mes"
-                          ? `${mesStatus.lots || 0} ${modeText("mes").metric}`
-                          : mode === "wms"
-                            ? `${formatText(modeText("wms").itemCount, {
-                                count: wmsStatus.distinct_items || 0,
-                              })} · ${formatText(modeText("wms").processCount, {
-                                count: wmsStatus.distinct_process_codes || 0,
-                              })}`
-                            : mode === "cctvai"
-                              ? modeText("cctvai").metric
-                              : researchScope === "upload"
-                            ? `${files.length} ${modeText("research").metric}`
-                            : researchTopicId
-                              ? `${
-                                  selectedResearchTopic()?.num_files ?? 0
-                                } ${modeText("research").metric}`
-                              : formatText(
-                                  modeText("research").documentsSummary,
-                                  {
-                                    count: researchTopicsTotalFiles(),
-                                    topics: researchTopics.topics.length,
-                                  },
-                                )}
-                    </span>
-                    {mode === "wms" && (
-                      <>
-                        <span className="status-sep" aria-hidden="true">·</span>
-                        <span
-                          className={`wms-health-state ${String(
-                            wmsStatus.state || (wmsStatus.enabled ? "UNAVAILABLE" : "DISABLED"),
-                          ).toLowerCase()}`}
-                        >
-                          {t(
-                            `common.wmsHealth.${
-                              wmsStatus.state || (wmsStatus.enabled ? "UNAVAILABLE" : "DISABLED")
-                            }`,
-                          )}
-                        </span>
-                      </>
-                    )}
-                  </div>
+                  ) : null}
                 </div>
               ) : (
                 <MessageList
@@ -3615,7 +3653,7 @@ function App() {
               health={health}
               researchScope={researchScope}
               researchTopicId={researchTopicId}
-              researchReady={researchTopics.ready}
+              researchReady={researchReady}
               mkacAuthorized={mkacAuthorized}
               requestResearchUploadPicker={requestResearchUploadPicker}
               uploading={uploading}
@@ -3626,6 +3664,7 @@ function App() {
               Paperclip={Paperclip}
               Search={Search}
               userPrompts={messages.filter((m) => m.role === "user").map((m) => m.content)}
+              isOpen={messages.length > 0 || composerOpen}
             />
             )}
           </section>

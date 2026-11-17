@@ -1,9 +1,10 @@
-const EMPLOYEE_PROTECTED_MODES = new Set(["mkac", "mes", "wms", "cctvai"]);
+const EMPLOYEE_PROTECTED_MODES = new Set(["mkac", "mes", "wms", "cctvai", "qa"]);
 
-export function visibleModeKeys({ wms = false, cctvai = false } = {}) {
+export function visibleModeKeys({ wms = false, cctvai = false, qa = false } = {}) {
   const keys = ["mkac", "mes"];
   if (wms) keys.push("wms");
   if (cctvai) keys.push("cctvai");
+  if (qa) keys.push("qa");
   keys.push("research");
   return keys;
 }
@@ -36,25 +37,4 @@ export function shouldClearEmployeeAuth({ status, errorCode, mode }) {
     errorCode === "INVALID_EMPLOYEE_ID" &&
     EMPLOYEE_PROTECTED_MODES.has(mode)
   );
-}
-
-export function getModeTabScrollLeft({
-  scrollLeft,
-  clientWidth,
-  scrollWidth,
-  tabLeft,
-  tabWidth,
-}) {
-  const maxScrollLeft = Math.max(0, scrollWidth - clientWidth);
-  const visibleLeft = scrollLeft;
-  const visibleRight = scrollLeft + clientWidth;
-  let nextScrollLeft = scrollLeft;
-
-  if (tabLeft < visibleLeft) {
-    nextScrollLeft = tabLeft;
-  } else if (tabLeft + tabWidth > visibleRight) {
-    nextScrollLeft = tabLeft + tabWidth - clientWidth;
-  }
-
-  return Math.min(maxScrollLeft, Math.max(0, nextScrollLeft));
 }

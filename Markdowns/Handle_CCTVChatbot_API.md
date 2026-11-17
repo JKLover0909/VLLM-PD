@@ -196,7 +196,7 @@ Content-Type: application/json
   "answer": "Hôm nay có **47 sự kiện vi phạm**:\n\n- **Cảnh báo:** 23\n- **Thường:** 24",
   "sources": [],
   "session_id": "550e8400-e29b-41d4-a716-446655440000",
-  "model": "local-qwen-small",
+  "model": "auto",
   "mode": "cctvai",
   "answer_scope": "cctvai_database",
   "cctvai_metadata": {
@@ -261,7 +261,7 @@ Với mode `cctvai`, `sources` luôn là mảng rỗng `[]` (không có tài li�
 ```json
 {
   "type": "meta",
-  "model": "local-qwen-small",
+  "model": "auto",
   "mode": "cctvai",
   "answer_scope": "cctvai_hardware",
   "cctvai_metadata": {

@@ -7,7 +7,12 @@ mà không phải đụng tới logic định tuyến. Giữ nguyên hành vi so
 from __future__ import annotations
 
 import json
+import re
+
+from src.integrations import mes_intent
 from typing import TYPE_CHECKING
+
+from src.api.prompt_guard import DISCLOSURE_INSTRUCTION
 
 if TYPE_CHECKING:  # pragma: no cover - chỉ dùng cho type hint
     from src.integrations.mes_client import MesLotError
@@ -20,7 +25,9 @@ Bắt buộc nêu đủ mã Lot, mã hàng và tổng số lỗi của Lot có s
 Chỉ sử dụng dữ liệu MES được cung cấp, không suy đoán nguyên nhân lỗi và không thêm dữ liệu khác.
 Định dạng số lượng lỗi theo cách đọc tiếng Việt, dùng dấu chấm phân cách hàng nghìn.
 Giữ nguyên mã và số lượng ở dạng chữ số; tuyệt đối không viết số lượng lỗi bằng chữ.
-Nếu có nhiều Lot đồng hạng, phải nêu đầy đủ tất cả các Lot đó."""
+Nếu có nhiều Lot đồng hạng, phải nêu đầy đủ tất cả các Lot đó.
+
+""" + DISCLOSURE_INSTRUCTION
 
 MES_DATABASE_SYSTEM_PROMPT = """Bạn là trợ lý phân tích dữ liệu sản xuất bo mạch MKAC.
 
@@ -48,7 +55,9 @@ Quy tắc:
 11. Nếu câu trả lời kiểm chứng đã trình bày các mục (Lot, mã hàng, mã lỗi) theo
     danh sách gạch đầu dòng (mỗi dòng bắt đầu bằng "- "), phải giữ nguyên từng
     mục trên một dòng riêng, tuyệt đối không dồn các dòng đó thành một đoạn
-    văn nối bằng dấu chấm phẩy hoặc dấu phẩy."""
+    văn nối bằng dấu chấm phẩy hoặc dấu phẩy.
+
+""" + DISCLOSURE_INSTRUCTION
 
 MES_GENERAL_SYSTEM_PROMPT = """Bạn là trợ lý MES của MKAC.
 
@@ -57,7 +66,9 @@ quy trình MES ở mức tổng quan. Không truy vấn dữ liệu, không đư
 không nói như thể đã xem MES snapshot và không suy đoán thông tin nội bộ.
 
 Nếu câu hỏi cần số liệu cụ thể theo Lot, mã hàng, mã lỗi, thời gian hoặc thống
-kê, hãy hướng dẫn người dùng hỏi bằng các thông tin đó để hệ thống truy vấn MES."""
+kê, hãy hướng dẫn người dùng hỏi bằng các thông tin đó để hệ thống truy vấn MES.
+
+""" + DISCLOSURE_INSTRUCTION
 
 MES_UNSUPPORTED_ANSWER = (
     "Chưa nhận diện được truy vấn MES này. Bạn có thể hỏi về thông tin một Lot, "
@@ -65,11 +76,36 @@ MES_UNSUPPORTED_ANSWER = (
 )
 
 MES_GENERAL_FALLBACK_ANSWER = (
-    "Đây là câu hỏi giải thích nghiệp vụ MES, không phải truy vấn số liệu. "
-    "MES là hệ thống hỗ trợ theo dõi và quản lý dữ liệu sản xuất như Lot, "
-    "mã hàng, lỗi phát sinh và trạng thái xử lý. Nếu cần số liệu cụ thể, "
-    "hãy hỏi theo Lot, mã hàng, mã lỗi hoặc khoảng thời gian."
+    "Câu hỏi này nằm ngoài phạm vi tra cứu MES. Bạn có thể hỏi về Lot, "
+    "mã hàng, mã lỗi, số liệu sản xuất hoặc quy trình MES."
 )
+MES_NO_DOMAIN_CONTEXT_ANSWER = (
+    "Câu hỏi này chưa có đủ ngữ cảnh MES để trả lời. "
+    "Vui lòng nêu Lot, mã hàng, mã lỗi hoặc nội dung quy trình MES cụ thể."
+)
+MES_NO_DOMAIN_CONTEXT_ANSWER_JA = (
+    "MESに関する質問か判断できませんでした。Lot番号、品番、エラーコード、"
+    "または具体的なMES業務について質問してください。"
+)
+
+
+def has_mes_domain_context(question: str) -> bool:
+    """Return whether the question contains a clear MES/production signal."""
+    normalized = mes_intent.normalized_text(question)
+    if any(
+        marker in normalized
+        for marker in (
+            "mes", "lot", "lots", "ma hang", "ma loi", "loi", "error",
+            "defect", "san xuat", "production", "cong doan", "so luong",
+        )
+    ):
+        return True
+    return bool(
+        re.search(
+            r"(ロット|品番|製品|生産|エラー|不良|欠陥|工程|製造)",
+            question or "",
+        )
+    )
 
 
 def live_api_messages(

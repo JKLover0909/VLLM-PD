@@ -4,47 +4,23 @@ import yaml
 
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "litellm_config.yaml"
-LAN_MODEL = "openai/qwen2.5-coder:14b"
-NGROK_MODEL = (
-    "openai//home/jkl0909/models/qwen2.5-coder-14b/"
-    "Qwen2.5-Coder-14B-Instruct-Q5_K_M.gguf"
+LOCAL_MODEL = "os.environ/REMOTE_LLM_MODEL"
+LOCAL_ALIASES = (
+    "auto-model",
+    "local-qwen-chat",
+    "local-qwen-coder",
+    "coding-model",
 )
-# Azure role fallbacks were switched 2026-09-04 to the gpt-5.4-mini deployment
-# (same Azure AI Foundry resource, OPENAI_API_KEY account has no credits left).
-# The openai-*-fallback model_list entries stay defined for a future re-add
-# but were removed from router_settings.fallbacks the same day, so they no
-# longer appear in ROLE_FALLBACKS below.
 AZURE_MODEL = "openai/gpt-5.4-mini"
-OPENAI_MODEL = "openai/gpt-5.4-mini"
 CLOUD_MODELS = {
     "azure-chat-fallback",
-    "azure-small-fallback",
     "azure-coder-fallback",
-    "openai-chat-fallback",
-    "openai-small-fallback",
-    "openai-coder-fallback",
 }
 ROLE_FALLBACKS = {
-    "auto-model": [
-        "local-qwen-chat-ngrok",
-        "azure-chat-fallback",
-    ],
-    "local-qwen-chat": [
-        "local-qwen-chat-ngrok",
-        "azure-chat-fallback",
-    ],
-    "local-qwen-small": [
-        "local-qwen-chat",
-        "azure-small-fallback",
-    ],
-    "local-qwen-coder": [
-        "local-qwen-coder-ngrok",
-        "azure-coder-fallback",
-    ],
-    "coding-model": [
-        "local-qwen-coder-ngrok",
-        "azure-coder-fallback",
-    ],
+    "auto-model": ["azure-chat-fallback"],
+    "local-qwen-chat": ["azure-chat-fallback"],
+    "local-qwen-coder": ["azure-coder-fallback"],
+    "coding-model": ["azure-coder-fallback"],
 }
 
 
@@ -65,50 +41,75 @@ def _fallbacks_by_name(config):
     }
 
 
-def test_coder_aliases_use_lan_primary_and_q5_ngrok_fallback():
+def test_all_role_aliases_use_the_same_remote_qwen_primary():
     models = _models_by_name(_load_config())
 
-    for model_name in ("local-qwen-coder", "coding-model"):
+    for model_name in LOCAL_ALIASES:
         params = models[model_name]["litellm_params"]
-        assert params["model"] == LAN_MODEL
-        assert params["api_base"] == "os.environ/QWEN_CODER_LAN_API_BASE"
-        assert params["api_key"] == "os.environ/QWEN_CODER_LAN_API_KEY"
-        assert "headers" not in params
+        assert params["model"] == LOCAL_MODEL
+        assert params["custom_llm_provider"] == "openai"
+        assert params["api_base"] == "os.environ/REMOTE_LLM_API_BASE"
+        assert params["api_key"] == "os.environ/REMOTE_LLM_API_KEY"
+        assert params["allowed_openai_params"] == ["extra_body"]
+        assert params["extra_body"] == {
+            "chat_template_kwargs": {"enable_thinking": False}
+        }
+        assert params["max_parallel_requests"] == 1
+        assert models[model_name]["model_info"]["max_input_tokens"] == 8192
 
-    ngrok_params = models["local-qwen-coder-ngrok"]["litellm_params"]
-    assert ngrok_params["model"] == NGROK_MODEL
-    assert ngrok_params["api_base"] == "os.environ/QWEN_CODER_NGROK_API_BASE"
-    assert ngrok_params["api_key"] == "os.environ/QWEN_CODER_NGROK_API_KEY"
-    assert ngrok_params["headers"] == {"ngrok-skip-browser-warning": "true"}
+
+def test_remote_primary_requires_a_protected_configured_endpoint():
+    config_text = CONFIG_PATH.read_text(encoding="utf-8")
+    assert "192.84.106.81" not in config_text
+    assert "http://" not in config_text
+    assert "REMOTE_LLM_API_BASE" in config_text
+    assert "REMOTE_LLM_API_KEY" in config_text
+    assert "REMOTE_LLM_MODEL" in config_text
 
 
-def test_role_specific_cloud_aliases_do_not_reuse_openai_model_alias():
+def test_config_has_no_ollama_or_legacy_cloud_primary_routes():
+    config_text = CONFIG_PATH.read_text(encoding="utf-8")
+    models = _models_by_name(_load_config())
+
+    assert "OLLAMA_API_BASE" not in config_text
+    assert "ollama_chat" not in config_text
+    assert "CHAT_LAN_" not in config_text
+    assert "swift" not in config_text.lower()
+    assert "local-hardware-summary" not in models
+    assert "local-qwen-small" not in models
+    assert "azure-small-fallback" not in models
+    assert "grok-model" not in models
+    primary_models = {
+        model["litellm_params"]["model"]
+        for name, model in models.items()
+        if name not in CLOUD_MODELS
+    }
+    assert primary_models == {LOCAL_MODEL}
+
+
+def test_primary_has_no_ollama_reasoning_parameters():
+    models = _models_by_name(_load_config())
+    for model_name in LOCAL_ALIASES:
+        params = models[model_name]["litellm_params"]
+        assert "think" not in params
+        assert "reasoning_effort" not in params
+        assert params["allowed_openai_params"] == ["extra_body"]
+
+
+def test_azure_is_the_only_cloud_fallback_provider():
     models = _models_by_name(_load_config())
 
     assert CLOUD_MODELS <= models.keys()
-    assert "openai-model" not in models
+    assert not any(name.startswith("openai-") for name in models)
 
-    for model_name in (
-        "azure-chat-fallback",
-        "azure-small-fallback",
-        "azure-coder-fallback",
-    ):
+    for model_name in CLOUD_MODELS:
         params = models[model_name]["litellm_params"]
         assert params["model"] == AZURE_MODEL
         assert params["api_key"] == "os.environ/AZURE_OPENAI_API_KEY"
         assert params["api_base"] == "os.environ/AZURE_OPENAI_ENDPOINT"
 
-    for model_name in (
-        "openai-chat-fallback",
-        "openai-small-fallback",
-        "openai-coder-fallback",
-    ):
-        params = models[model_name]["litellm_params"]
-        assert params["model"] == OPENAI_MODEL
-        assert params["api_key"] == "os.environ/OPENAI_API_KEY"
 
-
-def test_fallbacks_preserve_role_and_prefer_azure_before_openai():
+def test_fallbacks_are_sequential_role_specific_azure_only():
     config = _load_config()
     models = _models_by_name(config)
     fallbacks = _fallbacks_by_name(config)
@@ -119,28 +120,6 @@ def test_fallbacks_preserve_role_and_prefer_azure_before_openai():
 
     assert "local-qwen-chat" not in fallbacks["local-qwen-coder"]
     assert "local-qwen-chat" not in fallbacks["coding-model"]
-
-
-def test_hardware_summary_alias_is_local_only_with_no_cloud_path():
-    """CCTVAI host telemetry must never reach a cloud provider.
-
-    The alias exists precisely so it can be left out of every fallback chain;
-    reusing local-qwen-* would silently inherit the Azure fallback.
-    """
-    config = _load_config()
-    models = _models_by_name(config)
-    fallbacks = _fallbacks_by_name(config)
-
-    params = models["local-hardware-summary"]["litellm_params"]
-    assert params["model"].startswith("ollama_chat/")
-    assert params["api_base"] == "os.environ/QWEN_CHAT_API_BASE"
-    assert "api_key" not in params
-
-    # Not a fallback source: an outage errors out instead of going cloud.
-    assert "local-hardware-summary" not in fallbacks
-    # Not a fallback target either, so no other alias can route into it.
-    for targets in fallbacks.values():
-        assert "local-hardware-summary" not in targets
 
 
 def test_fallback_graph_has_no_cycles():

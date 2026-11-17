@@ -181,10 +181,17 @@ class CctvaiQueryService:
         ):
             return None
 
-        routed_model = (
+        configured_model = (
             os.getenv("CCTVAI_SQL_AGENT_MODEL", "local-qwen-coder").strip()
             or "local-qwen-coder"
         )
+        routed_model = {
+            "auto": "auto-model",
+            "local": "local-qwen-chat",
+            "openai": "auto-model",
+        }.get(configured_model, configured_model)
+        if configured_model.startswith(("azure-", "openai-")):
+            routed_model = "local-qwen-coder"
         max_attempts = _env_int(
             "CCTVAI_SQL_AGENT_MAX_ATTEMPTS", 2, minimum=1, maximum=3
         )

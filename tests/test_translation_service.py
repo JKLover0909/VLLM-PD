@@ -43,11 +43,11 @@ def test_vietnamese_query_bypasses_translation_model():
     assert client.chat.completions.calls == []
 
 
-def test_translation_defaults_to_local_model():
+def test_translation_defaults_to_local_chat_alias():
     client = FakeClient(["unused"])
     service = TranslationService(client=client)
 
-    assert service.model == "local-qwen-small"
+    assert service.model == "local-qwen-chat"
 
 
 def test_japanese_query_is_translated_for_vietnamese_backend():
@@ -69,9 +69,9 @@ def test_japanese_query_is_translated_for_vietnamese_backend():
     assert "一番不良が多いロットは？" in call["messages"][1]["content"]
 
 
-def test_local_translation_model_disables_thinking():
+def test_translation_client_leaves_upstream_options_to_litellm():
     client = FakeClient(["Lot nào có số lượng lỗi nhiều nhất?"])
-    service = TranslationService(client=client, model="local-qwen-small")
+    service = TranslationService(client=client, model="local-qwen-chat")
 
     result = asyncio.run(
         service.translate_query(
@@ -83,27 +83,8 @@ def test_local_translation_model_disables_thinking():
 
     assert result.backend_question == "Lot nào có số lượng lỗi nhiều nhất?"
     call = client.chat.completions.calls[0]
-    assert call["model"] == "local-qwen-small"
-    assert call["extra_body"]["think"] is False
-    assert call["extra_body"]["num_ctx"] == 4096
-
-
-def test_large_local_translation_model_uses_chat_context():
-    client = FakeClient(["Lot nào có số lượng lỗi nhiều nhất?"])
-    service = TranslationService(client=client, model="local-qwen-chat")
-
-    asyncio.run(
-        service.translate_query(
-            "一番不良が多いロットは？",
-            ui_language="ja",
-            mode="mes",
-        )
-    )
-
-    call = client.chat.completions.calls[0]
     assert call["model"] == "local-qwen-chat"
-    assert call["extra_body"]["think"] is False
-    assert call["extra_body"]["num_ctx"] == 16384
+    assert "extra_body" not in call
 
 
 def test_japanese_ui_vietnamese_query_bypasses_translation_model():

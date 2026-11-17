@@ -10,13 +10,13 @@ Tài liệu này là hướng dẫn chính thức (Onboarding Guide) dành cho b
 
 | Môi trường | Đường dẫn / nhánh | Compose | Web | LiteLLM | Qdrant | Container chính |
 | --- | --- | --- | --- | --- | --- | --- |
-| Production local | `/home/jkl/Code/VLLM-PD` / `main` | `docker-compose.web.yml` | mặc định `8001`, có thể override bằng `MACHINE2_API_PORT` | mặc định `127.0.0.1:4000`, có thể override bằng `LITELLM_PROXY_PORT` | mặc định `127.0.0.1:6333`, có thể override bằng `QDRANT_PORT` | `meibook-web`, `meibook-litellm`, `meibook-qdrant` |
-| Dev local | `/home/jkl/Code/VLLM-PD-dev` / `dev` | `docker-compose.dev.yml` (file local chưa được Git track tại thời điểm 2026-07-14) | `0.0.0.0:8002` | `127.0.0.1:4001` | `127.0.0.1:6334` | `meibook-web-dev`, `meibook-litellm-dev`, `meibook-qdrant-dev` |
+| Production local | `/home/jkl/Code/VLLM-PD` / `main` | `docker-compose.web.yml` | mặc định `8001`, có thể override bằng `MACHINE2_API_PORT` | hiện `127.0.0.1:4002` (2026-10-27), override `LITELLM_PROXY_PORT`; container listen `4000` | mặc định `127.0.0.1:6333`, có thể override bằng `QDRANT_PORT` | `meibook-web`, `meibook-litellm`, `meibook-qdrant` |
+| Dev local | `/home/jkl/Code/VLLM-PD-dev` / `dev` | `docker-compose.dev.yml` (đã được Git track; xác minh 2026-10-31) | `0.0.0.0:8002` | `127.0.0.1:4001` | `127.0.0.1:6334` | `meibook-web-dev`, `meibook-litellm-dev`, `meibook-qdrant-dev` |
 
 ### 0.1 Mục đích
 
 * Mọi tính năng và sửa lỗi phải được phát triển và kiểm thử trong worktree/stack Dev trước khi review và merge sang `main`; chạy smoke test Dev khi thay đổi có bề mặt runtime cần xác minh end-to-end.
-* Stack Dev có bản sao riêng của SQLite, Qdrant storage, documents, preview images, uploads và logs để thử nghiệm mà không sửa dữ liệu Production. Compose Dev và `.env.docker` hiện là local state, không tự xuất hiện trong clone/worktree mới.
+* Stack Dev có bản sao riêng của SQLite, Qdrant storage, documents, preview images, uploads và logs để thử nghiệm mà không sửa dữ liệu Production. `docker-compose.dev.yml` đã được Git track, nhưng `.env.docker` vẫn là local state ignored, không tự xuất hiện trong clone/worktree mới.
 * Git chỉ merge **source code, schema, config và tài liệu đã được review**. Không bao giờ merge/copy ngược SQLite, Qdrant storage, uploads, logs hoặc dữ liệu thử nghiệm từ Dev sang Production. `docjp_processed/` hiện có preview legacy đang được Git track; không stage output reindex Dev cùng code. Mọi thay đổi preview tracked phải được review riêng và xác nhận là artifact phát hành có chủ đích.
 * Khi thay đổi schema dữ liệu, phải viết/chạy migration hoặc import có kiểm soát riêng cho từng môi trường; không thay thế dữ liệu production bằng bản Dev.
 
@@ -24,8 +24,12 @@ Tài liệu này là hướng dẫn chính thức (Onboarding Guide) dành cho b
 
 * Tên container, Docker network, host port và các bind-mount dữ liệu được tách nhờ hai checkout vật lý khác nhau.
 * Dev vẫn dùng chung Docker daemon, GPU/VRAM, image tag và các Docker volume cache HuggingFace/Torch/EasyOCR với Production.
-* Cấu hình Dev hiện tại **không chạy `meibook-ollama-proxy-dev` hay port `11436`**; LiteLLM Dev dùng chung proxy/model upstream qua `host.docker.internal:11435`. Không được giả định hai stack độc lập hoàn toàn ở tầng model.
-* Các biến `QWEN_*` khai báo trực tiếp trong service `litellm.environment` hiện thắng giá trị cùng tên trong `.env.docker`; sửa env file không đổi các endpoint này nếu Compose chưa được cập nhật.
+* **Target sau rollout (chưa active):** mọi LLM role của Meibook dùng cùng một Qwen3.5-9B Q4_K_M remote primary qua LiteLLM. `auto-model`, `local-qwen-chat`, `local-qwen-coder`, `coding-model` là logical aliases tương thích, không phải nhiều model.
+* Azure `gpt-5.4-mini` chỉ là fallback tuần tự cho lỗi primary chat/coder; không có lựa chọn cloud trực tiếp, không chạy song song/hedge. Model legacy `openai` từ client cũ phải chuẩn hóa sang primary. Ảnh thử Qwen trước, Azure chỉ khi unsupported/failure.
+* `REMOTE_LLM_API_BASE`, `REMOTE_LLM_MODEL`, `REMOTE_LLM_API_KEY` chỉ được cấu hình sau khi người vận hành xác nhận endpoint TLS/VPN. Không nhúng HTTP endpoint thử nghiệm, không gửi dữ liệu thật cho tới khi TLS/VPN sẵn sàng. Production chưa rollout thì tài liệu/code target không chứng minh runtime đã đổi.
+* Qwen primary nhận `chat_template_kwargs.enable_thinking=false`; không dùng tham số Ollama `think` hoặc `reasoning_effort` để điều khiển endpoint này. Context/token budgets hiện giữ bảo thủ.
+* CCTVAI hardware summary chạy renderer deterministic trong Meibook. Không gọi Qwen/Azure/translation LLM cho telemetry; loại cả câu hỏi và câu trả lời hardware khỏi conversation history trước khi gửi tới model. Model metadata là `hardware-deterministic`.
+* BGE-M3 và OCR/Docling tiếp tục chạy cục bộ; chỉ Ollama LLM host sẽ dừng sau rollout Dev+Production và xác minh không còn consumer. Không tự stop/disable service hoặc xóa model trước phê duyệt.
 * Web Dev được chủ đích publish `0.0.0.0:8002` để dùng trên LAN. Employee ID/guest hiện chỉ là access gate, không phải xác thực mạnh; đây là quyết định vận hành cho môi trường demo hiện tại, không tự đổi sang loopback nếu người dùng chưa yêu cầu.
 * `ENABLE_AGENT=false` chỉ tắt endpoint Coding Agent `/agent`; không tắt MES SQL Agent, Report Agent, Gmail hoặc Calendar. Dev chủ đích dùng cùng tài khoản demo Gmail/Calendar đang hoạt động trên Production qua các bản sao credential/token trong `data/`; không gửi email hoặc tạo Calendar event trong smoke test nếu người dùng chưa yêu cầu rõ.
 * Do `./src:/app/src:ro` che dependency trong image, worktree Dev hiện cần bản sao local ignored `src/agent/node_modules` được khởi tạo từ dependency tree Production/lockfile trước khi app chạy Calendar. Compose mount credential/token Dev vào package này; không merge `node_modules` hay OAuth state vào Git.
@@ -46,7 +50,7 @@ docker compose -f docker-compose.dev.yml ps
 
 `config -q` chỉ kiểm tra cú pháp và `config --services` chỉ xác nhận service names. Trước thao tác stateful, phải dùng output chọn lọc từ resolved config/`docker inspect` để xác minh Compose project, `container_name`, published port và bind source. Không in toàn bộ `docker compose config` vào chat/log vì output có thể chứa biến môi trường hoặc secret đã resolve.
 
-* Không chạy `docker-compose.web.yml`, `scripts/docker-deploy.sh`, restart/stop/down container không có hậu tố `-dev`, hoặc truy cập các cổng Production đã resolve (mặc định `8001/4000/6333`) nếu người dùng chưa yêu cầu rõ thao tác Production.
+* Không chạy `docker-compose.web.yml`, `scripts/docker-deploy.sh`, restart/stop/down container không có hậu tố `-dev`, hoặc truy cập các cổng Production đã resolve (hiện `8001/4002/6333`; container LiteLLM listen `4000`) nếu người dùng chưa yêu cầu rõ thao tác Production.
 * Không dùng lệnh Docker mơ hồ thiếu `-f docker-compose.dev.yml` khi preflight xác nhận đang ở worktree Dev local. Nếu file này không tồn tại hoặc không hợp lệ, dừng lại và báo người dùng; không tự chuyển sang Compose Production.
 * Không chạy `down -v`, drop/clear collection, xóa storage, reindex/import toàn bộ, gửi Gmail, tạo Calendar event, commit, merge, push hoặc deploy nếu chưa được người dùng yêu cầu/xác nhận rõ.
 * Không copy nóng `qdrant_storage`; nếu cần làm mới Dev từ Production, dùng Qdrant snapshot/restore nhất quán theo runbook được duyệt.
@@ -54,7 +58,7 @@ docker compose -f docker-compose.dev.yml ps
 
 ### 0.4 Snapshot khởi tạo Dev ngày 2026-07-14
 
-Người vận hành đã báo cáo stack Dev được khởi tạo từ snapshot nhất quán và smoke test thành công: `docjp_knowledge` 938 points, `docmind_documents` 104 points, `mkac_knowledge` 192 points; Employee SQLite có 154 nhân sự; MES SQLite có 1.325 lot; `/health`, LiteLLM liveliness và một lời gọi thật qua `local-qwen-small` hoạt động. Đây chỉ là **snapshot theo thời điểm**, không phải invariant; agent phải đo lại trước khi dùng các con số này để kết luận.
+Người vận hành đã báo cáo stack Dev được khởi tạo từ snapshot nhất quán và smoke test thành công: `docjp_knowledge` 938 points, `docmind_documents` 104 points, `mkac_knowledge` 192 points; Employee SQLite có 154 nhân sự; MES SQLite có 1.325 lot; `/health`, LiteLLM liveliness và một lời gọi model hoạt động. Đây chỉ là **snapshot theo thời điểm**, không phải invariant; agent phải đo lại trước khi dùng các con số này để kết luận. Model alias trong lần smoke test này đã lỗi thời và không mô tả routing hiện tại.
 
 ## 1. Project Overview
 
@@ -71,7 +75,7 @@ Kiến trúc Client-Server, triển khai bằng Docker Compose: `docker-compose.
 * **Frontend:** ReactJS + Vite + CSS thuần. SPA render tin nhắn qua Server-Sent Events (SSE).
 * **Backend:** FastAPI (Python). Xử lý định tuyến, auth, session, rate limit, gọi module RAG/MES.
 * **Vector Database:** Qdrant. Lưu trữ embedding (`mkac_knowledge`, `docjp_knowledge`).
-* **LLM Gateway:** LiteLLM Proxy. Điều phối các truy vấn tới mô hình Local (Qwen) qua Ollama hoặc Cloud (OpenAI, Azure) dựa trên fallback chain.
+* **LLM Gateway (target; rollout pending):** LiteLLM Proxy sẽ dùng chung một remote Qwen3.5-9B Q4_K_M cho các tác vụ LLM thông thường; Azure `gpt-5.4-mini` chỉ fallback tuần tự sau lỗi primary. Chưa có endpoint TLS/VPN được xác nhận/cấu hình nên chưa chuyển runtime; Dev hiện vẫn dùng Ollama và Production chưa rollout. Hardware metrics được render deterministic, không gọi LLM. BGE-M3/Docling vẫn local.
 * **Database (Structured):** SQLite. Dùng để lưu trữ dữ liệu nhân sự và snapshot dữ liệu sản xuất.
 * **Ingestion Pipeline:** Sử dụng `Docling` và `PyMuPDF` để OCR/parse, cắt chunk có overlap, sinh ảnh preview, dùng `BAAI/bge-m3` để tạo embedding (1024-dim).
 
@@ -145,7 +149,7 @@ Sau khi code Dev được kiểm thử, quy trình chuẩn là review diff → c
 * **Backend targeted test (mặc định trong vòng lặp phát triển):** chạy file/case liên quan bằng `scripts/meibook-python -m pytest <test-path> -q`.
 * **Backend suite trước review/merge hoặc thay đổi rộng:** `scripts/meibook-python -m pytest tests/ -q --ignore=tests/test_mes_integration.py --ignore=tests/test_mkac_pipeline.py`.
 * **Backend static check:** `scripts/meibook-python -m pyflakes src/api/*.py src/rag/*.py src/integrations/*.py src/auth/*.py src/actions/*.py src/i18n/*.py src/agent/*.py` (nếu môi trường đã cài `pyflakes`).
-* **Frontend Build:** `cd frontend && npm run build`. Một lần build vừa tạo artifact vừa xác minh bundling; hiện `frontend/package.json` chưa có script `lint` hoặc `test`, vì vậy không báo đã lint nếu chỉ chạy build.
+* **Frontend Build:** `cd frontend && npm run build`. Một lần build vừa tạo artifact vừa xác minh bundling; `frontend/package.json` có script `test` (`node --test test/*.test.js`, chạy bằng `npm --prefix frontend test`) nhưng chưa có script `lint`, vì vậy không báo đã lint nếu chỉ chạy build/test.
 * **Compose validation:** `docker compose -f docker-compose.dev.yml config -q`; cần chạy khi Compose/env/target thay đổi hoặc trong preflight cho lệnh stateful, không cần lặp lại vô ích. Dùng `config --services`, `ps` và inspect/query chọn lọc để kiểm tra target; không xuất toàn bộ resolved config có thể chứa secret.
 * **Dev liveness:** `curl -fsS http://localhost:8002/health`, `curl -fsS http://localhost:4001/health/liveliness`, `curl -fsS http://localhost:6334/healthz`.
 * **Xem log API/Preview Dev:** `docker logs meibook-web-dev --tail 50` (tránh log dữ liệu nhạy cảm trong báo cáo).
@@ -170,6 +174,7 @@ Sau khi code Dev được kiểm thử, quy trình chuẩn là review diff → c
 ## 9. Data, Security and Privacy Rules
 
 * **Tuyệt đối không:** `git push`, `git reset --hard`, xóa file lớn, drop database, clear Qdrant collection, hoặc reindex toàn bộ nếu người dùng chưa yêu cầu rõ.
+* Runtime model: xem `progress.md` để biết trạng thái rollout đã xác minh; không suy runtime từ alias hoặc topology lịch sử bên dưới.
 * **Không tự ý commit** nếu người dùng chưa yêu cầu.
 * **Thao tác nguy hiểm:** Phải giải thích trước và chờ người dùng xác nhận.
 * **Bảo mật:** Không hard-code API key, token, password. Không log dữ liệu nhạy cảm (mã nhân viên, dữ liệu HR/MES thật). Không đưa dữ liệu thật vào test/prompt nếu chưa ẩn danh.

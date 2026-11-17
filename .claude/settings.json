@@ -5,6 +5,17 @@
     "PYTHONNOUSERSITE": "1"
   },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/session-context.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -14,6 +25,34 @@
             "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/require-meibook-python.sh\"",
             "timeout": 5,
             "statusMessage": "Checking Meibook Dev Python environment"
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-environment.sh\"",
+            "timeout": 5,
+            "statusMessage": "Checking Dev/Production boundary"
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-files.sh\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR}/.claude/hooks/post-edit-check.sh\"",
+            "timeout": 20
           }
         ]
       }

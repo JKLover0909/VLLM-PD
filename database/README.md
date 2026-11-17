@@ -1,3 +1,50 @@
+# MSM/MSA mock database
+
+Ngữ cảnh schema, quan hệ và mẫu truy vấn dành cho model coder: [MSM/MSA SQL
+context](MSM_MSA_SQL_CONTEXT.md).
+
+Database phát triển MSM/MSA được tạo bằng dữ liệu tổng hợp hoàn toàn giả, không
+lấy từ Oracle hay từ dữ liệu nhân sự/sản xuất thật. Schema gồm 9 bảng nghiệp vụ
+trong `database/schema/msm_msa.sql`; các bảng core authentication/RBAC/API của
+Oracle được loại khỏi DB mock. Database sinh ra ở `data/msm_mock.sqlite` và được
+Git ignore cùng thư mục runtime `data/`.
+
+Tạo bộ mock mặc định gồm 30 bộ phận, 5.000 thiết bị, tối đa 6 lịch sử hiệu chuẩn
+mỗi thiết bị và khoảng 42% thiết bị có cấu hình MSA:
+
+```bash
+scripts/meibook-python scripts/create_msm_mock_database.py
+```
+
+Script có seed mặc định `20261017` và mốc dữ liệu `2026-10-17`, nên tái tạo được
+cùng dataset. Nếu database đã tồn tại, script dừng để tránh ghi đè. Dùng `--replace`
+chỉ khi chủ động muốn tạo lại; quy mô và seed có thể điều chỉnh:
+
+```bash
+scripts/meibook-python scripts/create_msm_mock_database.py \\
+  --machines 10000 \\
+  --departments 40 \\
+  --calibrations-per-machine 8 \\
+  --msa-ratio 0.5 \\
+  --seed 20261017 \\
+  --replace
+```
+
+Các cột attachment/image chứa đường dẫn `/mock/...` không trỏ tới tệp thật; email
+dùng miền `.invalid`; mã người dùng, máy, khách hàng, sản phẩm và nhận xét đều
+được đánh dấu `MOCK`. Giá trị MSA trong `CONCLUSION` chỉ là mô phỏng để test luồng
+UI/query, không phải kết quả đo, không dùng để đánh giá chất lượng thực tế. SQLite
+mock giữ tên bảng/cột và các quan hệ chính của schema Oracle; một số kiểu dữ liệu
+được ánh xạ sang SQLite (`VARCHAR2`/`CLOB` → `TEXT`, epoch `NUMBER` → `INTEGER`).
+
+Các giới hạn đã biết: `MSA_MACHINE.LINK_MSM='N'` không tương thích với Oracle FK
+bắt buộc tới `MSM_MACHINE`, nên generator chỉ sinh cấu hình có liên kết MSM; mã
+nhân viên chỉ là synthetic ID và không có FK vào schema core. Database này là
+fixture phát triển cục bộ, không phải contract production và không nên được dùng
+để xác nhận business rule chưa được xác minh.
+
+---
+
 # MES snapshot database
 
 Database SQLite `data/mes.sqlite` được tạo từ các bản dump MES MKAC trong

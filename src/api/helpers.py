@@ -17,6 +17,7 @@ from fastapi import HTTPException, Request
 
 from src.actions.report_intent import is_report_request
 from src.api import config
+from src.api.prompt_guard import safe_history
 from src.api.schemas import QueryRequest
 from src.integrations.gmail_sender import try_parse_email_send_command
 
@@ -128,7 +129,7 @@ def query_cache_key(req: QueryRequest, *, snapshot_version: str = "") -> Optiona
         return None
     # Câu follow-up ("phòng này", "còn X thì sao"...) có đáp án phụ thuộc
     # conversation_context — cache theo câu chữ sẽ trả nhầm ngữ cảnh người khác.
-    if is_followup_question(req.question):
+    if req.conversation_context or is_followup_question(req.question):
         return None
     # TTL áp dụng theo mode: MES/WMS dùng TTL dài riêng vì snapshot tĩnh.
     # Research dùng TTL riêng vì tài liệu DocJP gần như tĩnh (chỉ đổi khi reindex).
@@ -238,7 +239,7 @@ def is_followup_question(value: str) -> bool:
 def latest_assistant_context(
     conversation_context: List[Dict[str, Any]],
 ) -> Optional[Dict[str, Any]]:
-    for item in reversed(conversation_context or []):
+    for item in reversed(safe_history(conversation_context)):
         if item.get("role") != "assistant":
             continue
         content = str(item.get("content") or "").strip()

@@ -2,7 +2,7 @@
 
 Meibook là ứng dụng hỏi đáp nội bộ chạy trên repository `VLLM-PD`. Hệ thống phục
 vụ giao diện React, API FastAPI, Qdrant, LiteLLM, dữ liệu nhân sự MKAC, dữ liệu
-MES/WMS snapshot, Gmail send action và lớp dịch giao diện Việt/Nhật.
+MES/WMS snapshot, Agent QMS 5M1E (QA), Gmail send action và lớp dịch giao diện Việt/Nhật.
 
 Runtime Dev của thay đổi WMS nằm tại `/home/jkl/Code/VLLM-PD-dev`, branch `dev`,
 với `docker-compose.dev.yml` và cổng `8002/4001/6334`. Không dùng hướng dẫn này
@@ -10,22 +10,33 @@ với `docker-compose.dev.yml` và cổng `8002/4001/6334`. Không dùng hướn
 
 **Không commit/push hoặc chạy import/reindex trong khi chỉ kiểm tra code.**
 
-Trạng thái tài liệu này được cập nhật theo kiến trúc đang chạy tại
-`/home/jkl/Code/VLLM-PD`.
+**Trạng thái migration model (2026-11-17):** code Dev đang được chuẩn bị để mọi vai
+trò LLM thông thường dùng một Qwen3.5-9B Q4_K_M từ xa làm primary, Azure chỉ fallback
+khi lỗi. Runtime hiện tại chưa chuyển: Ollama trên host vẫn đang phục vụ model 9B
+local. Endpoint được thử nghiệm hiện chỉ có HTTP; không cấu hình/activate để gửi dữ
+liệu thật cho đến khi người dùng xác nhận TLS/VPN. Hardware telemetry được tóm tắt
+tất định trong Meibook và không gửi tới model từ xa hoặc cloud. Production chưa rollout.
 
 ## Trạng thái hiện tại
 
 - Frontend: React + Vite, build vào `frontend/dist` và được FastAPI phục vụ tại `/`.
-- Backend: FastAPI chạy cổng `8001`.
-- LiteLLM: chạy nội bộ cổng `4000`, chỉ backend gọi.
-- Qdrant: chạy nội bộ cổng `6333`, lưu vector tài liệu.
-- Ollama local trên Máy 2: chạy bằng `systemd`, dùng cho model phụ
-  `qwen2.5:3b-instruct`.
-- Giao diện đang hiển thị 4 chế độ:
-  - `Hỏi đáp hành chính nhân sự MKAC` (`mode=mkac`).
-  - `Quản lý MES` (`mode=mes`).
-  - `Quản lý Kho WMS` (`mode=wms`), truy vấn riêng snapshot current balance.
-  - `Nghiên cứu tài liệu` (`mode=research`).
+- Backend: FastAPI trên host Production `8001` và Dev `8002`.
+- LiteLLM: host Production hiện `4002`, Dev `4001`; cả hai app gọi cổng nội bộ Docker `4000`.
+- Qdrant: host Production `6333`, Dev `6334`; mỗi stack giữ vector data riêng.
+- Mục tiêu routing sau rollout: `auto-model`, `local-qwen-chat`, `local-qwen-coder`
+  và `coding-model` sẽ dùng chung một Qwen3.5-9B Q4_K_M từ xa qua LiteLLM. Alias
+  nghiệp vụ được giữ để tương thích. Runtime hiện chưa chuyển: Dev vẫn dùng Ollama;
+  chưa có endpoint HTTPS/VPN được xác nhận/cấu hình, Production chưa rollout. Không
+  đặt API key thật trong file tracked.
+- Tóm tắt phần cứng CCTVAI được render tất định trên Meibook; telemetry không được
+  gửi tới model. Chỉ lượt hardware/answer đã được đánh dấu mới lọc khỏi conversation
+  context server; free text hoặc tool histories chưa được tổng quát hóa.
+- BGE-M3 và Docling/OCR vẫn chạy cục bộ; chỉ LLM host Ollama dự kiến dừng sau khi
+  cả hai stack đã rollout. Không gỡ Ollama/model trước khi xác minh không còn consumer.
+- Azure `gpt-5.4-mini` là fallback tuần tự duy nhất cho chat và coder khi Qwen chính
+  lỗi. Ảnh trước tiên thử primary; nếu server không hỗ trợ, lỗi có thể fallback
+  Azure tuần tự. Cloud fallback có thể nhận prompt/ảnh theo chính sách hiện hành.
+- Giao diện có các chế độ MKAC (`mode=mkac`), MES (`mode=mes`), WMS (`mode=wms`), QA (`mode=qa`), CCTVAI (`mode=cctvai`, khi khả dụng) và Nghiên cứu (`mode=research`). QA chuyển câu hỏi đến Agent QMS 5M1E và hỗ trợ hỏi nối tiếp (state agent giữ phía server theo session); hướng dẫn vận hành tại [Markdowns/QA_AGENT.md](Markdowns/QA_AGENT.md).
 - WMS dùng xác thực `employee_id` giống MKAC/MES, giữ nguyên câu hỏi tiếng Nhật,
   và không fallback sang MES snapshot, MES SQL Agent hoặc MES API.
 - WMS contract v4 chỉ trả lời các intent current balance đã được kiểm chứng;
@@ -76,8 +87,8 @@ Không chạy lệnh import WMS hoặc `--reindex` nếu chưa xác nhận rõ m
   trả lời cuối cùng mới được dịch sang tiếng Nhật.
 - Người dùng MKAC/MES phải có `employee_id`. ID khách demo là `000000` và dùng
   giao diện tiếng Nhật.
-- UI chỉ hiển thị lựa chọn model dạng `Local Model`. Các route cloud còn tồn tại
-  trong LiteLLM như fallback kỹ thuật, không còn là lựa chọn chính trên giao diện.
+- UI chỉ hiển thị lựa chọn Qwen primary. Azure chỉ xuất hiện trong đường fallback
+  sau lỗi kỹ thuật; model legacy `openai` từ client cũ được chuẩn hóa về primary.
 - Frontend gửi `conversation_context` 16 lượt gần nhất để hỗ trợ các câu nối
   tiếp như "anh này", "lot đó", "đứng thứ hai" hoặc "so với sản phẩm/phòng ban
   vừa hỏi".
@@ -87,12 +98,12 @@ Không chạy lệnh import WMS hoặc `--reindex` nếu chưa xác nhận rõ m
 ```text
 Người dùng / Client
         |
-        | HTTP/HTTPS tới cổng 8001
+        | HTTP/HTTPS tới host Production :8001 / Dev :8002
         v
 FastAPI + React SPA
         |
         |-- Auth nhân sự: employee_id, có guest 000000
-        |-- UI i18n: VI/JP, dịch qua local-qwen-small khi cần
+        |-- UI i18n: VI/JP, dịch qua LiteLLM primary Qwen khi cần
         |-- Cache câu hỏi phổ biến + delay tối thiểu để UX tự nhiên
         |
         |-- mode=mkac
@@ -116,52 +127,53 @@ FastAPI + React SPA
         |     |-- metadata freshness/evidence/suppression allowlist
         |     |-- fail-closed, không fallback sang MES/SQL Agent/live API
         |
+        |-- mode=qa
+        |     |-- employee gate; từ chối guest
+        |     |-- Agent QMS 5M1E qua POST job + bounded polling
+        |     |-- tiếng Việt; context/history của agent giữ phía server theo session
+        |     |-- không dùng browser history, translation hay fallback
+        |     |-- citation riêng trong qa_metadata, không dùng RAG source preview
+        |
         |-- mode=research
               |-- chọn topic tài liệu DocJP từ /research/topics
               |-- RAG DocJP: Qdrant collection docjp_knowledge
               |-- fallback/legacy demo session trong docmind_documents
               |-- upload/index tài liệu riêng vẫn còn cho giai đoạn sau
 
-FastAPI
+FastAPI Dev :8002 / Production :8001
         |
         v
-LiteLLM :4000
+LiteLLM Dev :4001 / Production :4002 (host; container nội bộ :4000)
         |
-        |-- auto-model        -> Qwen3 14B qua IP tĩnh, fallback ngrok/Azure/OpenAI
-        |-- local-qwen-chat   -> Qwen3 14B qua LiteLLM ollama_chat
-        |-- local-qwen-small  -> Qwen2.5 3B Instruct trên Ollama system service
-        |-- local-qwen-coder  -> Qwen2.5 Coder 14B qua OpenAI-compatible LAN API
-        |-- coding-model      -> Qwen2.5 Coder, fallback cùng role
-        |-- azure-*-fallback  -> cloud Azure theo role Chat / Small / Coder
-        |-- openai-*-fallback -> cloud OpenAI theo role Chat / Small / Coder
-        |-- grok-model        -> route vision/dự phòng cũ
+        |-- auto-model / local-qwen-chat -> one remote Qwen primary, Azure fallback
+        |-- local-qwen-coder / coding-model -> same remote Qwen primary, Azure fallback
+        |-- image requests -> Qwen primary; Azure only if unsupported/failure
+        |-- CCTVAI hardware -> deterministic renderer; no model call
+        |-- no selectable/manual cloud route; Azure is failure fallback only
 ```
 
 Tài liệu kiến trúc chi tiết cũ hơn nằm trong [Markdowns/ARCHITECTURE.md](Markdowns/ARCHITECTURE.md).
 Thiết kế database MES nằm trong [Markdowns/DATABASE.md](Markdowns/DATABASE.md).
 Hướng dẫn deploy cũ nằm trong [Markdowns/DEPLOY.md](Markdowns/DEPLOY.md).
+Hướng dẫn tích hợp và vận hành QA nằm trong [Markdowns/QA_AGENT.md](Markdowns/QA_AGENT.md).
 
 ## Thành phần runtime
 
 | Thành phần | Cổng | Chạy bằng | Vai trò |
 |---|---:|---|---|
-| FastAPI + React | `8001` | Docker service `app` | API gateway, SSE, SPA |
-| LiteLLM | `4000` | Docker service `litellm` | Router model OpenAI-compatible |
-| Qdrant | `6333` | Docker service `qdrant` | Vector database |
-| Ollama local | `11434` | `ollama.service` systemd | Host model phụ Qwen2.5 3B |
-| Ollama proxy | `11435` | Docker service `ollama-proxy` | Bridge Docker -> host Ollama |
-| Qwen3 chat | external URL | Ollama/ngrok | Model chat chính |
-| Qwen Coder | external `/v1` | llama.cpp/ngrok | SQL Agent/Coding model |
+| FastAPI + React | Dev `8002`, Production `8001` | Docker service `app` | API gateway, SSE, SPA |
+| LiteLLM | Dev `4001`, Production `4002` (host) | Docker service `litellm` | Router tới Qwen primary và Azure fallback |
+| Qdrant | Dev `6334`, Production `6333` | Docker service `qdrant` | Vector database |
+| BGE-M3 / Docling | GPU host nếu bật cấu hình | App containers | Embedding/OCR cục bộ; không dùng Ollama |
 
-`ollama-proxy` dùng `alpine/socat`, bind vào Docker gateway và chuyển tiếp tới
-`127.0.0.1:11434` của host. Vì vậy LiteLLM trong container gọi model phụ qua:
+Qwen primary dự kiến dùng model ID của deployment đã được xác minh qua một
+endpoint HTTPS/VPN do người vận hành cung cấp. Biến cấu hình là
+`REMOTE_LLM_API_BASE`, `REMOTE_LLM_MODEL`, `REMOTE_LLM_API_KEY`; hiện để trống trong
+example. Không có endpoint HTTP mặc định. Host Ollama hiện vẫn chạy cho đến khi
+rollout cả Dev và Production được kiểm tra, rồi mới dừng service theo phê duyệt.
 
-```text
-http://host.docker.internal:11435
-```
-
-Ollama, Docker và các container đều chạy nền, nên model phụ vẫn hoạt động sau
-khi đóng SSH hoặc VSCode Remote.
+`LOCAL_CHAT_NUM_CTX` and `LOCAL_AUX_NUM_CTX` are unused and should not be set as
+current configuration.
 
 ## Thư mục chính
 
@@ -180,7 +192,7 @@ khi đóng SSH hoặc VSCode Remote.
 |   |   |-- mes_sql_agent.py         # Text-to-SQL harness an toàn
 |   |   |-- mes_client.py            # Live MES API client
 |   |   `-- gmail_sender.py          # Gmail send-only integration
-|   |-- i18n/translation.py          # Lớp dịch VI/JP bằng LLM local
+|   |-- i18n/translation.py          # Lớp dịch VI/JP qua LiteLLM; target remote, runtime hiện Ollama
 |   |-- auth/employee_directory.py   # SQLite nhân sự, employee gate
 |   `-- agent/                       # LangGraph Coding Agent, hiện tắt trong Docker web
 |-- frontend/                        # React + Vite UI
@@ -268,7 +280,7 @@ Query -> auth employee_id -> cache/prepared answer
       -> employee SQLite nếu là câu hỏi nhân sự có cấu trúc
       -> RAG Qdrant mkac_knowledge
       -> web fallback nếu không có chunk nội bộ phù hợp
-      -> LiteLLM local model
+      -> LiteLLM (Dev runtime currently Ollama; remote Qwen target pending TLS/VPN)
       -> dịch JP nếu UI đang ở tiếng Nhật
       -> SSE trả sources/meta/token/done
 ```
@@ -374,16 +386,15 @@ Giới hạn local model hiện tại:
 | `RESEARCH_MAX_TOKENS` | `768` |
 | `RESEARCH_SCORE_THRESHOLD` | `0.35` |
 
-Mục tiêu là tránh local model phải tổng hợp quá nhiều context dài như cấu hình
-cloud cũ, giảm nguy cơ timeout khi demo.
+Các giới hạn này giữ context vừa phải và giảm nguy cơ timeout khi demo. Runtime Dev hiện vẫn dùng Ollama; remote Qwen là target chờ TLS/VPN.
 
 Kiểm tra gần nhất:
 
 - `/research/topics` trả `ready=true` với collection `docjp_knowledge`.
 - `/research/demo` vẫn `ready=true` với 2 file demo và 39 chunk.
-- Query Research theo topic `information_systems` truy xuất đúng nguồn DocJP,
-  nhưng câu trả lời tiếng Nhật vẫn có thể rơi vào fallback ổn định của local
-  model. Đây là điểm cần tối ưu tiếp nếu dùng Research để demo tiếng Nhật dài.
+- Query Research theo topic `information_systems` truy xuất đúng nguồn DocJP.
+  Chất lượng câu trả lời tiếng Nhật cần tiếp tục kiểm thử; kết quả này không xác nhận
+  remote Qwen target vì runtime Dev hiện vẫn dùng Ollama.
 
 ## Dịch giao diện Việt/Nhật
 
@@ -399,16 +410,15 @@ Lõi backend hiểu tốt nhất tiếng Việt. Khi `ui_language="ja"`:
 Model mặc định cho lớp dịch:
 
 ```text
-TRANSLATION_MODEL=local-qwen-small
+TRANSLATION_MODEL=local-qwen-chat
 ```
 
-`local-qwen-small` là `qwen2.5:3b-instruct` Q4_K_M chạy trên Ollama local của
-Máy 2. Model này nhẹ hơn Qwen3 14B và phù hợp cho:
+`local-qwen-chat` is a logical alias; Dev runtime currently resolves to Ollama until
+the approved TLS/VPN endpoint is configured.
 
-- dịch ngắn
-- phân loại intent
-- rewrite câu hỏi
-- format câu trả lời ngắn
+Chat và dịch dùng alias `local-qwen-chat`. Target sau rollout là cùng remote Qwen
+primary, với Azure fallback tuần tự khi primary lỗi; hiện Dev runtime vẫn dùng Ollama.
+Chỉ cấu hình endpoint thật sau khi tuyến TLS/VPN được xác minh.
 
 Một số câu cố định/error phổ biến dùng static translation, không gọi model.
 
@@ -464,78 +474,49 @@ Preview chỉ trả file nằm trong thư mục cho phép, tránh path traversal
 
 ## Model routing
 
-LiteLLM aliases trong `litellm_config.yaml`:
+Các alias nghiệp vụ được giữ ổn định. **Target sau rollout** là một Qwen3.5-9B
+Q4_K_M remote primary trên endpoint HTTPS/VPN được xác minh; runtime Dev hiện vẫn
+Ollama, endpoint chưa cấu hình:
 
-| Alias | Backend | Vai trò |
-|---|---|---|
-| `auto-model` | `ollama_chat/qwen3:14b` | Route mặc định cho hỏi đáp text |
-| `local-qwen-chat` | `ollama_chat/qwen3:14b` | Chat model local chính |
-| `local-qwen-small` | `ollama_chat/qwen2.5:3b-instruct` | Model phụ cho dịch/intent/rewrite/format |
-| `local-qwen-coder` | Ollama OpenAI-compatible Qwen2.5 Coder 14B Q4 trên LAN | SQL Agent/Coding chính |
-| `local-qwen-coder-ngrok` | llama.cpp Qwen2.5 Coder 14B Q5 qua ngrok | Coder fallback |
-| `coding-model` | Qwen2.5 Coder 14B Q4 trên LAN | LangGraph Coding Agent |
-| `azure-chat-fallback` / `openai-chat-fallback` | Cloud theo vai trò Chat | Dự phòng HR/MES/Research text |
-| `azure-small-fallback` / `openai-small-fallback` | Cloud theo vai trò Small | Dự phòng dịch/intent/rewrite |
-| `azure-coder-fallback` / `openai-coder-fallback` | Cloud theo vai trò Coder | Dự phòng MES SQL Agent/Coding |
-| `grok-model` | Azure/OpenAI-compatible Grok route | Vision/dự phòng cũ |
-
-Fallback hiện tại (giữ model local là primary; Azure đứng trước OpenAI):
-
-```yaml
-auto-model:
-  - local-qwen-chat-ngrok
-  - azure-chat-fallback
-  - openai-chat-fallback
-local-qwen-chat:
-  - local-qwen-chat-ngrok
-  - azure-chat-fallback
-  - openai-chat-fallback
-local-qwen-small:
-  - local-qwen-chat
-  - azure-small-fallback
-  - openai-small-fallback
-local-qwen-coder:
-  - local-qwen-coder-ngrok
-  - azure-coder-fallback
-  - openai-coder-fallback
-coding-model:
-  - local-qwen-coder-ngrok
-  - azure-coder-fallback
-  - openai-coder-fallback
-```
-
-Các fallback cloud tự động có thể nhận prompt cùng context HR, MES và Research
-khi toàn bộ route local trước đó không dùng được. Chỉ bật khi chính sách dữ liệu
-của tổ chức cho phép gửi ngữ cảnh đó tới cả Azure và OpenAI.
-
-Lưu ý với Qwen3: phải gọi qua LiteLLM provider `ollama_chat` tới root Ollama
-URL, không dùng trực tiếp endpoint `/v1`, vì một số Qwen3/Ollama OpenAI-compatible
-responses có thể trả reasoning nhưng rỗng `message.content`.
-
-Kiểm tra route phải thực hiện trên đúng môi trường mục tiêu. Với Dev hiện tại,
-LiteLLM chỉ xác nhận alias bằng `/v1/models`; chỉ chạy một smoke request tuần tự
-mỗi route sau khi xác minh upstream tương ứng đang truy cập được.
-
-| Route | Mục đích kiểm tra |
+| Alias | Vai trò |
 |---|---|
-| `auto-model`, `local-qwen-chat`, `local-qwen-chat-ngrok` | Chat/RAG local và fallback tunnel |
-| `local-qwen-small` | Dịch/intent/rewrite local |
-| `local-qwen-coder`, `local-qwen-coder-ngrok`, `coding-model` | MES SQL/Coding local |
-| `azure-*-fallback`, `openai-*-fallback` | Cloud fallback đúng role |
-| `grok-model` | Vision/dự phòng cũ |
+| `auto-model` / `local-qwen-chat` | Chat, RAG, helper và dịch |
+| `local-qwen-coder` | SQL agent MES/WMS/CCTVAI |
+| `coding-model` | Coding Agent (vẫn tắt theo cấu hình web) |
+| `azure-chat-fallback` | Azure `gpt-5.4-mini`, chỉ sau lỗi primary chat |
+| `azure-coder-fallback` | Azure `gpt-5.4-mini`, chỉ sau lỗi primary coder |
 
-Không suy luận rằng alias đã phục vụ request chỉ vì proxy healthy: cần kiểm tra
-lần lượt endpoint upstream, rồi gọi một request ngắn có xác thực qua LiteLLM.
+Không có alias chọn cloud trực tiếp hoặc OpenAI provider thứ hai. Client cũ gửi
+`model="openai"` được chuẩn hóa về primary. Azure fallback là tuần tự, không chạy
+song song/hedge với Qwen. Model ảnh thử primary trước; nếu deployment không hỗ trợ
+ảnh, lỗi capability có thể đi theo fallback Azure tuần tự.
 
-Nghĩa là app vẫn gọi model được, nhưng Qwen chat IP tĩnh hiện đang chết; route
-chat chính đang sống nhờ fallback qua ngrok, sau đó mới tới OpenAI fallback.
+LiteLLM nhận `REMOTE_LLM_API_BASE`, `REMOTE_LLM_MODEL`, `REMOTE_LLM_API_KEY` từ
+secret/config vận hành. Example để trống; **không dùng HTTP endpoint thử nghiệm**.
+Cấu hình runtime chỉ được kích hoạt sau khi có TLS/VPN được xác minh và được người
+vận hành rollout. Qwen nhận `chat_template_kwargs.enable_thinking=false`; Azure
+không nhận extension này. Context/token budgets vẫn bảo thủ, metadata context 8192.
+
+Fallback Azure có thể nhận prompt/context HR, MES, Research hoặc ảnh sau lỗi primary;
+chỉ rollout khi chính sách dữ liệu cho phép gửi các nội dung đó tới Azure.
+
+Telemetry phần cứng CCTVAI được dựng bằng `render_deterministic_answer` trên host
+Meibook, không gọi alias LLM, không dịch bằng LLM, và cả lượt hỏi lẫn trả lời hardware
+bị loại khỏi lịch sử gửi tới model sau đó. QA agent ngoài hệ thống vẫn là service
+độc lập, không thuộc routing Qwen của Meibook.
+
+Trước rollout thật, kiểm tra body passthrough bằng LiteLLM 1.83 với upstream giả:
+Qwen phải nhận `chat_template_kwargs.enable_thinking=false`, Azure không nhận field
+này; test tool/JSON/stream và lỗi/empty-response sequential fallback. Chỉ smoke dữ
+liệu tổng hợp sau khi TLS/VPN cấu hình và được xác nhận. `/health` không chứng minh
+kết nối upstream thành công.
 
 ## API chính
 
 | Method | Endpoint | Mô tả |
 |---|---|---|
 | `GET` | `/health` | Trạng thái app, Qdrant, MES DB, Gmail, translation |
-| `GET` | `/models` | Danh sách model frontend; hiện chỉ trả Local Model |
+| `GET` | `/models` | Danh sách model frontend; chỉ trả Qwen primary |
 | `POST` | `/auth/employee` | Kiểm tra mã nhân viên/guest |
 | `GET` | `/knowledge/mkac/status` | Trạng thái kho MKAC |
 | `GET` | `/research/demo` | Trạng thái research demo session |
@@ -595,24 +576,20 @@ các resolver có cấu trúc, không coi đây là bộ nhớ bền vững:
 Các biến chính nằm trong `.env.example` hoặc `.env.docker`:
 
 ```env
-LITELLM_URL=http://localhost:4000/v1
+# Host Production: 4002; host Dev: 4001; trong Docker: http://litellm:4000/v1
+LITELLM_URL=http://localhost:4002/v1
 LITELLM_MASTER_KEY=sk-local
 
-QWEN_CHAT_API_BASE=http://192.168.10.124:11434
-QWEN_CHAT_NGROK_API_BASE=https://carless-overarch-establish.ngrok-free.dev
-QWEN_CHAT_MODEL=qwen3:14b
-QWEN_SMALL_API_BASE=http://host.docker.internal:11435
-QWEN_SMALL_MODEL=qwen2.5:3b-instruct
-QWEN_CODER_LAN_API_BASE=http://192.168.10.14:11434/v1
-QWEN_CODER_LAN_API_KEY=sk-local
-QWEN_CODER_NGROK_API_BASE=https://.../v1
-QWEN_CODER_NGROK_API_KEY=sk-local
-
+# Chỉ cấu hình sau khi endpoint TLS/VPN được xác minh; examples mặc định để trống.
+REMOTE_LLM_API_BASE=
+REMOTE_LLM_MODEL=
+REMOTE_LLM_API_KEY=
 TRANSLATION_ENABLED=true
-TRANSLATION_MODEL=local-qwen-small
+TRANSLATION_MODEL=local-qwen-chat
 TRANSLATION_TEMPERATURE=0.1
-LOCAL_CHAT_NUM_CTX=16384
-LOCAL_AUX_NUM_CTX=4096
+
+# Qwen primary dùng thinking=false qua chat_template_kwargs.
+# Không cấu hình Ollama API cho LiteLLM sau khi rollout xong.
 
 EMPLOYEE_DIRECTORY_DB_PATH=data/employee_directory.sqlite
 MES_DATABASE_ENABLED=true
@@ -656,33 +633,14 @@ Kiểm tra:
 ```bash
 docker compose -f docker-compose.web.yml ps
 curl -fsS http://localhost:8001/health | jq .
-curl -fsS http://localhost:4000/health/liveliness
+curl -fsS http://localhost:4002/health/liveliness
 ```
 
-Kiểm tra model phụ trên host:
-
-```bash
-systemctl status ollama --no-pager
-ollama list
-curl -fsS http://localhost:11434/api/tags | jq .
-```
-
-Kiểm tra LiteLLM gọi được `local-qwen-small`:
-
-```bash
-curl -fsS http://localhost:4000/v1/chat/completions \
-  -H 'Authorization: Bearer sk-local' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "model":"local-qwen-small",
-    "messages":[
-      {"role":"system","content":"Chỉ trả đúng một nhãn: MES_DATA, HR_DATA, HR_RAG, EMAIL, OTHER."},
-      {"role":"user","content":"Liệt kê 5 Lot có số lượng lỗi cao nhất"}
-    ],
-    "temperature":0,
-    "max_tokens":32,
-    "extra_body":{"think":false,"num_ctx":4096}
-  }' | jq .
+Chưa có lệnh smoke test remote mặc định: phải đợi TLS/VPN endpoint được xác minh,
+secret vận hành được nạp an toàn và người dùng cho phép rollout. Khi được phép, chạy
+một câu tổng hợp qua LiteLLM Dev trước, đặt `fallbacks: []` để xác minh primary và
+không dùng dữ liệu thật. Không truyền key trong command line, không bật `set -x`;
+không chạy curl tới endpoint HTTP cũ.
 ```
 
 ## Index dữ liệu
@@ -843,17 +801,16 @@ docker compose -f docker-compose.web.yml ps
 docker compose -f docker-compose.web.yml logs --tail=160 app
 ```
 
-### LiteLLM không gọi được model phụ
+### LiteLLM không gọi được Qwen primary
 
-```bash
-docker compose -f docker-compose.web.yml ps ollama-proxy litellm
-docker compose -f docker-compose.web.yml logs --tail=120 ollama-proxy
-systemctl status ollama --no-pager
-curl -fsS http://localhost:11434/api/tags | jq .
-```
+Chỉ kiểm tra sau khi endpoint HTTPS/VPN đã cấu hình và người vận hành cho phép
+smoke test. Không đặt API key trong dòng lệnh/log, không dùng HTTP endpoint thử
+nghiệm hiện có. Kiểm tra model ID, chứng thư TLS/tunnel, `REMOTE_LLM_API_BASE` và
+`REMOTE_LLM_API_KEY` trong secret store mà không in giá trị ra terminal. Khi primary
+lỗi, LiteLLM chỉ fallback tuần tự sang Azure `gpt-5.4-mini` cho chat/coder.
 
-Nếu container LiteLLM không thấy `host.docker.internal:11435`, kiểm tra service
-`meibook-ollama-proxy`.
+Nếu chưa có TLS/VPN được xác nhận, giữ runtime hiện hành và không gửi dữ liệu thật
+ra endpoint remote.
 
 ### Gmail báo token hết hạn
 
@@ -863,21 +820,21 @@ Tạo lại OAuth token Gmail với credentials hiện tại, sau đó kiểm tr
 curl -fsS http://localhost:8001/health | jq .gmail_send
 ```
 
-### Câu trả lời local model bị lan man
+### Qwen primary bị lỗi hoặc suy luận quá dài
 
-Hệ thống đã có:
-
-- `think:false` cho local chat model.
-- dynamic `max_tokens` theo mode.
-- template answer cho MES local.
+Cấu hình primary chỉ được kích hoạt với HTTPS/VPN đã xác minh. Hệ thống gửi
+`chat_template_kwargs.enable_thinking=false` tới Qwen; Azure chỉ được gọi sau lỗi
+primary theo fallback tuần tự. `max_tokens` động theo mode; nếu lỗi tiếp diễn, kiểm tra
+URL/model ID và trạng thái upstream sau khi TLS/VPN được xác nhận.
+- template answer cho MES;
 - kiểm tra lặp nội dung trong `RAGPipeline._clean_model_answer`.
 
 Nếu vẫn gặp, ưu tiên:
 
 1. thêm deterministic/template cho intent đó;
-2. giảm token budget tương ứng trong env;
-3. giảm context/chunk đưa vào prompt;
-4. chỉ sau đó mới đổi model.
+2. kiểm tra upstream và TLS/VPN;
+3. giảm token budget tương ứng trong env;
+4. giảm context/chunk đưa vào prompt.
 
 ## Ghi chú về `docmind/`
 

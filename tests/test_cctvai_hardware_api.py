@@ -18,9 +18,13 @@ os.environ["ENABLE_AGENT"] = "false"
 
 from fastapi import HTTPException
 
+# Environment must be set before importing the application module.
 from src.api import main
 from src.api.schemas import QueryRequest
-from src.integrations.mes_query_service import MesQueryOutcome, MesQueryStreamOutcome
+from src.integrations.mes_query_service import (
+    MesQueryOutcome,
+    MesQueryStreamOutcome,
+)
 
 
 HARDWARE_ANSWER = "CPU 12%, RAM 31/124 GB, GPU 0 ở 41°C, ổ / còn 1.2 TB."
@@ -54,7 +58,7 @@ class FakeHardwareService:
         return MesQueryOutcome(
             answer=HARDWARE_ANSWER,
             results=[],
-            routed_model="local-hardware-summary",
+            routed_model="hardware-deterministic",
             answer_scope="cctvai_hardware",
         )
 
@@ -67,7 +71,7 @@ class FakeHardwareService:
         return MesQueryStreamOutcome(
             token_stream=tokens(),
             results=[],
-            routed_model="local-hardware-summary",
+            routed_model="hardware-deterministic",
             answer_scope="cctvai_hardware",
         )
 
@@ -108,6 +112,8 @@ def configure_hardware_only(monkeypatch, *, available=True):
         "GPU của server còn trống bao nhiêu VRAM?",
         "CCTVAIサーバーのCPUとメモリの使用率は？",
         "What is the disk usage on the CCTVAI server?",
+        "Nhiệt độ GPU trên máy chủ CCTV AI là bao nhiêu?",
+        "サーバーの温度は？",
     ],
 )
 def test_hardware_questions_are_classified(question):
@@ -122,6 +128,10 @@ def test_hardware_questions_are_classified(question):
         "Camera nào ghi nhận nhiều vi phạm nhất tháng này?",
         "Có bao nhiêu sự kiện chưa được xử lý?",
         "",
+        # Substring hits that used to return the full hardware snapshot.
+        "Viết giúp tôi một program Python",
+        "Nhiệt độ hôm nay ở Hà Nội thế nào?",
+        "Hôm nay trời có mưa không, nhiệt độ bao nhiêu?",
     ],
 )
 def test_replica_questions_are_not_claimed_by_hardware(question):
@@ -143,6 +153,7 @@ def test_hardware_answers_without_rag_mes_or_replica(monkeypatch):
     assert outcome.cctvai_metadata is None
     assert outcome.wms_metadata is None
     assert service.calls[0][0] == "outcome"
+    assert outcome.routed_model == "hardware-deterministic"
 
 
 def test_hardware_stream_answers_without_rag_mes_or_replica(monkeypatch):
@@ -154,6 +165,7 @@ def test_hardware_stream_answers_without_rag_mes_or_replica(monkeypatch):
     assert outcome.results == []
     assert outcome.cctvai_metadata is None
     assert service.calls[0][0] == "stream"
+    assert outcome.routed_model == "hardware-deterministic"
 
 
 def test_non_hardware_cctvai_question_still_hits_the_readiness_gate(monkeypatch):
@@ -200,14 +212,23 @@ def test_hardware_scope_skips_the_rag_source_formatter(monkeypatch):
     assert main.format_sources_for_scope([{"x": 1}], "cctvai_hardware") == []
 
 
-def test_hardware_answers_are_not_retranslated_for_japanese_ui(monkeypatch):
-    """The metrics service already renders JA; a second pass can mangle numbers."""
+@pytest.mark.parametrize(
+    ("language", "question"),
+    [
+        ("vi", "Server CCTV AI đang dùng bao nhiêu CPU?"),
+        ("ja", "CCTVAIサーバーのCPU使用率は？"),
+    ],
+)
+def test_hardware_answers_are_not_retranslated_for_either_ui_language(
+    monkeypatch, language, question
+):
+    """The metrics service renders the selected language without translation."""
     class ExplodingTranslator:
         async def translate(self, *args, **kwargs):  # pragma: no cover
             raise AssertionError("hardware answers must not be re-translated")
 
     monkeypatch.setattr(main, "translation_service", ExplodingTranslator())
-    req = hardware_request(ui_language="ja", question="CCTVAIサーバーのCPU使用率は？")
+    req = hardware_request(ui_language=language, question=question)
 
     answer = asyncio.run(
         main.translate_answer_for_ui(
@@ -217,6 +238,94 @@ def test_hardware_answers_are_not_retranslated_for_japanese_ui(monkeypatch):
         )
     )
     assert answer == HARDWARE_ANSWER
+
+
+def test_hardware_question_is_not_retained_as_followup_context():
+    """The question triggering telemetry is excluded alongside its answer."""
+    req = hardware_request(
+        mode="mkac",
+        conversation_context=[
+            {"role": "user", "content": "Server dùng bao nhiêu CPU?"},
+            {
+                "role": "assistant",
+                "content": "Máy chủ dùng CPU 12%.",
+                "answer_scope": "cctvai_hardware",
+            },
+            {"role": "user", "content": "Tài liệu này nói gì?"},
+        ],
+    )
+
+    effective = main.effective_conversation_context(req)
+    assert effective == [{"role": "user", "content": "Tài liệu này nói gì?"}]
+    assert all("CPU" not in item["content"] for item in effective)
+    assert all("12%" not in item["content"] for item in effective)
+
+
+def test_hardware_stream_routes_without_translation_or_model_calls(monkeypatch):
+    service = configure_hardware_only(monkeypatch)
+
+    class ExplodingTranslator:
+        async def translate(self, *args, **kwargs):  # pragma: no cover
+            raise AssertionError("hardware stream must not call translation")
+
+    monkeypatch.setattr(main, "translation_service", ExplodingTranslator())
+    req = hardware_request(ui_language="ja", question="CCTVAIサーバーのCPU使用率は？")
+    outcome = asyncio.run(main.route_query_stream_outcome(req))
+
+    assert outcome.routed_model == "hardware-deterministic"
+    assert outcome.answer_scope == "cctvai_hardware"
+    assert service.calls[0][0] == "stream"
+
+    async def collect():
+        return [event async for event in outcome.token_stream]
+
+    assert asyncio.run(collect()) == [("token", HARDWARE_ANSWER)]
+    assert not hasattr(main.cctvai_hardware_service, "openai_client")
+    assert not hasattr(main.cctvai_hardware_service, "model")
+
+    # The API's response translation helper must preserve deterministic output.
+    assert asyncio.run(
+        main.translate_answer_for_ui(
+            HARDWARE_ANSWER, req, answer_scope=outcome.answer_scope
+        )
+    ) == HARDWARE_ANSWER
+
+
+def test_hardware_question_and_answer_are_removed_from_followup_context():
+    req = hardware_request(
+        mode="mkac",
+        conversation_context=[
+            {"role": "user", "content": "Server dùng bao nhiêu CPU?"},
+            {
+                "role": "assistant",
+                "content": "Máy chủ dùng CPU 12%.",
+                "answer_scope": "cctvai_hardware",
+            },
+            {"role": "user", "content": "Tài liệu này nói gì?"},
+            {"role": "assistant", "content": "Có hai hướng dẫn."},
+        ],
+    )
+
+    assert main.effective_conversation_context(req) == [
+        {"role": "user", "content": "Tài liệu này nói gì?"},
+        {"role": "assistant", "content": "Có hai hướng dẫn."},
+    ]
+
+
+def test_hardware_turn_is_filtered_from_qa_agent_history():
+    req = hardware_request(
+        mode="qa",
+        conversation_context=[
+            {"role": "user", "content": "GPU server còn bao nhiêu VRAM?"},
+            {
+                "role": "assistant",
+                "content": "Còn 8 GB.",
+                "answer_scope": "cctvai_hardware",
+            },
+        ],
+    )
+
+    assert main.effective_conversation_context(req) == []
 
 
 # ---------------------------------------------------------------------------

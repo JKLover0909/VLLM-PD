@@ -4,7 +4,7 @@ Tách khỏi ``main.py`` để hợp đồng dữ liệu của API nằm gọn m
 khi thêm/sửa endpoint. Giữ nguyên định nghĩa so với bản gốc.
 """
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -18,12 +18,14 @@ class QueryRequest(BaseModel):
     session_id: str
     question: str
     stream: bool = True
-    model: Literal["auto", "local", "openai", "grok"] = "auto"
-    mode: Literal["mkac", "mes", "wms", "cctvai", "research"] = "mkac"
+    model: Literal["auto", "local", "openai"] = "auto"
+    mode: Literal[
+        "mkac", "mes", "wms", "cctvai", "research", "qa"
+    ] = "mkac"
     ui_language: Literal["vi", "ja"] = "vi"
     employee_id: Optional[str] = None
-    # Optional UI hint for a server-prepared WMS suggestion. The API validates the
-    # ID again against the selected mode, language and canonical question.
+    # Optional UI hint for a server-prepared WMS suggestion. The API validates
+    # the ID again against mode, language and canonical question.
     quick_answer_id: Optional[str] = None
     conversation_context: List[Dict[str, Any]] = Field(default_factory=list)
     # Research corpus selector. ``topic`` queries the shared DocJP collection;
@@ -35,6 +37,9 @@ class QueryRequest(BaseModel):
     # config/research_topics.json, or "all" for the whole DocJP corpus.
     # None keeps the legacy per-session document behaviour.
     research_topic: Optional[str] = None
+    # QA only: start a new follow-up thread (the UI sends true when the QA
+    # conversation is empty). The carried agent context lives server-side.
+    qa_reset_context: bool = False
 
 
 class WmsDatasetEvidence(BaseModel):
@@ -98,6 +103,56 @@ class CctvaiAnswerMetadata(BaseModel):
     source_system: str = ""
 
 
+# QA (Agent QMS 5M1E) citations are SQL/view/record references, not PDF pages,
+# so they never go through the RAG source formatter or /sources/preview. The
+# adapter in src/integrations/qa_agent_service.py has already allowlisted and
+# capped every field; raw SQL from the agent is never part of this contract.
+QaKeyValue = Union[int, float, str]
+
+
+class QaCitationChunk(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    id: Optional[Union[int, str]] = None
+    source_view: str = ""
+    source_key: Optional[Union[int, str]] = None
+    inspection_key: Optional[Union[int, str]] = None
+
+
+class QaCitation(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    type: Literal["sql", "row", "semantic"]
+    views: List[str] = Field(default_factory=list)
+    keys: Dict[str, List[QaKeyValue]] = Field(default_factory=dict)
+    inspection_keys: List[Union[int, str]] = Field(default_factory=list)
+    chunks: List[QaCitationChunk] = Field(default_factory=list)
+
+
+class QaAnswerMetadata(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    provider: str = "qms_5m1e_agent"
+    # The agent answers in Vietnamese only. Follow-up context (API 1.1) is kept
+    # server-side per session; only these flags reach the UI, never the raw
+    # context/history the agent returns.
+    answer_language: Literal["vi"] = "vi"
+    context_supported: bool = False
+    # A previous QA answer's context was sent with this question.
+    context_applied: bool = False
+    # The agent asked for more detail instead of answering.
+    clarification: bool = False
+    # The question as the agent understood it after merging context.
+    effective_question: str = ""
+    client_ref: str = ""
+    elapsed_ms: Optional[float] = None
+    created_at: str = ""
+    started_at: str = ""
+    finished_at: str = ""
+    citations: List[QaCitation] = Field(default_factory=list)
+    citations_truncated: bool = False
+
+
 class QueryResponse(BaseModel):
     answer: str
     sources: List[Dict[str, Any]]
@@ -107,6 +162,7 @@ class QueryResponse(BaseModel):
     answer_scope: str
     wms_metadata: Optional[WmsAnswerMetadata] = None
     cctvai_metadata: Optional[CctvaiAnswerMetadata] = None
+    qa_metadata: Optional[QaAnswerMetadata] = None
     artifact: Optional[Dict[str, Any]] = None
 
 

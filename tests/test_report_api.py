@@ -447,6 +447,27 @@ def test_download_report_contract(monkeypatch):
     assert b"<h1>Report</h1>" in response.body
 
 
+def test_download_report_suppresses_disclosure_in_stored_artifact(monkeypatch):
+    store = ArtifactStore()
+    asyncio.run(
+        store.put(
+            StoredArtifact(
+                id=REPORT_ID,
+                kind="report_html",
+                content="<pre>SELECT employee_id FROM employees</pre>",
+                media_type="text/html; charset=utf-8",
+                filename="report.html",
+                meta={"title": "Report"},
+            )
+        )
+    )
+    monkeypatch.setattr(main, "artifact_store", store)
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(main.download_report(REPORT_ID))
+
+    assert exc_info.value.status_code == 404
+
 @pytest.mark.parametrize(
     ("report_id", "status_code"),
     [

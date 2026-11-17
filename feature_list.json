@@ -1,0 +1,569 @@
+{
+  "schema_version": 1,
+  "updated": "2026-10-31",
+  "description": "Feature inventory for session handoff. Update status/verified only for checks that actually ran. No secrets, employee IDs/names, or real HR/MES values.",
+  "status_values": [
+    "implemented",
+    "partial",
+    "in_progress",
+    "pending",
+    "disabled"
+  ],
+  "git_state_values": {
+    "committed": "Every listed entry point and test is tracked and unchanged versus HEAD",
+    "modified": "Tracked in HEAD, but at least one listed path has uncommitted edits (shared files such as src/api/main.py count)",
+    "untracked": "At least one entry point is not in Git yet",
+    "none": "Not implemented; used for pending features"
+  },
+  "enabled_values": {
+    "true": "Hard-coded on in that environment's Compose file",
+    "false": "Hard-coded off in Compose, or documented as off for that environment",
+    "env": "Controlled by the ignored .env.docker; not verified by the harness",
+    "n/a": "Not deployed in that environment"
+  },
+  "verified_levels": [
+    "unit",
+    "smoke",
+    "manual"
+  ],
+  "features": [
+    {
+      "id": "mode.mkac",
+      "title": "HR/MKAC Q&A: structured SQLite answers + RAG on mkac_knowledge",
+      "status": "implemented",
+      "enabled": {
+        "dev": true,
+        "prod": true
+      },
+      "flags": [],
+      "entry_points": [
+        "src/api/main.py",
+        "src/auth/employee_directory.py",
+        "src/auth/employee_intent.py",
+        "src/auth/employee_answers.py",
+        "src/rag/rag_pipeline.py",
+        "src/rag/vector_store.py"
+      ],
+      "tests": [
+        "tests/test_employee_directory.py",
+        "tests/test_query_routing.py",
+        "tests/test_token_budgets.py"
+      ],
+      "verified": {
+        "date": "2026-10-31",
+        "level": "unit"
+      },
+      "notes": "tests/test_mkac_pipeline.py is excluded from the default suite (needs runtime services).",
+      "git_state": "modified"
+    },
+    {
+      "id": "mode.mes",
+      "title": "MES Q&A: deterministic SQL first, MES SQL Agent fallback",
+      "status": "implemented",
+      "enabled": {
+        "dev": true,
+        "prod": true
+      },
+      "flags": [
+        "MES_DATABASE_ENABLED",
+        "MES_SQL_AGENT_ENABLED"
+      ],
+      "entry_points": [
+        "src/integrations/mes_query_service.py",
+        "src/integrations/mes_database.py",
+        "src/integrations/mes_intent.py",
+        "src/integrations/mes_sql_agent.py",
+        "scripts/import_mes_database.py"
+      ],
+      "tests": [
+        "tests/test_mes_database.py",
+        "tests/test_mes_sql_agent.py",
+        "tests/test_mes_time_sql_routing.py",
+        "tests/test_import_mes_database.py"
+      ],
+      "verified": {
+        "date": "2026-10-31",
+        "level": "unit"
+      },
+      "notes": "Uncommitted edits in mes_config.py, mes_prompts.py and mes_query_service.py. tests/test_mes_integration.py is excluded from the default suite.",
+      "git_state": "modified"
+    },
+    {
+      "id": "mode.wms",
+      "title": "WMS Q&A on data/mes_wms.sqlite (contract v4) with low-confidence LLM SQL fallback",
+      "status": "implemented",
+      "enabled": {
+        "dev": true,
+        "prod": false
+      },
+      "flags": [
+        "MES_WMS_DATABASE_ENABLED"
+      ],
+      "entry_points": [
+        "src/integrations/mes_wms_database.py",
+        "src/integrations/mes_wms_contract.py",
+        "src/integrations/wms_sql_agent.py",
+        "scripts/import_mes_wms.py"
+      ],
+      "tests": [
+        "tests/test_mes_wms_database.py",
+        "tests/test_wms_sql_agent.py",
+        "tests/test_wms_api.py",
+        "tests/test_import_mes_wms.py"
+      ],
+      "verified": {
+        "date": "2026-10-31",
+        "level": "unit"
+      },
+      "notes": "Dev only. Production stays disabled until a separate release/data lifecycle is approved (AGENTS.md 4.2b, DEPLOY.md 8).",
+      "git_state": "committed"
+    },
+    {
+      "id": "mode.cctvai",
+      "title": "CCTVAI camera Q&A on read-only PostgreSQL replica",
+      "status": "implemented",
+      "enabled": {
+        "dev": true,
+        "prod": "env"
+      },
+      "flags": [
+        "CCTVAI_DATABASE_ENABLED",
+        "CCTVAI_SQL_AGENT_ENABLED"
+      ],
+      "entry_points": [
+        "src/integrations/cctvai_query_service.py",
+        "src/integrations/cctvai_database.py",
+        "src/integrations/cctvai_sql_agent.py",
+        "src/integrations/cctvai_contract.py"
+      ],
+      "tests": [
+        "tests/test_cctvai_api.py",
+        "tests/test_cctvai_database.py",
+        "tests/test_cctvai_query_service.py",
+        "tests/test_cctvai_sql_agent.py"
+      ],
+      "verified": {
+        "date": "2026-10-31",
+        "level": "unit"
+      },
+      "notes": "Dev Compose enables it; Production depends on its env file (not read).",
+      "git_state": "committed"
+    },
+    {
+      "id": "cctvai.hardware",
+      "title": "CCTVAI hardware metrics summary (local-only model, no remote fallback)",
+      "status": "implemented",
+      "enabled": {
+        "dev": true,
+        "prod": "env"
+      },
+      "flags": [
+        "CCTVAI_HARDWARE_ENABLED"
+      ],
+      "entry_points": [
+        "src/integrations/cctvai_hardware_service.py",
+        "src/integrations/cctvai_hardware_client.py",
+        "tools/host_metrics/"
+      ],
+      "tests": [
+        "tests/test_cctvai_hardware_api.py",
+        "tests/test_cctvai_hardware_service.py",
+        "tests/test_host_metrics_collector.py",
+        "tests/test_host_metrics_schemas.py",
+        "tests/test_host_metrics_server.py"
+      ],
+      "verified": {
+        "date": "2026-10-31",
+        "level": "unit"
+      },
+      "notes": "Uncommitted edits in cctvai_hardware_service.py and tests/test_cctvai_hardware_api.py.",
+      "git_state": "modified"
+    },
+    {
+      "id": "mode.research.topic",
+      "title": "Research Q&A over docjp_knowledge filtered by topic",
+      "status": "implemented",
+      "enabled": {
+        "dev": true,
+        "prod": true
+      },
+      "flags": [],
+      "entry_points": [
+        "src/api/research_topics.py",
+        "src/api/research_cached_answers.py",
+        "src/rag/rag_pipeline.py",
+        "config/research_topics.json",
+        "scripts/index_docjp_documents.py"
+      ],
+      "tests": [
+        "tests/test_research_topics.py",
+        "tests/test_research_query_cache.py",
+        "tests/test_research_routing_safety.py"
+      ],
+      "verified": {
+        "date": "2026-10-31",
+        "level": "unit"
+      },
+      "notes": "Uncommitted edits in the shared src/rag/rag_pipeline.py.",
+      "git_state": "modified"
+    },
+    {
+      "id": "mode.research.upload",
+      "title": "Research Q&A over session-scoped uploads in docmind_documents",
+      "status": "partial",
+      "enabled": {
+        "dev": true,
+        "prod": true
+      },
+      "flags": [],
+      "entry_points": [
+        "src/api/main.py",
+        "src/rag/parser.py",
+        "src/rag/vector_store.py",
+        "src/rag/media_paths.py"
+      ],
+      "tests": [
+        "tests/test_research_upload_preview.py",
+        "tests/test_parser_table_chunking.py"
+      ],
+      "verified": {
+        "date": "2026-10-31",
+        "level": "unit"
+      },
+      "notes": "Works; isolation, preview and cleanup of docmind_documents still need end-to-end testing (AGENTS.md 12).",
+      "git_state": "modified"
+    },
+    {
+      "id": "mode.qa",
+      "title": "QA mode proxying the QMS QA Agent API (contract v1.1, port 8600)",
+      "status": "in_progress",
+      "enabled": {
+        "dev": "env",
+        "prod": "n/a"
+      },
+      "flags": [
+        "QA_AGENT_ENABLED",
+        "QA_AGENT_URL"
+      ],
+      "entry_points": [
+        "src/integrations/qa_agent_service.py",
+        "src/api/qa_handlers.py",
+        "src/api/schemas.py",
+        "frontend/src/qa-mode.js",
+        "frontend/src/qa-citations.js",
+        "frontend/src/qa-prompts.js",
+        "Markdowns/QA_AGENT.md"
+      ],
+      "tests": [
+        "tests/test_qa_agent_service.py",
+        "tests/test_qa_api.py",
+        "frontend/test/qa-mode.test.js",
+        "frontend/test/qa-citations.test.js",
+        "frontend/test/qa-prompts.test.js"
+      ],
+      "verified": {
+        "date": "2026-10-31",
+        "level": "unit"
+      },
+      "notes": "All files untracked. Not live-tested against the QMS service. Production checkout does not contain it.",
+      "git_state": "untracked"
+    },
+    {
+      "id": "guard.cross_turn",
+      "title": "Safety guard evaluates only the current turn; unsafe/guardrail turns are dropped from context",
+      "status": "in_progress",
+      "enabled": {
+        "dev": true,
+        "prod": "n/a"
+      },
+      "flags": [],
+      "entry_points": [
+        "src/api/main.py",
+        "src/api/prompt_guard.py",
+        "src/api/query_guard.py",
+        "src/api/scope_guard.py"
+      ],
+      "tests": [
+        "tests/test_query_disclosure_guard.py",
+        "tests/test_prompt_guard.py",
+        "tests/test_prompt_history_guard.py",
+        "tests/test_query_guard_stream.py"
+      ],
+      "verified": {
+        "date": "2026-10-31",
+        "level": "unit"
+      },
+      "notes": "Tests pass; awaiting review. Not smoke-tested on Dev port 8002.",
+      "git_state": "untracked"
+    },
+    {
+      "id": "action.report_agent",
+      "title": "MES executive report agent with SSE plan/tool/artifact events",
+      "status": "implemented",
+      "enabled": {
+        "dev": true,
+        "prod": true
+      },
+      "flags": [],
+      "entry_points": [
+        "src/actions/report_intent.py",
+        "src/actions/report_agent.py",
+        "src/actions/artifact_store.py"
+      ],
+      "tests": [
+        "tests/test_report_agent.py",
+        "tests/test_report_api.py",
+        "tests/test_report_artifact_store.py"
+      ],
+      "verified": {
+        "date": "2026-10-31",
+        "level": "unit"
+      },
+      "notes": "Uncommitted edits in report_intent.py and tests/test_report_api.py.",
+      "git_state": "modified"
+    },
+    {
+      "id": "action.gmail_send",
+      "title": "Send-only Gmail action",
+      "status": "implemented",
+      "enabled": {
+        "dev": "env",
+        "prod": "env"
+      },
+      "flags": [
+        "GMAIL_SEND_ENABLED"
+      ],
+      "entry_points": [
+        "src/integrations/gmail_sender.py",
+        "scripts/init_gmail_oauth.py"
+      ],
+      "tests": [
+        "tests/test_gmail_sender.py",
+        "tests/test_employee_email_generation.py"
+      ],
+      "verified": {
+        "date": "2026-10-31",
+        "level": "unit"
+      },
+      "notes": "Dev shares the demo Gmail account with Production. Never send real mail in smoke tests without explicit approval.",
+      "git_state": "committed"
+    },
+    {
+      "id": "action.calendar",
+      "title": "Google Calendar meeting action via MCP server",
+      "status": "implemented",
+      "enabled": {
+        "dev": "env",
+        "prod": "env"
+      },
+      "flags": [],
+      "entry_points": [
+        "src/actions/calendar_action.py",
+        "src/agent/mcp_client.py",
+        "scripts/init_calendar_oauth.py"
+      ],
+      "tests": [
+        "tests/test_calendar_action.py"
+      ],
+      "verified": {
+        "date": "2026-10-31",
+        "level": "unit"
+      },
+      "notes": "Uncommitted edits in calendar_action.py. Requires ignored src/agent/node_modules in each checkout. Never create events in smoke tests without explicit approval.",
+      "git_state": "modified"
+    },
+    {
+      "id": "i18n.translation",
+      "title": "VI/JA translation service",
+      "status": "implemented",
+      "enabled": {
+        "dev": true,
+        "prod": true
+      },
+      "flags": [
+        "TRANSLATION_MODEL"
+      ],
+      "entry_points": [
+        "src/i18n/translation.py"
+      ],
+      "tests": [
+        "tests/test_translation_service.py"
+      ],
+      "verified": {
+        "date": "2026-10-31",
+        "level": "unit"
+      },
+      "notes": "Uncommitted edits in translation.py and its test.",
+      "git_state": "modified"
+    },
+    {
+      "id": "sources.preview",
+      "title": "Source preview images for citations (/sources/preview)",
+      "status": "implemented",
+      "enabled": {
+        "dev": true,
+        "prod": true
+      },
+      "flags": [],
+      "entry_points": [
+        "src/rag/media_paths.py",
+        "src/api/main.py"
+      ],
+      "tests": [
+        "tests/test_research_upload_preview.py"
+      ],
+      "verified": {
+        "date": "2026-10-31",
+        "level": "unit"
+      },
+      "notes": "Tracked legacy previews in docjp_processed/ must not be restaged with Dev reindex output.",
+      "git_state": "modified"
+    },
+    {
+      "id": "auth.employee_gate",
+      "title": "Employee ID access gate (guest 000000)",
+      "status": "implemented",
+      "enabled": {
+        "dev": true,
+        "prod": true
+      },
+      "flags": [],
+      "entry_points": [
+        "src/auth/employee_directory.py",
+        "scripts/import_employee_directory.py"
+      ],
+      "tests": [
+        "tests/test_employee_directory.py"
+      ],
+      "verified": {
+        "date": "2026-10-31",
+        "level": "unit"
+      },
+      "notes": "Access gate only, not strong authentication.",
+      "git_state": "committed"
+    },
+    {
+      "id": "llm.routing",
+      "title": "LiteLLM routing: one remote Qwen primary, sequential Azure fallback (TLS/VPN gated)",
+      "status": "in_progress",
+      "enabled": {
+        "dev": true,
+        "prod": true
+      },
+      "flags": [],
+      "entry_points": [
+        "litellm_config.yaml",
+        "src/api/config.py"
+      ],
+      "tests": [
+        "tests/test_litellm_routing_config.py",
+        "tests/test_model_routes.py"
+      ],
+      "verified": {
+        "date": "2026-11-16",
+        "level": "smoke"
+      },
+      "notes": "2026-11-17: target changed to one remote Qwen3.5-9B Q4_K_M primary; Azure gpt-5.4-mini sequential failure fallback. Dev code/config prepared but TLS/VPN endpoint is not configured, no remote calls made, and Dev runtime still uses host Ollama. Production untouched. Hardware summary is deterministic and excluded from model history. Targeted tests pass (196). tests/test_model_routes.py remains untracked.",
+      "git_state": "modified"
+    },
+    {
+      "id": "agent.coding",
+      "title": "LangGraph Coding Agent endpoint (/agent)",
+      "status": "disabled",
+      "enabled": {
+        "dev": false,
+        "prod": false
+      },
+      "flags": [
+        "ENABLE_AGENT"
+      ],
+      "entry_points": [
+        "src/agent/graph.py",
+        "src/agent/mcp_client.py"
+      ],
+      "tests": [],
+      "verified": {
+        "date": null,
+        "level": null
+      },
+      "notes": "Both Compose files set ENABLE_AGENT=false. Code default is true, so host runs without the env var enable it.",
+      "git_state": "committed"
+    },
+    {
+      "id": "frontend.split_main_jsx",
+      "title": "Split frontend/src/main.jsx into components",
+      "status": "pending",
+      "enabled": {
+        "dev": "n/a",
+        "prod": "n/a"
+      },
+      "flags": [],
+      "entry_points": [
+        "frontend/src/main.jsx"
+      ],
+      "tests": [],
+      "verified": {
+        "date": null,
+        "level": null
+      },
+      "notes": "AGENTS.md 12. Partially started by untracked frontend/src/*.js modules.",
+      "git_state": "none"
+    },
+    {
+      "id": "research.hyde",
+      "title": "HyDE for Vietnamese queries over Japanese Research documents",
+      "status": "pending",
+      "enabled": {
+        "dev": "n/a",
+        "prod": "n/a"
+      },
+      "flags": [],
+      "entry_points": [],
+      "tests": [],
+      "verified": {
+        "date": null,
+        "level": null
+      },
+      "notes": "AGENTS.md 12.",
+      "git_state": "none"
+    },
+    {
+      "id": "mes.threshold_alerts",
+      "title": "Automatic MES alerts when defect rate exceeds a threshold",
+      "status": "pending",
+      "enabled": {
+        "dev": "n/a",
+        "prod": "n/a"
+      },
+      "flags": [],
+      "entry_points": [],
+      "tests": [],
+      "verified": {
+        "date": null,
+        "level": null
+      },
+      "notes": "AGENTS.md 12.",
+      "git_state": "none"
+    },
+    {
+      "id": "hygiene.test_fixture_pii",
+      "title": "Replace real employee names in test fixtures with anonymised placeholders",
+      "status": "pending",
+      "enabled": {
+        "dev": "n/a",
+        "prod": "n/a"
+      },
+      "flags": [],
+      "entry_points": [],
+      "tests": [
+        "tests/test_query_routing.py"
+      ],
+      "verified": {
+        "date": null,
+        "level": null
+      },
+      "notes": "Found 2026-10-31: most fixture names in test_query_routing.py match real employees. Violates AGENTS.md 9 (no real data in tests). Fix in its own session.",
+      "git_state": "none"
+    }
+  ]
+}

@@ -1,13 +1,12 @@
-"""Unit tests for CCTVAI hardware metrics rendering and service logic.
-
-Tests the deterministic markdown rendering and number-grounding validation
-without making actual network calls.
-"""
+"""Unit tests for CCTVAI hardware metrics deterministic rendering and service."""
 
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import datetime, timezone
+
+import pytest
 
 from tools.host_metrics.schemas import (
     ComponentState,
@@ -21,9 +20,12 @@ from tools.host_metrics.schemas import (
     NetworkStats,
     TruncationFlags,
 )
-from src.integrations.cctvai_hardware_client import HardwareSnapshotResult
+from src.integrations.cctvai_hardware_client import (
+    CctvaiHardwareClientError,
+    HardwareSnapshotResult,
+)
 from src.integrations.cctvai_hardware_service import (
-    _answer_numbers_are_grounded,
+    CctvaiHardwareService,
     render_deterministic_answer,
 )
 
@@ -63,23 +65,16 @@ def _sample_snapshot() -> HostMetricsSnapshot:
         ],
         disks=[
             DiskStats(
-                mountpoint="/",
-                total_bytes=1864 * (1024**3),
-                used_bytes=140 * (1024**3),
-                percent=7.5,
-            ),
-            # Trùng dung lượng với / (bind mounts /tmp, /var/tmp)
-            DiskStats(
-                mountpoint="/tmp",
-                total_bytes=1864 * (1024**3),
-                used_bytes=140 * (1024**3),
-                percent=7.5,
+                mountpoint="/", total_bytes=1864 * (1024**3),
+                used_bytes=140 * (1024**3), percent=7.5,
             ),
             DiskStats(
-                mountpoint="/boot/efi",
-                total_bytes=1 * (1024**3),
-                used_bytes=50 * (1024**2),
-                percent=5.0,
+                mountpoint="/tmp", total_bytes=1864 * (1024**3),
+                used_bytes=140 * (1024**3), percent=7.5,
+            ),
+            DiskStats(
+                mountpoint="/boot/efi", total_bytes=1 * (1024**3),
+                used_bytes=50 * (1024**2), percent=5.0,
             ),
         ],
         network=[
@@ -93,68 +88,117 @@ def _sample_snapshot() -> HostMetricsSnapshot:
         processes=[],
         containers=[],
         components=Components(
-            cpu=_ok(),
-            memory=_ok(),
-            gpu=_ok(),
-            disk=_ok(),
-            network=_ok(),
-            uptime=_ok(),
-            processes=_ok(),
-            docker=_ok(),
+            cpu=_ok(), memory=_ok(), gpu=_ok(), disk=_ok(), network=_ok(),
+            uptime=_ok(), processes=_ok(), docker=_ok(),
         ),
         truncated=TruncationFlags(),
     )
 
 
+class FakeHardwareClient:
+    def __init__(self, *, failure=None):
+        self.failure = failure
+        self.calls = 0
+        self.closed = False
+
+    async def get_snapshot(self, force_refresh=False):
+        self.calls += 1
+        if self.failure:
+            raise self.failure
+        return HardwareSnapshotResult(
+            snapshot=_sample_snapshot(), age_seconds=2.0,
+            fetched_monotonic=time.monotonic(),
+        )
+
+    async def aclose(self):
+        self.closed = True
+
+
 def test_render_deterministic_answer_is_structured_markdown():
-    snapshot = _sample_snapshot()
     result = HardwareSnapshotResult(
-        snapshot=snapshot, age_seconds=2.0, fetched_monotonic=time.monotonic()
+        snapshot=_sample_snapshot(), age_seconds=2.0,
+        fetched_monotonic=time.monotonic(),
     )
     answer = render_deterministic_answer(result, language="vi")
-
-    # Kiểm tra cấu trúc phân đoạn và gạch đầu dòng rõ ràng
     assert "\n" in answer
     assert "📊 **Tình trạng phần cứng máy chủ CCTV AI:**" in answer
     assert "- **CPU:** 11% (48 lõi logic)" in answer
     assert "- **RAM:** 32%" in answer
     assert "- **GPU:** NVIDIA RTX PRO 5000 43%" in answer
     assert "- **Ổ đĩa:**" in answer
-    # Kiểm tra mountpoint / và /boot/efi xuất hiện, nhưng /tmp trùng size bị lọc
     assert "`/`" in answer
     assert "`/boot/efi`" in answer
-    assert "`/tmp`" not in answer  # deduplicated!
+    assert "`/tmp`" not in answer
     assert "- **Mạng:** `enp66s0f0`" in answer
     assert "- **Uptime:** 7 ngày 22 giờ 2 phút" in answer
 
 
 def test_render_deterministic_answer_japanese():
-    snapshot = _sample_snapshot()
     result = HardwareSnapshotResult(
-        snapshot=snapshot, age_seconds=2.0, fetched_monotonic=time.monotonic()
+        snapshot=_sample_snapshot(), age_seconds=2.0,
+        fetched_monotonic=time.monotonic(),
     )
     answer = render_deterministic_answer(result, language="ja")
-
     assert "📊 **CCTVAI サーバーの稼働状態:**" in answer
     assert "- **CPU:** 使用率11%（論理48コア）" in answer
     assert "- **RAM (メモリ):** 使用率32%" in answer
     assert "- **稼働時間 (Uptime):** 7日 22時間 2分" in answer
 
 
-def test_answer_numbers_are_grounded_with_markdown():
-    deterministic = (
-        "📊 **Tình trạng phần cứng:**\n\n"
-        "- **CPU:** 15% (24 lõi logic)\n"
-        "- **RAM:** 45% (32.0GB/64.0GB)"
+@pytest.mark.parametrize("language", ["vi", "ja"])
+def test_service_renders_verbatim_without_any_llm_client(language):
+    client = FakeHardwareClient()
+    service = CctvaiHardwareService(client=client)
+    outcome = asyncio.run(
+        service.query_hardware_outcome(
+            question="GPU?", model="remote-model-must-be-ignored", language=language
+        )
     )
-    # Câu trả lời Markdown hợp lệ dùng đúng các số có sẵn
-    valid_paraphrase = (
-        "Server đang chạy ổn định:\n"
-        "- CPU ở mức 15% với 24 lõi logic.\n"
-        "- Bộ nhớ RAM sử dụng 45% (32.0GB / 64.0GB)."
+    expected = render_deterministic_answer(
+        HardwareSnapshotResult(
+            snapshot=_sample_snapshot(), age_seconds=2.0,
+            fetched_monotonic=time.monotonic(),
+        ),
+        language=language,
     )
-    assert _answer_numbers_are_grounded(valid_paraphrase, deterministic)
+    assert outcome.answer == expected
+    assert outcome.routed_model == "hardware-deterministic"
+    assert outcome.answer_scope == "cctvai_hardware"
+    assert client.calls == 1
+    assert not hasattr(service, "openai_client")
+    assert not hasattr(service, "_model_name")
 
-    # Bịa số mới (99) phải bị từ chối
-    hallucinated = "CPU đang quá tải ở mức 99%."
-    assert not _answer_numbers_are_grounded(hallucinated, deterministic)
+
+def test_service_handles_unavailable_snapshot_without_llm():
+    client = FakeHardwareClient(failure=CctvaiHardwareClientError("hidden detail"))
+    outcome = asyncio.run(
+        CctvaiHardwareService(client=client).query_hardware_outcome(
+            question="CPU?", model="local", language="ja"
+        )
+    )
+    assert "CctvaiHardwareClientError" in outcome.answer
+    assert "hidden detail" not in outcome.answer
+    assert outcome.routed_model == "hardware-deterministic"
+    assert client.calls == 1
+
+
+@pytest.mark.parametrize("language", ["vi", "ja"])
+def test_service_stream_yields_deterministic_answer_without_llm(language):
+    client = FakeHardwareClient()
+    outcome = asyncio.run(
+        CctvaiHardwareService(client=client).query_hardware_stream_outcome(
+            question="RAM?", model="remote-model-must-be-ignored", language=language
+        )
+    )
+    assert outcome.routed_model == "hardware-deterministic"
+    assert outcome.answer_scope == "cctvai_hardware"
+    assert client.calls == 1
+
+    async def collect():
+        return [item async for item in outcome.token_stream]
+
+    tokens = asyncio.run(collect())
+    assert len(tokens) == 1
+    assert tokens[0][0] == "token"
+    assert ("CCTVAI サーバー" if language == "ja" else "Tình trạng") in tokens[0][1]
+    assert "- **RAM" in tokens[0][1]
