@@ -1,7 +1,7 @@
 # Dev stack — chạy song song với bản deploy (docker-compose.web.yml).
 # Port: web 8002 | litellm 4001 | qdrant 6334
 # Container: meibook-*-dev  |  Project: meibook-dev
-# Remote Qwen primary: config/secret come from the ignored Dev env_file when provisioned.
+# Mọi alias LLM chạy trên Ollama host (qwen3.5:9b) qua bridge :11435.
 name: meibook-dev
 
 services:
@@ -131,7 +131,7 @@ services:
       - ${MEIBOOK_ENV_FILE:-.env.docker}
     environment:
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
-      # Code/SQL aliases use the shared host Ollama through the existing bridge.
+      # All aliases use the shared host Ollama through the existing bridge.
       OLLAMA_API_BASE: http://host.docker.internal:11435
     extra_hosts:
       - "host.docker.internal:host-gateway"

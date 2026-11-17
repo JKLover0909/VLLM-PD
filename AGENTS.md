@@ -26,7 +26,7 @@ Tài liệu này là hướng dẫn chính thức (Onboarding Guide) dành cho b
 * Dev vẫn dùng chung Docker daemon, GPU/VRAM, image tag và các Docker volume cache HuggingFace/Torch/EasyOCR với Production.
 * **Routing model (2026-11-17, Dev):** mọi alias (`auto-model`, `local-qwen-chat`, `local-qwen-coder`, `coding-model`) dùng **một model duy nhất** `ollama_chat/qwen3.5:9b` (Q4_K_M, general-purpose, không phải bản Coder chuyên dụng) trên Ollama host qua bridge `OLLAMA_API_BASE=http://host.docker.internal:11435`, `think=false`, context 8192, một request/lần. Azure `gpt-5.4-mini` chỉ là fallback tuần tự khi model local lỗi. Endpoint remote `192.84.106.81` đã bị bỏ khỏi cấu hình. Production chưa đổi.
 * CCTVAI hardware summary chạy renderer deterministic trong Meibook. Không gọi Qwen/Azure/translation LLM cho telemetry; loại cả câu hỏi và câu trả lời hardware khỏi conversation history trước khi gửi tới model. Model metadata là `hardware-deterministic`.
-* BGE-M3 và OCR/Docling tiếp tục chạy cục bộ; chỉ Ollama LLM host sẽ dừng sau rollout Dev+Production và xác minh không còn consumer. Không tự stop/disable service hoặc xóa model trước phê duyệt.
+* BGE-M3 và OCR/Docling chạy cục bộ trên cùng GPU với Ollama; không tự stop/disable service Ollama hay xóa model trước phê duyệt.
 * Web Dev được chủ đích publish `0.0.0.0:8002` để dùng trên LAN. Employee ID/guest hiện chỉ là access gate, không phải xác thực mạnh; đây là quyết định vận hành cho môi trường demo hiện tại, không tự đổi sang loopback nếu người dùng chưa yêu cầu.
 * `ENABLE_AGENT=false` chỉ tắt endpoint Coding Agent `/agent`; không tắt MES SQL Agent, Report Agent, Gmail hoặc Calendar. Dev chủ đích dùng cùng tài khoản demo Gmail/Calendar đang hoạt động trên Production qua các bản sao credential/token trong `data/`; không gửi email hoặc tạo Calendar event trong smoke test nếu người dùng chưa yêu cầu rõ.
 * Do `./src:/app/src:ro` che dependency trong image, worktree Dev hiện cần bản sao local ignored `src/agent/node_modules` được khởi tạo từ dependency tree Production/lockfile trước khi app chạy Calendar. Compose mount credential/token Dev vào package này; không merge `node_modules` hay OAuth state vào Git.
@@ -72,7 +72,7 @@ Kiến trúc Client-Server, triển khai bằng Docker Compose: `docker-compose.
 * **Frontend:** ReactJS + Vite + CSS thuần. SPA render tin nhắn qua Server-Sent Events (SSE).
 * **Backend:** FastAPI (Python). Xử lý định tuyến, auth, session, rate limit, gọi module RAG/MES.
 * **Vector Database:** Qdrant. Lưu trữ embedding (`mkac_knowledge`, `docjp_knowledge`).
-* **LLM Gateway (target; rollout pending):** LiteLLM Proxy sẽ dùng chung một remote Qwen3.5-9B Q4_K_M cho các tác vụ LLM thông thường; Azure `gpt-5.4-mini` chỉ fallback tuần tự sau lỗi primary. Chưa có endpoint TLS/VPN được xác nhận/cấu hình nên chưa chuyển runtime; Dev hiện vẫn dùng Ollama và Production chưa rollout. Hardware metrics được render deterministic, không gọi LLM. BGE-M3/Docling vẫn local.
+* **LLM Gateway:** LiteLLM Proxy đưa mọi alias tới một model Ollama host `qwen3.5:9b` (`think=false`, context 8192); Azure `gpt-5.4-mini` chỉ fallback tuần tự khi lỗi. Hardware metrics render deterministic, không gọi LLM. BGE-M3/Docling vẫn local.
 * **Database (Structured):** SQLite. Dùng để lưu trữ dữ liệu nhân sự và snapshot dữ liệu sản xuất.
 * **Ingestion Pipeline:** Sử dụng `Docling` và `PyMuPDF` để OCR/parse, cắt chunk có overlap, sinh ảnh preview, dùng `BAAI/bge-m3` để tạo embedding (1024-dim).
 

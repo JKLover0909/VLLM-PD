@@ -8,7 +8,7 @@
 
 ## Current state
 
-_Cập nhật: 2026-11-17 (remote routing chuẩn bị; trạng thái cũ giữ theo từng entry)_
+_Cập nhật: 2026-11-17 (tất cả alias dùng Ollama local `qwen3.5:9b`; Production chưa đổi)_
 
 - **Checkout:** `/home/jkl/Code/VLLM-PD-dev`, nhánh `dev` @ `810f720`. `main` đi trước
   `dev` 1 commit (`7fec558`); `dev` không có commit nào chưa vào `main`.
@@ -20,7 +20,7 @@ _Cập nhật: 2026-11-17 (remote routing chuẩn bị; trạng thái cũ giữ 
   pyflakes trên `src/` sạch; `git diff --check` sạch.
 - **Đang làm dở:** `guard.cross_turn` (test pass, chờ review), `mode.qa` (chưa live
   test với QMS :8600), `llm.routing` (code Dev chuẩn bị remote Qwen target; chưa có
-  TLS/VPN nên runtime Dev vẫn Ollama; Production chưa chỉnh/rollout).
+  tất cả alias dùng Ollama local `qwen3.5:9b`; Production chưa đổi).
 - **Cần người dùng quyết định:**
   1. Review + commit nhóm thay đổi chưa commit (nên tách commit theo nhóm bên dưới).
   2. Có merge `7fec558` từ `main` về `dev` không.

@@ -34,7 +34,7 @@ Browser
        -> Qdrant :6334 Dev / :6333 Production
        -> SQLite data/*.sqlite
        -> LiteLLM :4001 Dev / :4002 Production (host; container :4000)
-            -> Remote Qwen3.5-9B Q4_K_M primary (HTTPS/VPN only after approval)
+            -> Ollama host qwen3.5:9b Q4_K_M (mọi alias)
             -> Azure gpt-5.4-mini sequential fallback on primary failure
        -> Hardware CCTVAI summary deterministic in Meibook; no model egress
 ```
@@ -44,7 +44,7 @@ Trong Docker web:
 - `app`: FastAPI + React build + RAG/MES/Auth/Gmail.
 - `qdrant`: vector database.
 - `litellm`: model proxy.
-- Remote Qwen endpoint: shared single-model primary; configure only via verified TLS/VPN route.
+- `ollama-proxy`: bridge để container gọi Ollama host tại `11435`.
 
 ## 3. Những file quan trọng
 
@@ -121,7 +121,7 @@ Query MKAC
   -> EmployeeDirectory nếu là câu nhân sự có cấu trúc
   -> RAG Qdrant mkac_knowledge
   -> ddgs web fallback nếu không có nguồn nội bộ
-  -> LiteLLM (Dev runtime currently Ollama; remote target pending TLS/VPN)
+  -> LiteLLM (Ollama qwen3.5:9b local; Azure fallback)
 ```
 
 ### 6.2. EmployeeDirectory
@@ -305,7 +305,7 @@ Nguyên tắc:
 
 ## 10. Model routing
 
-Trong `litellm_config.yaml` có bốn logical aliases cho một remote primary:
+Trong `litellm_config.yaml` có bốn logical aliases cho một primary Ollama host:
 
 | Alias | Tác vụ |
 |---|---|
@@ -314,13 +314,12 @@ Trong `litellm_config.yaml` có bốn logical aliases cho một remote primary:
 | `coding-model` | Coding Agent (web deployment vẫn tắt theo `ENABLE_AGENT=false`) |
 | `azure-chat-fallback` / `azure-coder-fallback` | Azure `gpt-5.4-mini`, chỉ sau lỗi primary tương ứng |
 
-Target model là một Qwen3.5-9B Q4_K_M qua LiteLLM OpenAI-compatible provider.
-Mọi alias chạy trên một model Ollama host (`qwen3.5:9b`, `OLLAMA_API_BASE`); Azure chỉ là fallback.
+Mọi alias chạy trên một model Ollama host (`ollama_chat/qwen3.5:9b` Q4_K_M, `OLLAMA_API_BASE`); Azure chỉ là fallback theo vai trò.
 
-LiteLLM đặt `chat_template_kwargs.enable_thinking=false` cho Qwen primary. Không
-đưa extension này hoặc Ollama options sang Azure. Giữ `max_parallel_requests: 1`,
+LiteLLM đặt Ollama `think: false` cho primary, không dùng `chat_template_kwargs`. Không
+đưa Ollama options sang Azure. Giữ `max_parallel_requests: 1`,
 context metadata và token budgets bảo thủ. Alias client `openai` legacy chuẩn hóa
-thành `auto-model`; không có route chọn cloud trực tiếp, OpenAI aliases thứ hai,
+thành `auto-model`; không có route chọn cloud trực tiếp,
 hedging hoặc request chạy song song.
 
 Fallback tuần tự duy nhất:
@@ -340,8 +339,7 @@ coding-model:
 hardware summary dùng renderer deterministic tại API, không có model alias và không
 gửi telemetry/history tới bất kỳ LLM nào. BGE-M3 và OCR/Docling giữ local.
 
-Runtime chưa chuyển cho tới khi có TLS/VPN được xác minh. Dev cần smoke dữ liệu tổng
-hợp qua LiteLLM với fallback tắt; Production và dừng Ollama cần phê duyệt riêng.
+Production chưa đổi; dừng/đổi Ollama host cần phê duyệt riêng.
 
 ## 11. Gmail
 

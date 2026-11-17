@@ -1,9 +1,8 @@
 # Kiến trúc hệ thống Meibook
 
-> Trạng thái target ngày 2026-11-17: mọi alias LLM thông thường dùng chung remote
-> Qwen primary, Azure chỉ fallback khi lỗi; hardware telemetry deterministic. Runtime
-> chưa chuyển cho đến khi có HTTPS/VPN xác nhận. BGE/OCR vẫn local. Trạng thái runtime
-> phải được xác minh theo checkout, Compose và container, không suy từ target này.
+> Từ 2026-11-17 (Dev) mọi alias LLM dùng chung một model Ollama host `qwen3.5:9b`, Azure chỉ
+> fallback khi lỗi; hardware telemetry deterministic. BGE/OCR vẫn local. Trạng thái runtime phải
+> được xác minh theo checkout, Compose và container.
 
 ---
 
@@ -14,7 +13,7 @@
 | Hỏi đáp hành chính nhân sự | `mkac` | SQLite nhân sự + Qdrant `mkac_knowledge` | Hỗ trợ VI/JP, ddgs web fallback |
 | Quản lý sản xuất MES | `mes` | SQLite `data/mes.sqlite` (read-only) | Deterministic trước, SQL Agent fallback |
 | Quản lý kho WMS | `wms` | SQLite `data/mes_wms.sqlite` (read-only) | Fail-closed, không fallback sang MES |
-| Camera AI CCTVAI | `cctvai` | PostgreSQL replica `cctvai` schema (read-only) | Replica không realtime; Dev bật mặc định |
+| Camera AI CCTVAI | `cctvai` | PostgreSQL replica `cctvai` schema (read-only) cho SQL agent; phần cứng qua HTTPS host-metrics client | Replica không realtime; Dev bật mặc định |
 | Nghiên cứu tài liệu | `research` | Qdrant `docjp_knowledge` (theo topic) | Upload session dùng `docmind_documents` |
 
 ---
@@ -26,11 +25,11 @@ graph TB
     Browser["🌐 Browser / React SPA"]
     GW["FastAPI Gateway\n8001 Production · 8002 Dev"]
     LLM["LiteLLM Proxy\n4002 Production · 4001 Dev (host)"]
-    Ollama["Current Dev upstream: host Ollama\nRemote target not configured"]
     Qdrant["Qdrant\n6333 Production · 6334 Dev"]
     SQLite["SQLite\ndata/*.sqlite"]
-    PG["PostgreSQL Replica\ncctvai schema · read-only"]
-    Qwen["Target: remote Qwen3.5-9B Q4_K_M\nTLS/VPN pending; Dev runtime still Ollama"]
+    PG["PostgreSQL Replica\ncctvai schema · read-only (SQL agent)"]
+    HM["CCTVAI host metrics service\nHTTPS + bearer token"]
+    Qwen["Ollama qwen3.5:9b Q4_K_M\nhost :11435 · think=false · 8192"]
     Cloud["Azure gpt-5.4-mini\nsequential failure fallback"]
     Hardware["Deterministic hardware renderer"]
 
@@ -39,11 +38,11 @@ graph TB
     GW --> Qdrant
     GW --> SQLite
     GW --> PG
-    LLM --> Ollama
-    LLM -. future TLS/VPN rollout .-> Qwen
+    LLM --> Qwen
     Qwen -->|failure only| Cloud
-    PG --> Hardware
-    Hardware --> GW
+    GW -->|"HTTPS metrics client"| HM
+    HM -->|"snapshot JSON"| GW
+    GW --> Hardware
 ```
 
 ---
@@ -92,7 +91,7 @@ flowchart LR
     Q["Query"] --> Auth["Auth"]
     Auth --> DET{"Deterministic\ncurrent-balance?"}
     DET -->|Khớp| SNAP["mes_wms.sqlite\ncontract v4"]
-    DET -->|Không khớp| FB["Shared remote Qwen SQL fallback\n(low confidence)"]
+    DET -->|Không khớp| FB["Local Qwen SQL fallback\n(low confidence)"]
     SNAP --> VAL["Validate\nsnapshot + scope"]
     VAL -->|Lỗi| SUP["SUPPRESSED\nfail-closed"]
     VAL -->|OK| SSE["SSE\nwms_verification"]
@@ -143,7 +142,7 @@ flowchart LR
 
 ```mermaid
 graph LR
-    APP["App"] -->|"auto-model / local-qwen-chat"| QWEN["Target: remote Qwen3.5-9B Q4_K_M\nTLS/VPN pending; Dev runtime still Ollama"]
+    APP["App"] -->|"auto-model / local-qwen-chat"| QWEN["Ollama qwen3.5:9b Q4_K_M\nhost :11435 · think=false · 8192"]
     QWEN -->|"primary failure only"| AZ["azure-chat-fallback\ngpt-5.4-mini"]
 
     APP -->|"translation default: local-qwen-chat"| QWEN
@@ -162,9 +161,9 @@ graph LR
 >
 > Hardware metrics use the deterministic Meibook renderer and never enter an LLM
 > request, translation prompt or later conversation history. The Qwen endpoint is not
-> used for this data. BGE-M3 and Docling/OCR remain local. Ollama remains installed
-> and active until both stacks are migrated, consumers audited and a separate stop
-> approval granted; stopping it is not part of Dev preparation.
+> used for this data; it is fetched by the HTTPS metrics client, not PostgreSQL.
+> BGE-M3 and Docling/OCR remain local. Ollama is the current upstream and must not be
+> stopped or removed without a separate explicit approval.
 
 ---
 

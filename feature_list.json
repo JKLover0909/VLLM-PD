@@ -444,7 +444,7 @@
     },
     {
       "id": "llm.routing",
-      "title": "LiteLLM routing: one remote Qwen primary, sequential Azure fallback (TLS/VPN gated)",
+      "title": "LiteLLM routing: one local Ollama model (qwen3.5:9b Q4_K_M) for every alias, Azure fallbacks",
       "status": "in_progress",
       "enabled": {
         "dev": true,
@@ -460,10 +460,10 @@
         "tests/test_model_routes.py"
       ],
       "verified": {
-        "date": "2026-11-16",
+        "date": "2026-11-17",
         "level": "smoke"
       },
-      "notes": "2026-11-17: target changed to one remote Qwen3.5-9B Q4_K_M primary; Azure gpt-5.4-mini sequential failure fallback. Dev code/config prepared but TLS/VPN endpoint is not configured, no remote calls made, and Dev runtime still uses host Ollama. Production untouched. Hardware summary is deterministic and excluded from model history. Targeted tests pass (196). tests/test_model_routes.py remains untracked.",
+      "notes": "2026-11-17: all aliases target local Ollama qwen3.5:9b Q4_K_M; endpoint remote 192.84.106.81 removed. Dev LiteLLM restarted; 4 aliases smoke-tested without fallback. Production untouched. Hardware summary is deterministic. tests/test_model_routes.py untracked.",
       "git_state": "modified"
     },
     {
