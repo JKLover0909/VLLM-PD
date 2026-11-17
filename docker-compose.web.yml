@@ -96,6 +96,10 @@ services:
       - ${MEIBOOK_ENV_FILE:-.env.docker}
     environment:
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # Every LLM alias uses host Ollama (qwen3.5:9b) through the socat bridge below.
+      OLLAMA_API_BASE: http://host.docker.internal:11435
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: ["--local", "--config", "/app/config.yaml", "--port", "4000", "--host", "0.0.0.0"]
     ports:
       - "127.0.0.1:${LITELLM_PROXY_PORT:-4000}:4000"
@@ -103,6 +107,18 @@ services:
       - ./litellm_config.yaml:/app/config.yaml:ro
     depends_on:
       - qdrant
+      - ollama-proxy
+    restart: unless-stopped
+
+  # Bridge so containers reach host Ollama (127.0.0.1:11434) at 172.17.0.1:11435.
+  # Shared by the Dev stack, which does not run its own proxy.
+  ollama-proxy:
+    image: alpine/socat:latest
+    container_name: meibook-ollama-proxy
+    network_mode: host
+    command:
+      - "TCP-LISTEN:11435,bind=172.17.0.1,fork,reuseaddr"
+      - "TCP:127.0.0.1:11434"
     restart: unless-stopped
 
 volumes:
