@@ -34,7 +34,7 @@ export default function AgentPresence({ presence, compact, mode, language, motio
           </p>
         )}
         {!compact && !minimal && <small>{copy.hint}</small>}
-        {!compact && !minimal && onOpenComposer && <button type="button" className="agent-presence-start" onClick={onOpenComposer}>{copy.start}</button>}
+        {!compact && onOpenComposer && <button type="button" className="agent-presence-start" onClick={onOpenComposer}>{copy.start}</button>}
       </div>
       {!minimal && <button type="button" className="agent-motion-toggle" aria-pressed={motion} onClick={() => onMotionChange(!motion)} title={motion ? copy.motionOn : copy.motionOff} aria-label={motion ? copy.motionOn : copy.motionOff}>
         <span aria-hidden="true">{motion ? "◉" : "○"}</span> {motion ? copy.motionOn : copy.motionOff}

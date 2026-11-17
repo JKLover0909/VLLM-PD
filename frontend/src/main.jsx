@@ -3177,7 +3177,7 @@ function App() {
     setSelectedTask(null);
     setTaskPreviewDraft("");
     if (mode === "wms" && usePreparedAnswer) {
-      handleQuickAnswerClick({ ...task, id: quickAnswerId, question: task.sourceQuestion || task.question });
+      handleQuickAnswerClick({ ...task, id: quickAnswerId, question: questionToRun });
       return;
     }
     sendMessage(questionToRun);

@@ -29,7 +29,7 @@ export default function TaskLauncher({
       {hasSelection ? (
         <div className="task-preview" aria-live="polite">
           <label className="task-preview-label" htmlFor="task-preview-question">{copy.preview}</label>
-          <p className="task-preview-original">{selectedTask.question}</p>
+          <p className="task-preview-original">{selectedTask.label}</p>
           <textarea
             id="task-preview-question"
             className="task-preview-question"

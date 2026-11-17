@@ -50,19 +50,43 @@ test("preserves Japanese question labels as entries when no explicit short label
   assert.equal(groups.other[0].requestQuestion, question);
 });
 
-test("keeps WMS prepared answer tied to its canonical question and ID", () => {
-  const task = buildTaskGroups("wms", [{
+test("keeps WMS prepared answer tied to its localized canonical question and ID", () => {
+  const entry = {
     id: "wms-snapshot-explainer", execution: "server_prepared",
     question: "Dữ liệu tồn kho WMS có phải thời gian thực không?",
     question_ja: "WMS在庫データはリアルタイムですか？",
-  }], "ja").primary[0];
-  assert.equal(task.question, "Dữ liệu tồn kho WMS có phải thời gian thực không?");
-  assert.equal(task.sourceQuestion, task.question);
-  assert.equal(prepareTaskRun(task, task.question).question, "Dữ liệu tồn kho WMS có phải thời gian thực không?");
+  };
+  const task = buildTaskGroups("wms", [entry], "ja").primary[0];
+  assert.equal(task.question, "WMS在庫データはリアルタイムですか？");
+  assert.equal(task.canonicalQuestion, "WMS在庫データはリアルタイムですか？");
+  assert.equal(prepareTaskRun(task, task.question).question, "WMS在庫データはリアルタイムですか？");
   assert.equal(prepareTaskRun(task, task.question).usePreparedAnswer, true);
   assert.equal(prepareTaskRun(task, task.question).quickAnswerId, "wms-snapshot-explainer");
-  assert.equal(prepareTaskRun(task, "WMSの在庫数は？").usePreparedAnswer, false);
-  assert.equal(prepareTaskRun(task, "WMSの在庫数は？").quickAnswerId, null);
+  const edited = prepareTaskRun(task, "WMSの在庫数は？");
+  assert.equal(edited.question, "WMSの在庫数は？");
+  assert.equal(edited.usePreparedAnswer, false);
+  assert.equal(edited.quickAnswerId, null);
+});
+
+test("QA Japanese display keeps its Vietnamese request question", () => {
+  const task = buildTaskGroups("qa", [{
+    question: "Tra cứu phiếu kiểm tra máy TEST-A",
+    question_ja: "設備TEST-Aの検査票を調べる",
+  }], "ja").other[0];
+  assert.equal(task.question, "設備TEST-Aの検査票を調べる");
+  assert.equal(prepareTaskRun(task, task.question).question, "Tra cứu phiếu kiểm tra máy TEST-A");
+});
+
+test("Vietnamese WMS prepared tasks retain their canonical question", () => {
+  const entry = {
+    id: "wms-snapshot-explainer", execution: "server_prepared",
+    question: "Dữ liệu tồn kho WMS có phải thời gian thực không?",
+    question_ja: "WMS在庫データはリアルタイムですか？",
+  };
+  const task = buildTaskGroups("wms", [entry], "vi").primary[0];
+  const run = prepareTaskRun(task, task.question);
+  assert.equal(run.question, entry.question);
+  assert.equal(run.quickAnswerId, entry.id);
 });
 
 test("requires a non-empty explicit question before task execution", () => {

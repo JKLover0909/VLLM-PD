@@ -97,7 +97,7 @@ export function prepareTaskRun(task, editedQuestion) {
   const edited = String(editedQuestion || "").trim();
   const unchanged = edited === task?.question;
   const question = unchanged
-    ? String(task?.requestQuestion || task?.canonicalQuestion || task?.question || "").trim()
+    ? String(task?.canonicalQuestion || task?.requestQuestion || task?.question || "").trim()
     : edited;
   return {
     question,
@@ -131,12 +131,14 @@ export function buildTaskGroups(mode, entries = [], language = "vi") {
       ? String(entry.question_ja || question).trim()
       : question;
     const safeWmsQuestion = mode === "wms" && entry?.execution === "server_prepared"
-      ? String(entry.question || "").trim()
+      ? String(language === "ja" ? entry.question_ja || question : question).trim()
       : question;
     const task = {
       ...((typeof entry === "object" && entry) || {}),
       question: mode === "qa" ? displayQuestion : safeWmsQuestion,
-      canonicalQuestion: mode === "wms" ? String(entry?.question || question).trim() : question,
+      canonicalQuestion: mode === "wms" && language === "ja" && entry?.question_ja
+        ? String(entry.question_ja).trim()
+        : mode === "wms" ? String(entry?.question || question).trim() : question,
       requestQuestion,
       sourceQuestion: question,
       label: label || question,

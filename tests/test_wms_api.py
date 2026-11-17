@@ -376,6 +376,20 @@ def test_wms_prepared_resolver_requires_allowlisted_match():
     assert mismatch is None
 
 
+def test_wms_prepared_resolver_requires_japanese_canonical_question():
+    req = wms_request(
+        question="WMS在庫データはリアルタイムですか？",
+        ui_language="ja",
+        quick_answer_id="wms-snapshot-explainer",
+    )
+    assert main.resolve_wms_prepared_response(req) is not None
+    assert main.resolve_wms_prepared_response(
+        req.model_copy(update={
+            "question": "Dữ liệu tồn kho WMS có phải thời gian thực không?"
+        })
+    ) is None
+
+
 @pytest.mark.parametrize("quick_answer_id", [None, "wms-snapshot-explainer"])
 def test_wms_prepared_synchronous_query_is_rejected(quick_answer_id):
     with pytest.raises(main.HTTPException) as exc_info:
