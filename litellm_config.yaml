@@ -1,18 +1,12 @@
 model_list:
-  # Qwen is one remote primary configured over TLS/VPN. The HTTP-only LAN
-  # endpoint is intentionally not embedded here or activated by default.
-  # Thinking control must be applied only to the Qwen primary, never Azure.
+  # One local Ollama model (qwen3.5:9b Q4_K_M) serves every role; Azure is only a
+  # failure fallback. Thinking is disabled via the Ollama `think` flag.
   - model_name: auto-model
     litellm_params:
-      model: os.environ/REMOTE_LLM_MODEL
-      custom_llm_provider: openai
-      api_base: os.environ/REMOTE_LLM_API_BASE
-      api_key: os.environ/REMOTE_LLM_API_KEY
+      model: ollama_chat/qwen3.5:9b
+      api_base: os.environ/OLLAMA_API_BASE
       timeout: 120
-      allowed_openai_params: ["extra_body"]
-      extra_body:
-        chat_template_kwargs:
-          enable_thinking: false
+      think: false
       stream: true
       max_parallel_requests: 1
     model_info:
@@ -25,15 +19,10 @@ model_list:
 
   - model_name: local-qwen-chat
     litellm_params:
-      model: os.environ/REMOTE_LLM_MODEL
-      custom_llm_provider: openai
-      api_base: os.environ/REMOTE_LLM_API_BASE
-      api_key: os.environ/REMOTE_LLM_API_KEY
+      model: ollama_chat/qwen3.5:9b
+      api_base: os.environ/OLLAMA_API_BASE
       timeout: 120
-      allowed_openai_params: ["extra_body"]
-      extra_body:
-        chat_template_kwargs:
-          enable_thinking: false
+      think: false
       stream: true
       max_parallel_requests: 1
     model_info:
@@ -76,8 +65,7 @@ model_list:
       timeout: 120
       max_parallel_requests: 1
 
-  # Coding Agent retains its logical alias; code/SQL aliases run on local Ollama qwen3.5:9b
-  # (general-purpose Q4_K_M, not a dedicated Coder model). Chat aliases stay on the remote primary.
+  # Coding Agent keeps its logical alias on the same local model.
   - model_name: coding-model
     litellm_params:
       model: ollama_chat/qwen3.5:9b

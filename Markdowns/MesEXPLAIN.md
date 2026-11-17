@@ -315,9 +315,7 @@ Trong `litellm_config.yaml` có bốn logical aliases cho một remote primary:
 | `azure-chat-fallback` / `azure-coder-fallback` | Azure `gpt-5.4-mini`, chỉ sau lỗi primary tương ứng |
 
 Target model là một Qwen3.5-9B Q4_K_M qua LiteLLM OpenAI-compatible provider.
-Endpoint/model/key được đưa qua `REMOTE_LLM_API_BASE`, `REMOTE_LLM_MODEL` và
-`REMOTE_LLM_API_KEY`; example mặc định để trống. Chỉ cấu hình HTTPS/VPN đã được
-người vận hành xác nhận; HTTP endpoint thử nghiệm không được dùng với dữ liệu thật.
+Mọi alias chạy trên một model Ollama host (`qwen3.5:9b`, `OLLAMA_API_BASE`); Azure chỉ là fallback.
 
 LiteLLM đặt `chat_template_kwargs.enable_thinking=false` cho Qwen primary. Không
 đưa extension này hoặc Ollama options sang Azure. Giữ `max_parallel_requests: 1`,

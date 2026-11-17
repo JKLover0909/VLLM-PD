@@ -156,16 +156,9 @@ graph LR
     LOCAL["BGE-M3 + Docling remain local"] --- APP
 ```
 
-> **Target, pending TLS/VPN and rollout:** `auto-model`, `local-qwen-chat`,
-> `local-qwen-coder` and `coding-model` are intended to use one remote Qwen3.5-9B
-> Q4_K_M primary. Dev runtime currently remains on Ollama; Production has not been
-> rolled out. Configure `REMOTE_LLM_API_BASE`, `REMOTE_LLM_MODEL` and
-> `REMOTE_LLM_API_KEY` only with an operator-approved HTTPS/VPN endpoint. No HTTP
-> endpoint is defaulted or used with real data. LiteLLM sets
-> `chat_template_kwargs.enable_thinking=false` only for Qwen; Azure fallbacks do not
-> receive it. Chat/coder fallback sequentially to Azure `gpt-5.4-mini` on primary
-> failure; no cloud selector, parallel request, or hedge. Keep context/output budgets
-> conservative (model metadata 8192 input); do not rely on advertised max context.
+> **Dev (2026-11-17):** every LLM alias runs on one host Ollama model, `qwen3.5:9b`
+> Q4_K_M (`think=false`, context 8192, one request at a time) via the Ollama bridge.
+> Azure `gpt-5.4-mini` is only a sequential failure fallback. Production is not changed.
 >
 > Hardware metrics use the deterministic Meibook renderer and never enter an LLM
 > request, translation prompt or later conversation history. The Qwen endpoint is not

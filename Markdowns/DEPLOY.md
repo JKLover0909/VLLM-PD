@@ -103,9 +103,7 @@ nằm trong `.env.docker` ignored, không đưa secret vào Markdown hoặc comm
 env từ ví dụ khi file thật chưa tồn tại.
 
 ```env
-REMOTE_LLM_API_BASE=
-REMOTE_LLM_MODEL=
-REMOTE_LLM_API_KEY=
+OLLAMA_API_BASE=http://host.docker.internal:11435
 TRANSLATION_MODEL=local-qwen-chat
 MES_SQL_AGENT_MODEL=local-qwen-coder
 
@@ -145,11 +143,7 @@ Dev vẫn dùng Ollama vì endpoint TLS/VPN chưa được xác nhận/cấu hì
 chưa rollout. API không cung cấp lựa chọn cloud trực tiếp; `model="openai"` từ
 client cũ chuẩn hóa về primary.
 
-Endpoint API được cấu hình bằng `REMOTE_LLM_API_BASE`, `REMOTE_LLM_MODEL` và
-`REMOTE_LLM_API_KEY`. **Không có HTTP mặc định.** Chỉ điền sau khi người vận hành
-cung cấp/xác nhận HTTPS hoặc VPN/tunnel bảo vệ và cho phép rollout. Key chỉ nằm
-trong secret config ignored. Không smoke-test dữ liệu thật trước khi TLS/VPN được
-xác minh.
+Mọi alias dùng một model Ollama host (`qwen3.5:9b`) qua `OLLAMA_API_BASE`. Endpoint remote `192.84.106.81` đã bị bỏ.
 
 Primary nhận `chat_template_kwargs.enable_thinking=false` trong LiteLLM config;
 không dùng Ollama `think` hoặc `reasoning_effort`. `max_parallel_requests: 1` và
@@ -675,11 +669,7 @@ Mở firewall cho cổng `8001` nếu cần.
 
 ### LiteLLM không gọi được remote Qwen primary
 
-Chỉ debug sau khi HTTPS/VPN endpoint đã được xác nhận. Kiểm tra certificate/tunnel,
-route, `REMOTE_LLM_MODEL`, secret injection và response headers; không in secret,
-payload nội bộ hoặc gọi HTTP endpoint thử nghiệm. Khi primary lỗi, chat/coder fallback
-tuần tự sang Azure `gpt-5.4-mini`. Hardware telemetry không tham gia fallback và
-không đi qua model.
+Kiểm tra `ollama ps` và bridge `meibook-ollama-proxy` (`:11435`). Khi model local lỗi, chat/coder fallback tuần tự sang Azure `gpt-5.4-mini`. Hardware telemetry không đi qua model.
 
 ### Đăng nhập nhân viên lỗi
 

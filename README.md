@@ -166,11 +166,7 @@ Hướng dẫn tích hợp và vận hành QA nằm trong [Markdowns/QA_AGENT.md
 | Qdrant | Dev `6334`, Production `6333` | Docker service `qdrant` | Vector database |
 | BGE-M3 / Docling | GPU host nếu bật cấu hình | App containers | Embedding/OCR cục bộ; không dùng Ollama |
 
-Qwen primary dự kiến dùng model ID của deployment đã được xác minh qua một
-endpoint HTTPS/VPN do người vận hành cung cấp. Biến cấu hình là
-`REMOTE_LLM_API_BASE`, `REMOTE_LLM_MODEL`, `REMOTE_LLM_API_KEY`; hiện để trống trong
-example. Không có endpoint HTTP mặc định. Host Ollama hiện vẫn chạy cho đến khi
-rollout cả Dev và Production được kiểm tra, rồi mới dừng service theo phê duyệt.
+Mọi alias dùng một model Ollama host `qwen3.5:9b` Q4_K_M (`OLLAMA_API_BASE`, bridge `meibook-ollama-proxy`); Azure chỉ là fallback khi lỗi.
 
 `LOCAL_CHAT_NUM_CTX` and `LOCAL_AUX_NUM_CTX` are unused and should not be set as
 current configuration.
@@ -491,11 +487,7 @@ Không có alias chọn cloud trực tiếp hoặc OpenAI provider thứ hai. Cl
 song song/hedge với Qwen. Model ảnh thử primary trước; nếu deployment không hỗ trợ
 ảnh, lỗi capability có thể đi theo fallback Azure tuần tự.
 
-LiteLLM nhận `REMOTE_LLM_API_BASE`, `REMOTE_LLM_MODEL`, `REMOTE_LLM_API_KEY` từ
-secret/config vận hành. Example để trống; **không dùng HTTP endpoint thử nghiệm**.
-Cấu hình runtime chỉ được kích hoạt sau khi có TLS/VPN được xác minh và được người
-vận hành rollout. Qwen nhận `chat_template_kwargs.enable_thinking=false`; Azure
-không nhận extension này. Context/token budgets vẫn bảo thủ, metadata context 8192.
+LiteLLM gọi một model Ollama host (`ollama_chat/qwen3.5:9b`, `think=false`) cho mọi alias qua `OLLAMA_API_BASE`.
 
 Fallback Azure có thể nhận prompt/context HR, MES, Research hoặc ảnh sau lỗi primary;
 chỉ rollout khi chính sách dữ liệu cho phép gửi các nội dung đó tới Azure.
@@ -580,10 +572,7 @@ Các biến chính nằm trong `.env.example` hoặc `.env.docker`:
 LITELLM_URL=http://localhost:4002/v1
 LITELLM_MASTER_KEY=sk-local
 
-# Chỉ cấu hình sau khi endpoint TLS/VPN được xác minh; examples mặc định để trống.
-REMOTE_LLM_API_BASE=
-REMOTE_LLM_MODEL=
-REMOTE_LLM_API_KEY=
+OLLAMA_API_BASE=http://host.docker.internal:11435
 TRANSLATION_ENABLED=true
 TRANSLATION_MODEL=local-qwen-chat
 TRANSLATION_TEMPERATURE=0.1
@@ -801,16 +790,10 @@ docker compose -f docker-compose.web.yml ps
 docker compose -f docker-compose.web.yml logs --tail=160 app
 ```
 
-### LiteLLM không gọi được Qwen primary
+### LiteLLM không gọi được model local
 
-Chỉ kiểm tra sau khi endpoint HTTPS/VPN đã cấu hình và người vận hành cho phép
-smoke test. Không đặt API key trong dòng lệnh/log, không dùng HTTP endpoint thử
-nghiệm hiện có. Kiểm tra model ID, chứng thư TLS/tunnel, `REMOTE_LLM_API_BASE` và
-`REMOTE_LLM_API_KEY` trong secret store mà không in giá trị ra terminal. Khi primary
-lỗi, LiteLLM chỉ fallback tuần tự sang Azure `gpt-5.4-mini` cho chat/coder.
-
-Nếu chưa có TLS/VPN được xác nhận, giữ runtime hiện hành và không gửi dữ liệu thật
-ra endpoint remote.
+Kiểm tra `ollama ps`, service `ollama` và bridge `meibook-ollama-proxy` (`:11435`). Khi model
+local lỗi, LiteLLM chỉ fallback tuần tự sang Azure `gpt-5.4-mini` cho chat/coder.
 
 ### Gmail báo token hết hạn
 
