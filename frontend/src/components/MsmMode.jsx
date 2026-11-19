@@ -7,6 +7,8 @@ import {
   initialMsmState,
   reduceMsmEvent,
   streamMsmQuery,
+  submitMsmForm,
+  lookupMsmCategory,
 } from "../msm-mode";
 import "../msm-mode.css";
 
@@ -40,6 +42,13 @@ const COPY = {
   doneUnverified: "Đã thực hiện nhưng chưa kiểm chứng được. Vui lòng kiểm tra lại trong MSM.",
   notApplied: "Thao tác chưa được thực hiện. Vui lòng thử lại.",
   confirmFailed: "Không xác nhận được thẻ này. Vui lòng thử lại.",
+  formTitle: "Biểu mẫu",
+  formSubmit: "Tạo thao tác",
+  formSubmitting: "Đang tạo…",
+  formCancel: "Đóng biểu mẫu",
+  formSuccess: "Đã tạo thao tác từ biểu mẫu. Vui lòng xem thẻ xác nhận bên dưới.",
+  formCancelled: "Đã đóng biểu mẫu.",
+  fieldRequired: "Vui lòng nhập trường này",
 };
 
 function newId() {
@@ -94,6 +103,198 @@ function MsmTableView({ view }) {
         </p>
       ) : null}
     </figure>
+  );
+}
+
+function LookupInput({ field, value, onChange, employeeId, hasError }) {
+  const [options, setOptions] = useState([]);
+  const listId = `lookup-${field.name}`;
+
+  React.useEffect(() => {
+    let active = true;
+    lookupMsmCategory({ kind: field.source, q: "", employeeId }).then((items) => {
+      if (active && Array.isArray(items)) {
+        setOptions(items);
+      }
+    }).catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [field.source, employeeId]);
+
+  return (
+    <>
+      <input
+        type="text"
+        list={listId}
+        id={`field-${field.name}`}
+        className={`msm-form-input ${hasError ? "has-error" : ""}`}
+        value={value || ""}
+        placeholder={`Chọn hoặc gõ ${field.label.toLowerCase()}`}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <datalist id={listId}>
+        {options.map((opt, idx) => (
+          <option key={`${opt.value}-${idx}`} value={opt.value}>
+            {opt.label || opt.value}
+          </option>
+        ))}
+      </datalist>
+    </>
+  );
+}
+
+function MsmForm({ form, employeeId, onSubmit, onCancel }) {
+  const schema = form?.schema || {};
+  const fields = Array.isArray(schema.fields) ? schema.fields : [];
+  const [values, setValues] = useState(() => {
+    const init = { ...(form?.initial || {}) };
+    for (const f of fields) {
+      if (init[f.name] === undefined && f.default !== null && f.default !== undefined) {
+        init[f.name] = f.default;
+      }
+    }
+    return init;
+  });
+  const [errors, setErrors] = useState(() => form?.errors || {});
+  const [formError, setFormError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  function handleChange(name, val) {
+    setValues((prev) => ({ ...prev, [name]: val }));
+    if (errors[name]) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
+    }
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    const newErrors = {};
+    for (const f of fields) {
+      if (f.required && (values[f.name] === undefined || values[f.name] === null || String(values[f.name]).trim() === "")) {
+        newErrors[f.name] = COPY.fieldRequired;
+      }
+    }
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+    setSubmitting(true);
+    setFormError("");
+    try {
+      await onSubmit(form.kind, values);
+    } catch (err) {
+      if (err.errors) {
+        setErrors(err.errors);
+      }
+      setFormError(err.message || COPY.requestFailed);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form className="msm-form-card" onSubmit={handleSubmit} noValidate>
+      <h3 className="msm-form-title">{schema.title || form.kind || COPY.formTitle}</h3>
+      {formError ? <div className="msm-form-general-error" role="alert">{formError}</div> : null}
+      <div className="msm-form-grid">
+        {fields.map((field) => {
+          const hasError = Boolean(errors[field.name]);
+          return (
+            <div className="msm-form-group" key={field.name}>
+              <label htmlFor={`field-${field.name}`}>
+                {field.label}
+                {field.required ? <span className="required">*</span> : null}
+              </label>
+              {field.source ? (
+                <LookupInput
+                  field={field}
+                  value={values[field.name]}
+                  employeeId={employeeId}
+                  hasError={hasError}
+                  onChange={(val) => handleChange(field.name, val)}
+                />
+              ) : field.type === "select" && Array.isArray(field.options) ? (
+                <select
+                  id={`field-${field.name}`}
+                  className={`msm-form-select ${hasError ? "has-error" : ""}`}
+                  value={values[field.name] ?? ""}
+                  onChange={(e) => handleChange(field.name, e.target.value)}
+                >
+                  <option value="">-- Chọn {field.label} --</option>
+                  {field.options.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {field.option_labels?.[opt] || opt}
+                    </option>
+                  ))}
+                </select>
+              ) : field.type === "bool" ? (
+                <select
+                  id={`field-${field.name}`}
+                  className={`msm-form-select ${hasError ? "has-error" : ""}`}
+                  value={values[field.name] ? "true" : "false"}
+                  onChange={(e) => handleChange(field.name, e.target.value === "true")}
+                >
+                  <option value="true">Có / Đạt</option>
+                  <option value="false">Không</option>
+                </select>
+              ) : field.type === "date" ? (
+                <input
+                  type="date"
+                  id={`field-${field.name}`}
+                  className={`msm-form-input ${hasError ? "has-error" : ""}`}
+                  value={values[field.name] || ""}
+                  onChange={(e) => handleChange(field.name, e.target.value)}
+                />
+              ) : field.type === "int" ? (
+                <input
+                  type="number"
+                  id={`field-${field.name}`}
+                  className={`msm-form-input ${hasError ? "has-error" : ""}`}
+                  value={values[field.name] ?? ""}
+                  onChange={(e) => handleChange(field.name, e.target.value === "" ? "" : Number(e.target.value))}
+                />
+              ) : (
+                <input
+                  type="text"
+                  id={`field-${field.name}`}
+                  className={`msm-form-input ${hasError ? "has-error" : ""}`}
+                  value={values[field.name] ?? ""}
+                  readOnly={Boolean(field.readonly)}
+                  onChange={(e) => handleChange(field.name, e.target.value)}
+                />
+              )}
+              {hasError ? (
+                <span className="msm-form-error" role="alert">
+                  {errors[field.name]}
+                </span>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      <div className="msm-form-actions">
+        <button
+          type="submit"
+          className="msm-form-submit"
+          disabled={submitting}
+        >
+          {submitting ? COPY.formSubmitting : COPY.formSubmit}
+        </button>
+        <button
+          type="button"
+          className="msm-form-cancel"
+          disabled={submitting}
+          onClick={onCancel}
+        >
+          {COPY.formCancel}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -175,6 +376,34 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
       event.preventDefault();
       event.currentTarget.form?.requestSubmit();
     }
+  }
+
+  async function handleFormSubmit(turnId, form, kind, values) {
+    if (!sessionIdRef.current) sessionIdRef.current = newId();
+    const res = await submitMsmForm({
+      sessionId: sessionIdRef.current,
+      employeeId,
+      kind,
+      values,
+      actionId: form.action_id || null,
+    });
+    patchTurn(turnId, (turn) => ({
+      ...turn,
+      forms: (turn.forms || []).filter((f) => f !== form),
+      pending: [
+        ...turn.pending,
+        ...(Array.isArray(res.pending) ? res.pending : []),
+      ],
+      notice: COPY.formSuccess,
+    }));
+  }
+
+  function handleFormCancel(turnId, formIndex) {
+    patchTurn(turnId, (turn) => ({
+      ...turn,
+      forms: (turn.forms || []).filter((_, idx) => idx !== formIndex),
+      notice: COPY.formCancelled,
+    }));
   }
 
   async function confirmAction(turnId, action) {
@@ -276,6 +505,15 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
                 ) : null}
                 {turn.views.map((view, index) => (
                   <MsmTableView key={`${turn.id}-view-${index}`} view={view} />
+                ))}
+                {Array.isArray(turn.forms) && turn.forms.map((form, index) => (
+                  <MsmForm
+                    key={`${turn.id}-form-${index}`}
+                    form={form}
+                    employeeId={employeeId}
+                    onSubmit={(kind, values) => handleFormSubmit(turn.id, form, kind, values)}
+                    onCancel={() => handleFormCancel(turn.id, index)}
+                  />
                 ))}
                 {turn.pending.map((action) => {
                   const state = cardState[action.action_id] || {};

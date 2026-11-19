@@ -16,6 +16,7 @@ export function initialMsmState() {
     meta: "",
     pending: [],
     views: [],
+    forms: [],
     error: null,
     done: false,
   };
@@ -36,6 +37,7 @@ export function reduceMsmEvent(state, event) {
         answer: state.answer || result.answer || "",
         pending: Array.isArray(result.pending) ? result.pending : [],
         views: Array.isArray(result.views) ? result.views : [],
+        forms: Array.isArray(result.forms) ? result.forms : [],
         done: true,
       };
     }
@@ -47,6 +49,36 @@ export function reduceMsmEvent(state, event) {
     default:
       return state;
   }
+}
+
+export async function submitMsmForm({ sessionId, employeeId, kind, values, actionId }, fetchImpl = fetch) {
+  const response = await fetchImpl("/msm/forms/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session_id: sessionId,
+      employee_id: employeeId,
+      kind,
+      values,
+      action_id: actionId || null,
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(data.message || "Lỗi nộp biểu mẫu");
+    error.status = response.status;
+    error.errors = data.errors || {};
+    throw error;
+  }
+  return data;
+}
+
+export async function lookupMsmCategory({ kind, q = "", employeeId = "" }, fetchImpl = fetch) {
+  const params = new URLSearchParams({ kind, q });
+  if (employeeId) params.set("employee_id", employeeId);
+  const response = await fetchImpl(`/msm/lookup?${params.toString()}`);
+  if (!response.ok) return [];
+  return response.json().catch(() => []);
 }
 
 export async function streamMsmQuery(payload, onEvent, signal, fetchImpl = fetch) {

@@ -195,6 +195,14 @@ class MsmActionIn(BaseModel):
     employee_id: str
 
 
+class MsmFormIn(BaseModel):
+    session_id: str
+    employee_id: str
+    kind: str
+    values: dict = {}
+    action_id: str | None = None
+
+
 async def _send(
     cfg: MsmAgentConfig,
     client: httpx.AsyncClient,
@@ -388,3 +396,67 @@ async def confirm_action(action_id: str, body: MsmActionIn) -> Response:
 @router.post("/actions/{action_id}/cancel")
 async def cancel_action(action_id: str, body: MsmActionIn) -> Response:
     return await _forward_action(action_id, "cancel", body)
+
+
+@router.post("/forms/submit")
+async def submit_form(body: MsmFormIn) -> Response:
+    _require_employee(body.employee_id)
+    try:
+        cfg, client, cache = _state()
+    except MsmAgentUnavailable:
+        raise HTTPException(503, "MSM_AGENT_NOT_CONFIGURED")
+    thread_id = await _thread_for(cfg, client, cache, body.session_id)
+    try:
+        response = await _post(
+            cfg,
+            client,
+            cache,
+            f"/agent/v1/threads/{thread_id}/forms",
+            {"kind": body.kind, "values": body.values, "action_id": body.action_id},
+        )
+    except MsmAgentUnavailable:
+        raise HTTPException(503, "MSM_AGENT_UNAVAILABLE")
+    except httpx.HTTPError:
+        raise HTTPException(502, "MSM_AGENT_UNAVAILABLE")
+    if response.status_code == 401:
+        raise HTTPException(503, "MSM_AGENT_UNAVAILABLE")
+    return Response(
+        content=response.content,
+        status_code=response.status_code,
+        media_type="application/json",
+    )
+
+
+@router.get("/lookup")
+async def lookup_category(kind: str, q: str = "", employee_id: str = "") -> Response:
+    if employee_id:
+        _require_employee(employee_id)
+    try:
+        cfg, client, cache = _state()
+    except MsmAgentUnavailable:
+        raise HTTPException(503, "MSM_AGENT_NOT_CONFIGURED")
+    try:
+        token = await cache.token()
+        response = await client.get(
+            f"{cfg.base_url}/agent/v1/lookup",
+            params={"kind": kind, "q": q},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=cfg.timeout_s,
+        )
+        if response.status_code == 401:
+            cache.invalidate()
+            token = await cache.token()
+            response = await client.get(
+                f"{cfg.base_url}/agent/v1/lookup",
+                params={"kind": kind, "q": q},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=cfg.timeout_s,
+            )
+    except Exception:
+        raise HTTPException(502, "MSM_AGENT_UNAVAILABLE")
+    return Response(
+        content=response.content,
+        status_code=response.status_code,
+        media_type="application/json",
+    )
+

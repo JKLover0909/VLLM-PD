@@ -192,3 +192,51 @@ def test_invalid_employee_is_rejected_before_the_agent_is_called(monkeypatch):
     })
     assert r.status_code == 403
     assert touched == []
+
+
+def test_form_submit_forwards_to_agent_and_returns_pending(monkeypatch):
+    import json
+    seen = []
+
+    def handler(request):
+        if request.url.path == "/agent/v1/threads":
+            return httpx.Response(200, json={"thread_id": "u:conv-1"})
+        if request.url.path == "/agent/v1/threads/u:conv-1/forms":
+            seen.append(request)
+            return httpx.Response(200, json={"pending": [{"action_id": "act-1", "summary": "Tao may"}]})
+        return httpx.Response(200, json={"token": "jwt-1"})
+
+    client = _client(handler, monkeypatch)
+    r = client.post("/msm/forms/submit", json={
+        "session_id": "s-form",
+        "employee_id": "E1",
+        "kind": "create_machine",
+        "values": {"machine_id": "M01", "machine_name": "May 1"},
+    })
+    assert r.status_code == 200
+    assert r.json() == {"pending": [{"action_id": "act-1", "summary": "Tao may"}]}
+    assert len(seen) == 1
+    assert json.loads(seen[0].content) == {
+        "kind": "create_machine",
+        "values": {"machine_id": "M01", "machine_name": "May 1"},
+        "action_id": None,
+    }
+
+
+def test_lookup_forwards_to_agent(monkeypatch):
+    seen = []
+
+    def handler(request):
+        if request.url.path == "/agent/v1/lookup":
+            seen.append(request)
+            return httpx.Response(200, json=[{"value": "u1", "label": "User 1"}])
+        return httpx.Response(200, json={"token": "jwt-1"})
+
+    client = _client(handler, monkeypatch)
+    r = client.get("/msm/lookup?kind=users&q=test&employee_id=E1")
+    assert r.status_code == 200
+    assert r.json() == [{"value": "u1", "label": "User 1"}]
+    assert len(seen) == 1
+    assert seen[0].url.params["kind"] == "users"
+    assert seen[0].url.params["q"] == "test"
+
