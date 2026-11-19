@@ -1668,6 +1668,8 @@ function App() {
   const [files, setFiles] = useState([]);
   const [pendingFiles, setPendingFiles] = useState([]);
   const [uploadSummary, setUploadSummary] = useState(null);
+  const [msmTurnCount, setMsmTurnCount] = useState(0);
+  const [msmResetEpoch, setMsmResetEpoch] = useState(0);
   const [messagesByMode, setMessagesByMode] = useState(() =>
     createLanguageScopedState(() => []),
   );
@@ -2591,6 +2593,10 @@ function App() {
     setSourcePanelOpen(false);
     setSourcePreview(null);
     setConfirmClearOpen(false);
+    if (mode === "msm") {
+      setMsmResetEpoch((e) => e + 1);
+      setMsmTurnCount(0);
+    }
   }
 
   function sourcePreviewUrl(source, sourceMode = mode) {
@@ -3452,7 +3458,7 @@ function App() {
               title={t("common.clearConversation")}
               aria-label={t("common.clearConversation")}
               onClick={() => setConfirmClearOpen(true)}
-              disabled={busy || messages.length === 0}
+              disabled={busy || (mode === "msm" ? msmTurnCount === 0 : messages.length === 0)}
             >
               <Trash2 size={18} />
             </button>
@@ -3503,7 +3509,7 @@ function App() {
           {mode === "msm" ? (
             <section
               id="msm-conversation"
-              className="conversation agent-workspace has-conversation"
+              className={`conversation agent-workspace ${msmTurnCount > 0 ? "has-conversation" : "is-welcome"}`}
               data-motion={agentMotion}
               data-agent-state={agentPresence.state}
               role="tabpanel"
@@ -3513,11 +3519,17 @@ function App() {
               <RoamingRobot
                 state={agentPresence.state}
                 motion={agentMotion}
-                hasConversation={false}
+                hasConversation={msmTurnCount > 0}
                 hasError={false}
                 previewOpen={false}
               />
-              <MsmMode employeeId={employee?.id} language={language} presence={agentPresence} />
+              <MsmMode
+                key={msmResetEpoch}
+                employeeId={employee?.id}
+                language={language}
+                presence={agentPresence}
+                onTurnCountChange={setMsmTurnCount}
+              />
             </section>
           ) : (
           <>

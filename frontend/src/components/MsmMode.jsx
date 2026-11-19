@@ -97,13 +97,17 @@ function MsmTableView({ view }) {
   );
 }
 
-export default function MsmMode({ employeeId, language, presence }) {
+export default function MsmMode({ employeeId, language, presence, onTurnCountChange }) {
   const [turns, setTurns] = useState([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [cardState, setCardState] = useState({});
   const sessionIdRef = useRef("");
   const abortRef = useRef(null);
+
+  React.useEffect(() => {
+    onTurnCountChange?.(turns.length);
+  }, [turns.length, onTurnCountChange]);
 
   function patchTurn(turnId, updater) {
     setTurns((current) =>
