@@ -17,6 +17,7 @@ export function initialMsmState() {
     pending: [],
     views: [],
     forms: [],
+    pills: [],
     error: null,
     done: false,
   };
@@ -38,6 +39,7 @@ export function reduceMsmEvent(state, event) {
         pending: Array.isArray(result.pending) ? result.pending : [],
         views: Array.isArray(result.views) ? result.views : [],
         forms: Array.isArray(result.forms) ? result.forms : [],
+        pills: Array.isArray(result.pills) ? result.pills : [],
         done: true,
       };
     }

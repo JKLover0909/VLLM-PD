@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Bot, Send, Square } from "lucide-react";
+import { Bot, Send, Sparkles, Square } from "lucide-react";
 import AgentPresence from "./AgentPresence.jsx";
 import TaskLauncher from "./TaskLauncher.jsx";
 import { buildTaskGroups } from "../task-launcher.js";
@@ -18,6 +18,23 @@ import "../msm-mode.css";
 // Cùng bộ tuỳ chọn bảng Markdown với chế độ QA để bảng rộng cuộn ngang trong
 // khung hội thoại thay vì bị cắt.
 const MSM_MARKDOWN_OPTIONS = getMessageMarkdownOptions({ qa: true });
+
+const STARTER_CHIPS = {
+  vi: [
+    { label: "Bản tin hôm nay", prompt: "Bản tin hôm nay của tôi có gì?" },
+    { label: "Tổng quan hôm nay", prompt: "Tổng quan thiết bị hôm nay" },
+    { label: "Máy quá hạn", prompt: "Máy nào đã quá hạn hiệu chuẩn?" },
+    { label: "Đến hạn 30 ngày", prompt: "Máy nào đến hạn hiệu chuẩn trong 30 ngày tới?" },
+    { label: "Kế hoạch tháng", prompt: "Kế hoạch hiệu chuẩn tháng này như thế nào?" },
+  ],
+  ja: [
+    { label: "本日の要約", prompt: "本日の機器サマリーを教えてください" },
+    { label: "全体概要", prompt: "本日の設備全体状況はどうなっていますか？" },
+    { label: "校正期限切れ", prompt: "校正期限が切れている設備はありますか？" },
+    { label: "30日以内", prompt: "30日以内に校正期限を迎える設備はどれですか？" },
+    { label: "今月の計画", prompt: "今月の校正計画はどうなっていますか？" },
+  ],
+};
 
 const COPY = {
   emptyTitle: "Quản lý thiết bị MSM",
@@ -321,11 +338,21 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
           { question: "校正期限が近づいている設備はどれですか？" },
           { question: "ANNEALING部門の設備状態を確認してください" },
           { question: "新規設備登録フォームを開いてください" },
+          { question: "本日の機器サマリーを教えてください" },
+          { question: "本日の設備全体状況はどうなっていますか？" },
+          { question: "校正期限が切れている設備はありますか？" },
+          { question: "30日以内に校正期限を迎える設備はどれですか？" },
+          { question: "今月の校正計画はどうなっていますか？" },
         ]
       : [
           { question: "Máy nào sắp đến hạn hiệu chuẩn?" },
           { question: "Kiểm tra trạng thái thiết bị bộ phận ANNEALING" },
           { question: "Chuẩn bị form thêm thiết bị mới" },
+          { question: "Bản tin hôm nay của tôi có gì?" },
+          { question: "Tổng quan thiết bị hôm nay" },
+          { question: "Máy nào đã quá hạn hiệu chuẩn?" },
+          { question: "Máy nào đến hạn hiệu chuẩn trong 30 ngày tới?" },
+          { question: "Kế hoạch hiệu chuẩn tháng này như thế nào?" },
         ];
   }, [language]);
 
@@ -568,6 +595,23 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
                     ]
               }
             />
+            <div className="msm-starter-chips" role="group" aria-label={language === "ja" ? "クイック候補" : "Gợi ý tra cứu nhanh"}>
+              <span className="msm-starter-chips-title">
+                {language === "ja" ? "クイック候補" : "Gợi ý tra cứu nhanh"}
+              </span>
+              <div className="msm-starter-chips-list">
+                {(STARTER_CHIPS[language] || STARTER_CHIPS.vi).map((chip, idx) => (
+                  <button
+                    key={`starter-chip-${idx}`}
+                    type="button"
+                    className="msm-chip"
+                    onClick={() => submitQuestion(chip.prompt)}
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         ) : null}
         {turns.map((turn) => (
@@ -649,6 +693,27 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
                   );
                 })}
                 {turn.notice ? <p className="msm-notice">{turn.notice}</p> : null}
+                {Array.isArray(turn.pills) && turn.pills.length > 0 ? (
+                  <div className="msm-pills" role="group" aria-label={language === "ja" ? "次の候補" : "Gợi ý tiếp theo"}>
+                    <p className="msm-pills-label">
+                      <Sparkles size={13} aria-hidden="true" />
+                      <span>{language === "ja" ? "次の候補:" : "Gợi ý tiếp theo:"}</span>
+                    </p>
+                    <div className="msm-pills-list">
+                      {turn.pills.map((pill, idx) => (
+                        <button
+                          key={`${turn.id}-pill-${idx}`}
+                          type="button"
+                          className="msm-pill"
+                          onClick={() => submitQuestion(pill)}
+                          disabled={streaming}
+                        >
+                          {pill}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </article>
           </div>

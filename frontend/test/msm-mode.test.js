@@ -37,14 +37,18 @@ test("reduceMsmEvent surfaces an error without dropping the answer", () => {
   assert.deepEqual(state.error, { code: "LLM_BUSY", message: "Hệ thống đang bận" });
 });
 
-test("reduceMsmEvent collects forms from done", () => {
+test("reduceMsmEvent collects forms and pills from done", () => {
   let state = initialMsmState();
   state = reduceMsmEvent(state, {
     type: "done",
-    result: { forms: [{ kind: "create_machine", schema: { title: "Thêm máy" } }] },
+    result: {
+      forms: [{ kind: "create_machine", schema: { title: "Thêm máy" } }],
+      pills: ["Lịch sử hiệu chuẩn May11", "Kế hoạch hiệu chuẩn May11"],
+    },
   });
   assert.equal(state.forms.length, 1);
   assert.equal(state.forms[0].kind, "create_machine");
+  assert.deepEqual(state.pills, ["Lịch sử hiệu chuẩn May11", "Kế hoạch hiệu chuẩn May11"]);
 });
 
 test("submitMsmForm sends form payload and returns pending result", async () => {
