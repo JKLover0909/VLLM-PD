@@ -169,6 +169,7 @@ from src.api.helpers import (
     safe_upload_filename,
     session_upload_dir,
 )
+from src.api import msm_agent
 from src.api.msm_agent import router as msm_router
 
 ENABLE_AGENT = config.ENABLE_AGENT
@@ -4266,6 +4267,7 @@ async def favicon():
     return FileResponse(favicon_path, media_type="image/png")
 
 
+msm_agent.set_employee_verifier(verify_mkac_employee)
 app.include_router(msm_router)
 
 

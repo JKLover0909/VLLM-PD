@@ -88,6 +88,7 @@ def _client(handler, monkeypatch):
     monkeypatch.setattr(msm_agent, "_config", cfg)
     monkeypatch.setattr(msm_agent, "_http", httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     msm_agent.SESSIONS = msm_agent.MsmSessions()
+    monkeypatch.setattr(msm_agent, "_verify_employee", lambda employee_id: None)
     from fastapi import FastAPI
     app = FastAPI()
     app.include_router(msm_agent.router)
@@ -155,3 +156,39 @@ def test_confirm_without_a_thread_returns_404(monkeypatch):
     client = _client(lambda request: httpx.Response(200, json={"token": "x"}), monkeypatch)
     r = client.post("/msm/actions/abc/confirm", json={"session_id": "nope", "employee_id": "E1"})
     assert r.status_code == 404
+
+
+def test_requests_are_rejected_when_no_employee_verifier_is_wired(monkeypatch):
+    cfg = msm_agent.load_config({
+        "MSM_AGENT_BASE": "http://agent", "MSM_AGENT_USER": "u", "MSM_AGENT_PASS": "p",
+    })
+    monkeypatch.setattr(msm_agent, "_config", cfg)
+    monkeypatch.setattr(msm_agent, "_verify_employee", None)
+    from fastapi import FastAPI
+    app = FastAPI()
+    app.include_router(msm_agent.router)
+    r = TestClient(app).post("/msm/query/stream", json={
+        "session_id": "s1", "question": "hỏi", "employee_id": "E1",
+    })
+    assert r.status_code == 503
+    assert r.json()["detail"] == "EMPLOYEE_AUTH_NOT_WIRED"
+
+
+def test_invalid_employee_is_rejected_before_the_agent_is_called(monkeypatch):
+    touched = []
+
+    def handler(request):
+        touched.append(request.url.path)
+        return httpx.Response(200, json={"token": "jwt-1"})
+
+    def reject(employee_id):
+        from fastapi import HTTPException
+        raise HTTPException(403, {"code": "INVALID_EMPLOYEE_ID"})
+
+    client = _client(handler, monkeypatch)
+    monkeypatch.setattr(msm_agent, "_verify_employee", reject)
+    r = client.post("/msm/query/stream", json={
+        "session_id": "s9", "question": "hỏi", "employee_id": "nobody",
+    })
+    assert r.status_code == 403
+    assert touched == []

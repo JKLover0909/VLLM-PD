@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Mapping
 
@@ -115,11 +115,27 @@ class MsmTokenCache:
         return token
 
 
+_verify_employee: Callable[[str], object] | None = None
+
+
+def set_employee_verifier(verify: Callable[[str], object]) -> None:
+    """Wire meibook's employee check; ``src.api.main`` calls this at import time."""
+    global _verify_employee
+    _verify_employee = verify
+
+
+def _require_employee(employee_id: str) -> None:
+    """Fail closed: never serve the MSM admin identity to an unverified caller."""
+    if _verify_employee is None:
+        raise HTTPException(503, "EMPLOYEE_AUTH_NOT_WIRED")
+    _verify_employee(employee_id)
+
+
 def to_meibook_event(event: dict) -> dict | None:
     """Translate one agent SSE event into the vocabulary meibook renders."""
     kind = event.get("type")
     if kind == "answer":
-        return {"type": "token", "content": event["text"]}
+        return {"type": "token", "content": event.get("text", "")}
     if kind == "done":
         return {"type": "done", "result": event.get("result", {})}
     if kind == "error":
@@ -322,6 +338,7 @@ router = APIRouter(prefix="/msm", tags=["msm"])
 
 @router.post("/query/stream")
 async def query_stream(body: MsmQueryIn) -> StreamingResponse:
+    _require_employee(body.employee_id)
     try:
         cfg, client, cache = _state()
     except MsmAgentUnavailable:
@@ -334,6 +351,7 @@ async def query_stream(body: MsmQueryIn) -> StreamingResponse:
 
 
 async def _forward_action(action_id: str, verb: str, body: MsmActionIn) -> Response:
+    _require_employee(body.employee_id)
     try:
         cfg, client, cache = _state()
     except MsmAgentUnavailable:
