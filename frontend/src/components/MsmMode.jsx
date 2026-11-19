@@ -302,7 +302,7 @@ function MsmForm({ form, employeeId, onSubmit, onCancel }) {
   );
 }
 
-export default function MsmMode({ employeeId, language, presence, onTurnCountChange }) {
+export default function MsmMode({ employeeId, language, presence, onTurnCountChange, onPreviewOpenChange }) {
   const [turns, setTurns] = useState([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -311,6 +311,7 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
   const [taskPreviewDraft, setTaskPreviewDraft] = useState("");
   const [showFreeInput, setShowFreeInput] = useState(false);
   const [taskInfoOpen, setTaskInfoOpen] = useState(false);
+  const textareaRef = useRef(null);
   const sessionIdRef = useRef("");
   const abortRef = useRef(null);
 
@@ -336,6 +337,16 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
   React.useEffect(() => {
     onTurnCountChange?.(turns.length);
   }, [turns.length, onTurnCountChange]);
+
+  React.useEffect(() => {
+    onPreviewOpenChange?.(Boolean(selectedTask));
+  }, [selectedTask, onPreviewOpenChange]);
+
+  React.useEffect(() => {
+    if (showFreeInput) {
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+  }, [showFreeInput]);
 
   function patchTurn(turnId, updater) {
     setTurns((current) =>
@@ -502,7 +513,7 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
     dropCard(turnId, actionId, COPY.cancelled);
   }
 
-  const disabled = !employeeId || streaming;
+  const isComposerOpen = turns.length > 0 || showFreeInput;
 
   return (
     <div className="msm-mode" lang={language === "ja" ? "ja" : "vi"} aria-label={COPY.emptyTitle}>
@@ -642,36 +653,39 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
           </div>
         ))}
       </div>
-      <form className="composer" onSubmit={submit}>
-        <textarea
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={onKeyDown}
-          aria-label={COPY.inputLabel}
-          placeholder={COPY.placeholder}
-          rows={2}
-          disabled={disabled}
-        />
-        <div className="composer-footer">
-          <div className="composer-context" />
-          <div className="composer-actions">
-            <button
-              className={streaming ? "send-button stopping" : "send-button"}
-              type={streaming ? "button" : "submit"}
-              title={streaming ? COPY.stop : COPY.send}
-              onClick={streaming ? () => abortRef.current?.abort() : undefined}
-              disabled={streaming ? false : !draft.trim() || disabled}
-            >
-              {streaming ? (
-                <Square size={16} fill="currentColor" />
-              ) : (
-                <Send size={18} />
-              )}
-            </button>
+      {isComposerOpen ? (
+        <form className="composer" onSubmit={submit}>
+          <textarea
+            ref={textareaRef}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={onKeyDown}
+            aria-label={COPY.inputLabel}
+            placeholder={COPY.placeholder}
+            rows={2}
+            disabled={disabled}
+          />
+          <div className="composer-footer">
+            <div className="composer-context" />
+            <div className="composer-actions">
+              <button
+                className={streaming ? "send-button stopping" : "send-button"}
+                type={streaming ? "button" : "submit"}
+                title={streaming ? COPY.stop : COPY.send}
+                onClick={streaming ? () => abortRef.current?.abort() : undefined}
+                disabled={streaming ? false : !draft.trim() || disabled}
+              >
+                {streaming ? (
+                  <Square size={16} fill="currentColor" />
+                ) : (
+                  <Send size={18} />
+                )}
+              </button>
+            </div>
           </div>
-        </div>
-      </form>
-      {!employeeId ? (
+        </form>
+      ) : null}
+      {!employeeId && isComposerOpen ? (
         <p className="msm-hint" role="status">
           {COPY.loginRequired}
         </p>

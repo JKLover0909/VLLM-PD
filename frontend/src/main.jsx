@@ -1680,6 +1680,7 @@ function App() {
   const [uploadSummary, setUploadSummary] = useState(null);
   const [msmTurnCount, setMsmTurnCount] = useState(0);
   const [msmResetEpoch, setMsmResetEpoch] = useState(0);
+  const [msmPreviewOpen, setMsmPreviewOpen] = useState(false);
   const [messagesByMode, setMessagesByMode] = useState(() =>
     createLanguageScopedState(() => []),
   );
@@ -2606,6 +2607,7 @@ function App() {
     if (mode === "msm") {
       setMsmResetEpoch((e) => e + 1);
       setMsmTurnCount(0);
+      setMsmPreviewOpen(false);
     }
   }
 
@@ -3531,7 +3533,7 @@ function App() {
                 motion={agentMotion}
                 hasConversation={msmTurnCount > 0}
                 hasError={false}
-                previewOpen={false}
+                previewOpen={msmPreviewOpen}
               />
               <MsmMode
                 key={msmResetEpoch}
@@ -3539,6 +3541,7 @@ function App() {
                 language={language}
                 presence={agentPresence}
                 onTurnCountChange={setMsmTurnCount}
+                onPreviewOpenChange={setMsmPreviewOpen}
               />
             </section>
           ) : (
