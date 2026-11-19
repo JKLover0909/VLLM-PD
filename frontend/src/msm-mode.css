@@ -397,59 +397,7 @@ html[data-theme="dark"] .msm-cancel:hover:not(:disabled) {
   cursor: not-allowed;
 }
 
-/* Gợi ý tra cứu nhanh (Starter Chips) ở màn hình chào */
-.msm-starter-chips {
-  margin-top: 20px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-}
-
-.msm-starter-chips-title {
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.msm-starter-chips-list {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  max-width: 720px;
-}
-
-.msm-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 14px;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  color: #334155;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 9999px;
-  cursor: pointer;
-  transition: all .15s ease;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-}
-
-.msm-chip:hover {
-  color: #0284c7;
-  background: #f8fafc;
-  border-color: #38bdf8;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(2, 132, 199, 0.12);
-}
-
-/* Dark mode for pills and starter chips */
-html[data-theme="dark"] .msm-pills-label,
-html[data-theme="dark"] .msm-starter-chips-title {
+html[data-theme="dark"] .msm-pills-label {
   color: #94a3b8;
 }
 
@@ -464,20 +412,6 @@ html[data-theme="dark"] .msm-pill:hover:not(:disabled) {
   background: rgba(14, 165, 233, 0.22);
   border-color: #38bdf8;
 }
-
-html[data-theme="dark"] .msm-chip {
-  color: #cbd5e1;
-  background: #1e293b;
-  border-color: #334155;
-  box-shadow: none;
-}
-
-html[data-theme="dark"] .msm-chip:hover {
-  color: #7dd3fc;
-  background: #0f172a;
-  border-color: #38bdf8;
-}
-
 
 html[data-theme="dark"] .msm-hint {
   color: #fdba74;

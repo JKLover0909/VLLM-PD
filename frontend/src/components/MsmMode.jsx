@@ -19,23 +19,6 @@ import "../msm-mode.css";
 // khung hội thoại thay vì bị cắt.
 const MSM_MARKDOWN_OPTIONS = getMessageMarkdownOptions({ qa: true });
 
-const STARTER_CHIPS = {
-  vi: [
-    { label: "Bản tin hôm nay", prompt: "Bản tin hôm nay của tôi có gì?" },
-    { label: "Tổng quan hôm nay", prompt: "Tổng quan thiết bị hôm nay" },
-    { label: "Máy quá hạn", prompt: "Máy nào đã quá hạn hiệu chuẩn?" },
-    { label: "Đến hạn 30 ngày", prompt: "Máy nào đến hạn hiệu chuẩn trong 30 ngày tới?" },
-    { label: "Kế hoạch tháng", prompt: "Kế hoạch hiệu chuẩn tháng này như thế nào?" },
-  ],
-  ja: [
-    { label: "本日の要約", prompt: "本日の機器サマリーを教えてください" },
-    { label: "全体概要", prompt: "本日の設備全体状況はどうなっていますか？" },
-    { label: "校正期限切れ", prompt: "校正期限が切れている設備はありますか？" },
-    { label: "30日以内", prompt: "30日以内に校正期限を迎える設備はどれですか？" },
-    { label: "今月の計画", prompt: "今月の校正計画はどうなっていますか？" },
-  ],
-};
-
 const COPY = {
   emptyTitle: "Quản lý thiết bị MSM",
   emptyBody:
@@ -595,23 +578,6 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
                     ]
               }
             />
-            <div className="msm-starter-chips" role="group" aria-label={language === "ja" ? "クイック候補" : "Gợi ý tra cứu nhanh"}>
-              <span className="msm-starter-chips-title">
-                {language === "ja" ? "クイック候補" : "Gợi ý tra cứu nhanh"}
-              </span>
-              <div className="msm-starter-chips-list">
-                {(STARTER_CHIPS[language] || STARTER_CHIPS.vi).map((chip, idx) => (
-                  <button
-                    key={`starter-chip-${idx}`}
-                    type="button"
-                    className="msm-chip"
-                    onClick={() => submitQuestion(chip.prompt)}
-                  >
-                    {chip.label}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         ) : null}
         {turns.map((turn) => (
