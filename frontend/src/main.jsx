@@ -3354,7 +3354,9 @@ function App() {
                           : modeText("cctvai").unavailable
                         : mode === "qa"
                           ? modeText("qa").metric
-                          : researchScope === "upload"
+                          : mode === "msm"
+                            ? modeText("msm").metric
+                            : researchScope === "upload"
                         ? `${files.length} ${t("common.sessionDocuments")}`
                         : researchTopicId
                         ? formatText(modeText("research").scopeLabel, {
