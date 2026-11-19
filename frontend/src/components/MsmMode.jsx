@@ -380,20 +380,24 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
 
   async function handleFormSubmit(turnId, form, kind, values) {
     if (!sessionIdRef.current) sessionIdRef.current = newId();
+    const cleanedValues = {};
+    for (const [k, v] of Object.entries(values)) {
+      if (v !== undefined && v !== null && v !== "") {
+        cleanedValues[k] = v;
+      }
+    }
     const res = await submitMsmForm({
       sessionId: sessionIdRef.current,
       employeeId,
       kind,
-      values,
+      values: cleanedValues,
       actionId: form.action_id || null,
     });
+    const newPending = Array.isArray(res.pending) ? res.pending : (res.pending ? [res.pending] : []);
     patchTurn(turnId, (turn) => ({
       ...turn,
       forms: (turn.forms || []).filter((f) => f !== form),
-      pending: [
-        ...turn.pending,
-        ...(Array.isArray(res.pending) ? res.pending : []),
-      ],
+      pending: [...turn.pending, ...newPending],
       notice: COPY.formSuccess,
     }));
   }

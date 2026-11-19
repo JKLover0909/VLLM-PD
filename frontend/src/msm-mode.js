@@ -65,9 +65,11 @@ export async function submitMsmForm({ sessionId, employeeId, kind, values, actio
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(data.message || "Lỗi nộp biểu mẫu");
+    const detail = data.detail && typeof data.detail === "object" ? data.detail : {};
+    const message = data.message || detail.message || (typeof data.detail === "string" ? data.detail : "") || "Lỗi nộp biểu mẫu";
+    const error = new Error(message);
     error.status = response.status;
-    error.errors = data.errors || {};
+    error.errors = data.errors || detail.errors || {};
     throw error;
   }
   return data;
