@@ -1,5 +1,6 @@
 import React, { useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import AgentPresence from "./AgentPresence.jsx";
 import { getMessageMarkdownOptions } from "../markdown-tables";
 import {
   buildMsmPayload,
@@ -96,7 +97,7 @@ function MsmTableView({ view }) {
   );
 }
 
-export default function MsmMode({ employeeId, language }) {
+export default function MsmMode({ employeeId, language, presence }) {
   const [turns, setTurns] = useState([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -236,12 +237,15 @@ export default function MsmMode({ employeeId, language }) {
   const disabled = !employeeId || streaming;
 
   return (
-    <section className="msm-mode" lang={language === "ja" ? "ja" : "vi"} aria-label={COPY.emptyTitle}>
+    <div className="msm-mode" lang={language === "ja" ? "ja" : "vi"} aria-label={COPY.emptyTitle}>
       <div className="msm-scroll">
         {turns.length === 0 ? (
-          <div className="msm-empty">
-            <strong>{COPY.emptyTitle}</strong>
-            <p>{COPY.emptyBody}</p>
+          <div className="empty-conversation">
+            <div className="empty-copy">
+              <AgentPresence presence={presence} mode="msm" language={language} />
+              <strong>{COPY.emptyTitle}</strong>
+              <p>{COPY.emptyBody}</p>
+            </div>
           </div>
         ) : null}
         {turns.map((turn) => (
@@ -317,33 +321,34 @@ export default function MsmMode({ employeeId, language }) {
           </div>
         ))}
       </div>
-      <form className="msm-composer" onSubmit={submit}>
-        <label className="msm-input-label" htmlFor="msm-question">
-          {COPY.inputLabel}
-        </label>
+      <form className="composer" onSubmit={submit}>
         <textarea
-          id="msm-question"
-          className="msm-input"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={onKeyDown}
+          aria-label={COPY.inputLabel}
           placeholder={COPY.placeholder}
           rows={2}
           disabled={disabled}
         />
-        <button
-          type="submit"
-          className="msm-send"
-          disabled={disabled || !draft.trim()}
-        >
-          {streaming ? COPY.sending : COPY.send}
-        </button>
+        <div className="composer-footer">
+          <div className="composer-context" />
+          <div className="composer-actions">
+            <button
+              type="submit"
+              className="send-button"
+              disabled={disabled || !draft.trim()}
+            >
+              {streaming ? COPY.sending : COPY.send}
+            </button>
+          </div>
+        </div>
       </form>
       {!employeeId ? (
         <p className="msm-hint" role="status">
           {COPY.loginRequired}
         </p>
       ) : null}
-    </section>
+    </div>
   );
 }

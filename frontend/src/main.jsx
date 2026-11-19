@@ -3501,7 +3501,14 @@ function App() {
 
         <div className="workspace-body">
           {mode === "msm" ? (
-            <MsmMode employeeId={employee?.id} language={language} />
+            <section
+              className="conversation agent-workspace has-conversation"
+              role="tabpanel"
+              aria-label={currentMode.title}
+            >
+              <AgentStatus presence={agentPresence} language={language} />
+              <MsmMode employeeId={employee?.id} language={language} presence={agentPresence} />
+            </section>
           ) : (
           <>
           <section
@@ -3733,6 +3740,8 @@ function App() {
             />
             )}
           </section>
+          </>
+          )}
 
           <aside
             id="source-panel"
@@ -3801,8 +3810,6 @@ function App() {
               )}
             </div>
           </aside>
-          </>
-          )}
         </div>
       </main>
       <SourcePreviewDialog
