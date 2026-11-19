@@ -55,8 +55,8 @@ function terminalError(event) {
   return error;
 }
 
-export async function streamQuery(payload, onEvent, signal, fetchImpl = fetch) {
-  const response = await fetchImpl("/query/stream", {
+export async function streamQuery(payload, onEvent, signal, fetchImpl = fetch, endpoint = "/query/stream") {
+  const response = await fetchImpl(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

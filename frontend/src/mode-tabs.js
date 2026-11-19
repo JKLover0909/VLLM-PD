@@ -1,10 +1,11 @@
-const EMPLOYEE_PROTECTED_MODES = new Set(["mkac", "mes", "wms", "cctvai", "qa"]);
+export const EMPLOYEE_PROTECTED_MODES = new Set(["mkac", "mes", "wms", "cctvai", "qa", "msm"]);
 
 export function visibleModeKeys({ wms = false, cctvai = false, qa = false } = {}) {
   const keys = ["mkac", "mes"];
   if (wms) keys.push("wms");
   if (cctvai) keys.push("cctvai");
   if (qa) keys.push("qa");
+  keys.push("msm");
   keys.push("research");
   return keys;
 }
