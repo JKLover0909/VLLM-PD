@@ -513,6 +513,7 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
     dropCard(turnId, actionId, COPY.cancelled);
   }
 
+  const disabled = !employeeId || streaming;
   const isComposerOpen = turns.length > 0 || showFreeInput;
 
   return (
