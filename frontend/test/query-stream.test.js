@@ -105,3 +105,13 @@ test("uses legacy EOF behavior for non-QA modes", async () => {
   await streamQuery({ mode: "mes" }, (item) => events.push(item), undefined, async () => response);
   assert.equal(events.length, 1);
 });
+
+test("streamQuery posts to the endpoint it is given", async () => {
+  const seen = [];
+  const fetchImpl = async (url) => {
+    seen.push(url);
+    return new Response('data: {"type":"done"}\n\n', { status: 200 });
+  };
+  await streamQuery({ a: 1 }, () => {}, undefined, fetchImpl, "/msm/query/stream");
+  assert.deepEqual(seen, ["/msm/query/stream"]);
+});
