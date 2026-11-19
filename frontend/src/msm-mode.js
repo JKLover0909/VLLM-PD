@@ -18,6 +18,7 @@ export function initialMsmState() {
     views: [],
     forms: [],
     pills: [],
+    artifact: null,
     error: null,
     done: false,
   };
@@ -40,6 +41,7 @@ export function reduceMsmEvent(state, event) {
         views: Array.isArray(result.views) ? result.views : [],
         forms: Array.isArray(result.forms) ? result.forms : [],
         pills: Array.isArray(result.pills) ? result.pills : [],
+        artifact: result.artifact || null,
         done: true,
       };
     }

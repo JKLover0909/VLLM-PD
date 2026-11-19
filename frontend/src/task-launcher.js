@@ -44,6 +44,8 @@ const LABELS = {
     wms: {},
     cctvai: {},
     msm: {
+      "Báo cáo điều hành hiệu chuẩn thiết bị": "Báo cáo điều hành",
+      "機器校正エグゼクティブレポート": "Báo cáo điều hành",
       "Máy nào sắp đến hạn hiệu chuẩn?": "Hạn hiệu chuẩn",
       "Kiểm tra trạng thái thiết bị bộ phận ANNEALING": "Thiết bị ANNEALING",
       "Chuẩn bị form thêm thiết bị mới": "Thêm thiết bị",
@@ -91,6 +93,8 @@ const LABELS = {
     wms: {},
     cctvai: {},
     msm: {
+      "Báo cáo điều hành hiệu chuẩn thiết bị": "エグゼクティブ",
+      "機器校正エグゼクティブレポート": "エグゼクティブ",
       "Máy nào sắp đến hạn hiệu chuẩn?": "校正期限",
       "校正期限が近づいている設備はどれですか？": "校正期限",
       "Kiểm tra trạng thái thiết bị bộ phận ANNEALING": "ANNEALING設備",
@@ -134,6 +138,8 @@ const ICON_KEYS = {
   "Hạn hiệu chuẩn": "clock",
   "Thiết bị ANNEALING": "overview",
   "Thêm thiết bị": "checklist",
+  "Báo cáo điều hành": "report",
+  "エグゼクティブ": "report",
 };
 
 // QA has more Japanese starters than curated Vietnamese labels; pick an icon
@@ -153,6 +159,8 @@ function resolveIconKey(mode, entry, question) {
   if (id && ICON_KEYS[id]) return ICON_KEYS[id];
   const viLabel = LABELS.vi[mode]?.[question];
   if (viLabel && ICON_KEYS[viLabel]) return ICON_KEYS[viLabel];
+  const jaLabel = LABELS.ja?.[mode]?.[question];
+  if (jaLabel && ICON_KEYS[jaLabel]) return ICON_KEYS[jaLabel];
   if (mode === "qa") {
     const rule = QA_ICON_RULES.find(([pattern]) => pattern.test(question));
     if (rule) return rule[1];

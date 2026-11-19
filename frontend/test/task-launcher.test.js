@@ -120,3 +120,12 @@ test("QA icons come from the measured quantity, unknown tasks fall back", () => 
   assert.equal(qa.primary[0].iconKey, "scale");
   assert.equal(qa.other[0].iconKey, "");
 });
+
+test("maps MSM executive report prompt to label and report icon in VI and JA", () => {
+  const vi = buildTaskGroups("msm", ["Báo cáo điều hành hiệu chuẩn thiết bị"], "vi").primary[0];
+  const ja = buildTaskGroups("msm", ["機器校正エグゼクティブレポート"], "ja").primary[0];
+  assert.equal(vi.label, "Báo cáo điều hành");
+  assert.equal(vi.iconKey, "report");
+  assert.equal(ja.label, "エグゼクティブ");
+  assert.equal(ja.iconKey, "report");
+});

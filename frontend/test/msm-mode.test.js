@@ -83,3 +83,13 @@ test("lookupMsmCategory queries lookup endpoint", async () => {
   assert.deepEqual(res, [{ value: "u1", label: "User 1" }]);
 });
 
+
+test("reduceMsmEvent collects artifact from done event", () => {
+  let state = initialMsmState();
+  state = reduceMsmEvent(state, {
+    type: "done",
+    result: { artifact: { id: "art-1", report_type: "msm_executive_report" } }
+  });
+  assert.equal(state.artifact.id, "art-1");
+  assert.equal(state.artifact.report_type, "msm_executive_report");
+});

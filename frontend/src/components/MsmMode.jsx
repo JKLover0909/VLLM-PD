@@ -302,7 +302,7 @@ function MsmForm({ form, employeeId, onSubmit, onCancel }) {
   );
 }
 
-export default function MsmMode({ employeeId, language, presence, onTurnCountChange, onPreviewOpenChange }) {
+export default function MsmMode({ employeeId, language, presence, ReportArtifactCard, onTurnCountChange, onPreviewOpenChange }) {
   const [turns, setTurns] = useState([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -318,6 +318,7 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
   const starterPrompts = useMemo(() => {
     return language === "ja"
       ? [
+          { question: "機器校正エグゼクティブレポート" },
           { question: "校正期限が近づいている設備はどれですか？" },
           { question: "ANNEALING部門の設備状態を確認してください" },
           { question: "新規設備登録フォームを開いてください" },
@@ -328,6 +329,7 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
           { question: "今月の校正計画はどうなっていますか？" },
         ]
       : [
+          { question: "Báo cáo điều hành hiệu chuẩn thiết bị" },
           { question: "Máy nào sắp đến hạn hiệu chuẩn?" },
           { question: "Kiểm tra trạng thái thiết bị bộ phận ANNEALING" },
           { question: "Chuẩn bị form thêm thiết bị mới" },
@@ -593,6 +595,14 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
               <div className="message-content">
                 {turn.answer ? (
                   <ReactMarkdown {...MSM_MARKDOWN_OPTIONS}>{turn.answer}</ReactMarkdown>
+                ) : null}
+                {turn.artifact && ReportArtifactCard ? (
+                  <ReportArtifactCard
+                    artifact={turn.artifact}
+                    language={language}
+                    hideEmail={true}
+                    hideDownload={true}
+                  />
                 ) : null}
                 {!turn.done && !turn.error ? (
                   <div className="msm-progress" role="status">

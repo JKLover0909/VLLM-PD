@@ -234,15 +234,16 @@ function useStagedReportReveal(artifactId, enabled, onStageChange) {
   return (section) => stage > REPORT_SECTION_ORDER.indexOf(section);
 }
 
-function ReportArtifactCard({ artifact, language, onEmail, onRevealStage, animate = false }) {
+function ReportArtifactCard({ artifact, language, onEmail, onRevealStage, animate = false, hideEmail = false, hideDownload = false }) {
   const revealed = useStagedReportReveal(artifact?.id, Boolean(artifact) && animate, onRevealStage);
   if (!artifact) return null;
+  const isMsm = artifact.report_type === "msm_executive_report";
   const isWms = artifact.report_type === "wms_executive_report";
   const isHr = artifact.report_type === "hr_executive_report";
   const isCctvai = artifact.report_type === "cctvai_report";
   const labels = language === "ja"
     ? {
-        badge: isWms ? "WMSレポート" : isHr ? "HRレポート" : isCctvai ? "CCTVAIレポート" : "MESレポート",
+        badge: isMsm ? "MSMレポート" : isWms ? "WMSレポート" : isHr ? "HRレポート" : isCctvai ? "CCTVAIレポート" : "MESレポート",
         governance: "ガバナンス上の注意",
         observations: "数値からの所見",
         limitations: "データの制限",
@@ -251,7 +252,7 @@ function ReportArtifactCard({ artifact, language, onEmail, onRevealStage, animat
         emailAction: "メールで共有",
       }
     : {
-        badge: isWms ? "Báo cáo WMS" : isHr ? "Báo cáo HR" : isCctvai ? "Báo cáo CCTVAI" : "Báo cáo MES",
+        badge: isMsm ? "Báo cáo MSM" : isWms ? "Báo cáo WMS" : isHr ? "Báo cáo HR" : isCctvai ? "Báo cáo CCTVAI" : "Báo cáo MES",
         governance: "Quy tắc Governance & Data Contract",
         observations: "Nhận xét từ số liệu",
         limitations: "Giới hạn dữ liệu",
@@ -390,7 +391,7 @@ function ReportArtifactCard({ artifact, language, onEmail, onRevealStage, animat
       )}
 
       {revealed("tables") && artifact.sections?.some((section) => section.rows?.length > 0) && (
-        <details className="report-tables">
+        <details className="report-tables" open={isMsm ? true : undefined}>
           <summary>{labels.details}</summary>
           {artifact.sections.map((section) => section.rows?.length > 0 && (
             <div className="report-table-block" key={section.id}>
@@ -424,22 +425,24 @@ function ReportArtifactCard({ artifact, language, onEmail, onRevealStage, animat
         </details>
       )}
 
-      {revealed("actions") && (
+      {revealed("actions") && (!hideDownload && artifact.download_url || !hideEmail) && (
       <div className="report-actions">
-        {artifact.download_url && (
+        {!hideDownload && artifact.download_url && (
           <a className="report-download" href={artifact.download_url} target="_blank" rel="noopener noreferrer">
             <ExternalLink size={16} aria-hidden="true" />
             {labels.download}
           </a>
         )}
-        <button
-          className="report-email-action"
-          type="button"
-          onClick={() => onEmail?.({ artifactId: artifact.id, language })}
-        >
-          <Mail size={16} aria-hidden="true" />
-          {labels.emailAction}
-        </button>
+        {!hideEmail && (
+          <button
+            className="report-email-action"
+            type="button"
+            onClick={() => onEmail?.({ artifactId: artifact.id, language })}
+          >
+            <Mail size={16} aria-hidden="true" />
+            {labels.emailAction}
+          </button>
+        )}
       </div>
       )}
     </section>
@@ -477,6 +480,7 @@ const QUICK_PROMPTS = {
     ],
     qa: QA_STARTER_PROMPTS,
     msm: [
+      "Báo cáo điều hành hiệu chuẩn thiết bị",
       "Máy nào sắp đến hạn hiệu chuẩn?",
       "Kiểm tra trạng thái thiết bị bộ phận ANNEALING",
       "Chuẩn bị form thêm thiết bị mới",
@@ -511,6 +515,7 @@ const QUICK_PROMPTS = {
     // Agent QA nhận tiếng Việt; nhãn Nhật được map riêng trước khi gửi câu Việt.
     qa: getQaStarterPrompts("ja").map((item) => item.label),
     msm: [
+      "機器校正エグゼクティブレポート",
       "校正期限が近づいている設備はどれですか？",
       "ANNEALING部門の設備状態を確認してください",
       "新規設備登録フォームを開いてください",
@@ -3540,6 +3545,7 @@ function App() {
                 employeeId={employee?.id}
                 language={language}
                 presence={agentPresence}
+                ReportArtifactCard={ReportArtifactCard}
                 onTurnCountChange={setMsmTurnCount}
                 onPreviewOpenChange={setMsmPreviewOpen}
               />
