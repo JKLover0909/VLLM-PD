@@ -129,3 +129,45 @@ test("maps MSM executive report prompt to label and report icon in VI and JA", (
   assert.equal(ja.label, "エグゼクティブ");
   assert.equal(ja.iconKey, "report");
 });
+
+test("maps all 4 MSM starter prompts to labels and icons in VI and JA", () => {
+  const viPrompts = [
+    "Báo cáo điều hành hiệu chuẩn thiết bị",
+    "Danh mục việc khẩn cấp cần xử lý ngay",
+    "Dự báo tải hiệu chuẩn 12 tháng tới",
+    "Chuẩn bị form thêm thiết bị mới",
+  ];
+  const vi = buildTaskGroups("msm", viPrompts, "vi");
+  assert.deepEqual(vi.primary.map((item) => item.label), [
+    "Báo cáo điều hành",
+    "Việc khẩn cấp",
+    "Dự báo 12 tháng",
+    "Thêm thiết bị",
+  ]);
+  assert.deepEqual(vi.primary.map((item) => item.iconKey), [
+    "report",
+    "alert",
+    "clock",
+    "checklist",
+  ]);
+
+  const jaPrompts = [
+    "機器校正エグゼクティブレポート",
+    "至急対応が必要な校正タスク一覧",
+    "今後12ヶ月の校正負荷予測",
+    "新規設備登録フォームを開いてください",
+  ];
+  const ja = buildTaskGroups("msm", jaPrompts, "ja");
+  assert.deepEqual(ja.primary.map((item) => item.label), [
+    "エグゼクティブ",
+    "緊急タスク",
+    "12ヶ月予測",
+    "新規登録",
+  ]);
+  assert.deepEqual(ja.primary.map((item) => item.iconKey), [
+    "report",
+    "alert",
+    "clock",
+    "checklist",
+  ]);
+});

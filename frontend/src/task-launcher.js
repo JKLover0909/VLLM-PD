@@ -46,9 +46,12 @@ const LABELS = {
     msm: {
       "Báo cáo điều hành hiệu chuẩn thiết bị": "Báo cáo điều hành",
       "機器校正エグゼクティブレポート": "Báo cáo điều hành",
-      "Máy nào sắp đến hạn hiệu chuẩn?": "Hạn hiệu chuẩn",
-      "Kiểm tra trạng thái thiết bị bộ phận ANNEALING": "Thiết bị ANNEALING",
+      "Danh mục việc khẩn cấp cần xử lý ngay": "Việc khẩn cấp",
+      "至急対応が必要な校正タスク一覧": "Việc khẩn cấp",
+      "Dự báo tải hiệu chuẩn 12 tháng tới": "Dự báo 12 tháng",
+      "今後12ヶ月の校正負荷予測": "Dự báo 12 tháng",
       "Chuẩn bị form thêm thiết bị mới": "Thêm thiết bị",
+      "新規設備登録フォームを開いてください": "Thêm thiết bị",
     },
     research: {
       "Lập báo cáo nghiên cứu tổng hợp từ các tài liệu": "Báo cáo tổng hợp",
@@ -95,10 +98,10 @@ const LABELS = {
     msm: {
       "Báo cáo điều hành hiệu chuẩn thiết bị": "エグゼクティブ",
       "機器校正エグゼクティブレポート": "エグゼクティブ",
-      "Máy nào sắp đến hạn hiệu chuẩn?": "校正期限",
-      "校正期限が近づいている設備はどれですか？": "校正期限",
-      "Kiểm tra trạng thái thiết bị bộ phận ANNEALING": "ANNEALING設備",
-      "ANNEALING部門の設備状態を確認してください": "ANNEALING設備",
+      "Danh mục việc khẩn cấp cần xử lý ngay": "緊急タスク",
+      "至急対応が必要な校正タスク一覧": "緊急タスク",
+      "Dự báo tải hiệu chuẩn 12 tháng tới": "12ヶ月予測",
+      "今後12ヶ月の校正負荷予測": "12ヶ月予測",
       "Chuẩn bị form thêm thiết bị mới": "新規登録",
       "新規設備登録フォームを開いてください": "新規登録",
     },
@@ -138,8 +141,13 @@ const ICON_KEYS = {
   "Hạn hiệu chuẩn": "clock",
   "Thiết bị ANNEALING": "overview",
   "Thêm thiết bị": "checklist",
+  "新規登録": "checklist",
   "Báo cáo điều hành": "report",
   "エグゼクティブ": "report",
+  "Việc khẩn cấp": "alert",
+  "緊急タスク": "alert",
+  "Dự báo 12 tháng": "clock",
+  "12ヶ月予測": "clock",
 };
 
 // QA has more Japanese starters than curated Vietnamese labels; pick an icon

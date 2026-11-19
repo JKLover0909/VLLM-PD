@@ -481,8 +481,8 @@ const QUICK_PROMPTS = {
     qa: QA_STARTER_PROMPTS,
     msm: [
       "Báo cáo điều hành hiệu chuẩn thiết bị",
-      "Máy nào sắp đến hạn hiệu chuẩn?",
-      "Kiểm tra trạng thái thiết bị bộ phận ANNEALING",
+      "Danh mục việc khẩn cấp cần xử lý ngay",
+      "Dự báo tải hiệu chuẩn 12 tháng tới",
       "Chuẩn bị form thêm thiết bị mới",
     ],
     research: [
@@ -516,8 +516,8 @@ const QUICK_PROMPTS = {
     qa: getQaStarterPrompts("ja").map((item) => item.label),
     msm: [
       "機器校正エグゼクティブレポート",
-      "校正期限が近づいている設備はどれですか？",
-      "ANNEALING部門の設備状態を確認してください",
+      "至急対応が必要な校正タスク一覧",
+      "今後12ヶ月の校正負荷予測",
       "新規設備登録フォームを開いてください",
     ],
     research: [

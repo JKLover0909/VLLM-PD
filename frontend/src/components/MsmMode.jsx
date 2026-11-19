@@ -110,52 +110,95 @@ function MsmTableView({ view }) {
   );
 }
 
-function LookupInput({ field, value, onChange, employeeId, hasError }) {
+function WizardLookupField({ field, value, onChange, employeeId, hasError, onKeyDown, inputRef }) {
   const [options, setOptions] = useState([]);
-  const listId = `lookup-${field.name}`;
+  const [search, setSearch] = useState("");
+  const source = field?.source || field?.lookup;
 
   React.useEffect(() => {
     let active = true;
-    lookupMsmCategory({ kind: field.source, q: "", employeeId }).then((items) => {
-      if (active && Array.isArray(items)) {
-        setOptions(items);
-      }
-    }).catch(() => {});
+    if (source) {
+      lookupMsmCategory({ kind: source, q: "", employeeId })
+        .then((items) => {
+          if (active && Array.isArray(items)) {
+            setOptions(items);
+          }
+        })
+        .catch(() => {});
+    } else if (Array.isArray(field?.options)) {
+      setOptions(
+        field.options.map((opt) =>
+          typeof opt === "object" && opt !== null
+            ? opt
+            : { value: opt, label: field.option_labels?.[opt] || opt }
+        )
+      );
+    }
     return () => {
       active = false;
     };
-  }, [field.source, employeeId]);
+  }, [source, employeeId, field?.options]);
+
+  const filtered = search.trim()
+    ? options.filter((opt) => {
+        const text = `${opt.label || ""} ${opt.value || ""}`.toLowerCase();
+        return text.includes(search.toLowerCase());
+      })
+    : options;
 
   return (
-    <>
+    <div className="msm-wizard-lookup">
       <input
+        ref={inputRef}
         type="text"
-        list={listId}
-        id={`field-${field.name}`}
-        className={`msm-form-input ${hasError ? "has-error" : ""}`}
-        value={value || ""}
-        placeholder={`Chọn hoặc gõ ${field.label.toLowerCase()}`}
-        onChange={(e) => onChange(e.target.value)}
+        id={`wizard-${field.name || field.key}`}
+        className={`msm-form-input msm-wizard-input ${hasError ? "has-error" : ""}`}
+        value={value ?? ""}
+        placeholder={field.placeholder || `Tìm hoặc chọn ${(field.title || field.label || field.name || field.key || "").toLowerCase()}...`}
+        autoFocus
+        onChange={(e) => {
+          onChange(e.target.value);
+          setSearch(e.target.value);
+        }}
+        onKeyDown={onKeyDown}
       />
-      <datalist id={listId}>
-        {options.map((opt, idx) => (
-          <option key={`${opt.value}-${idx}`} value={opt.value}>
-            {opt.label || opt.value}
-          </option>
-        ))}
-      </datalist>
-    </>
+      {filtered.length > 0 ? (
+        <div className="msm-wizard-suggestions">
+          <span className="msm-wizard-suggestions-label">Gợi ý nhanh:</span>
+          <div className="msm-wizard-suggestion-chips">
+            {filtered.slice(0, 10).map((opt) => {
+              const isSelected = value === opt.value;
+              return (
+                <button
+                  key={String(opt.value)}
+                  type="button"
+                  className={`msm-wizard-suggestion-chip ${isSelected ? "selected" : ""}`}
+                  onClick={() => {
+                    onChange(opt.value);
+                    inputRef.current?.focus();
+                  }}
+                >
+                  {opt.label || opt.value}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
 function MsmForm({ form, employeeId, onSubmit, onCancel }) {
   const schema = form?.schema || {};
   const fields = Array.isArray(schema.fields) ? schema.fields : [];
+  const [currentStep, setCurrentStep] = useState(0);
   const [values, setValues] = useState(() => {
     const init = { ...(form?.initial || {}) };
     for (const f of fields) {
-      if (init[f.name] === undefined && f.default !== null && f.default !== undefined) {
-        init[f.name] = f.default;
+      const k = f.name || f.key;
+      if (init[k] === undefined && f.default !== null && f.default !== undefined) {
+        init[k] = f.default;
       }
     }
     return init;
@@ -163,37 +206,67 @@ function MsmForm({ form, employeeId, onSubmit, onCancel }) {
   const [errors, setErrors] = useState(() => form?.errors || {});
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const inputRef = useRef(null);
 
-  function handleChange(name, val) {
-    setValues((prev) => ({ ...prev, [name]: val }));
-    if (errors[name]) {
+  const safeStep = Math.min(Math.max(0, currentStep), Math.max(0, fields.length - 1));
+  const field = fields[safeStep];
+  const fieldKey = field?.name || field?.key || "";
+  const fieldTitle = field?.title || field?.label || field?.name || field?.key || "";
+  const isRequired = Boolean(field?.required);
+  const isLastStep = safeStep >= fields.length - 1;
+
+  React.useEffect(() => {
+    inputRef.current?.focus();
+  }, [safeStep]);
+
+  function handleChange(key, val) {
+    setValues((prev) => ({ ...prev, [key]: val }));
+    if (errors[key]) {
       setErrors((prev) => {
         const next = { ...prev };
-        delete next[name];
+        delete next[key];
         return next;
       });
     }
   }
 
-  async function handleSubmit(event) {
-    event.preventDefault();
+  function validateStep(idx, targetValues = values) {
+    const f = fields[idx];
+    if (!f) return null;
+    const k = f.name || f.key;
+    const val = targetValues[k];
+    if (f.required && (val === undefined || val === null || String(val).trim() === "")) {
+      return COPY.fieldRequired;
+    }
+    return null;
+  }
+
+  async function submitFormWithValues(targetValues = values) {
     const newErrors = {};
-    for (const f of fields) {
-      if (f.required && (values[f.name] === undefined || values[f.name] === null || String(values[f.name]).trim() === "")) {
-        newErrors[f.name] = COPY.fieldRequired;
+    let firstErrStep = -1;
+    for (let i = 0; i < fields.length; i++) {
+      const err = validateStep(i, targetValues);
+      if (err) {
+        const k = fields[i].name || fields[i].key;
+        newErrors[k] = err;
+        if (firstErrStep === -1) firstErrStep = i;
       }
     }
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
+      if (firstErrStep !== -1) setCurrentStep(firstErrStep);
       return;
     }
     setSubmitting(true);
     setFormError("");
     try {
-      await onSubmit(form.kind, values);
+      await onSubmit(form.kind, targetValues);
     } catch (err) {
       if (err.errors) {
         setErrors(err.errors);
+        const firstErrKey = Object.keys(err.errors)[0];
+        const errIdx = fields.findIndex((f) => (f.name || f.key) === firstErrKey);
+        if (errIdx >= 0) setCurrentStep(errIdx);
       }
       setFormError(err.message || COPY.requestFailed);
     } finally {
@@ -201,99 +274,219 @@ function MsmForm({ form, employeeId, onSubmit, onCancel }) {
     }
   }
 
-  return (
-    <form className="msm-form-card" onSubmit={handleSubmit} noValidate>
-      <h3 className="msm-form-title">{schema.title || form.kind || COPY.formTitle}</h3>
-      {formError ? <div className="msm-form-general-error" role="alert">{formError}</div> : null}
-      <div className="msm-form-grid">
-        {fields.map((field) => {
-          const hasError = Boolean(errors[field.name]);
-          return (
-            <div className="msm-form-group" key={field.name}>
-              <label htmlFor={`field-${field.name}`}>
-                {field.label}
-                {field.required ? <span className="required">*</span> : null}
-              </label>
-              {field.source ? (
-                <LookupInput
-                  field={field}
-                  value={values[field.name]}
-                  employeeId={employeeId}
-                  hasError={hasError}
-                  onChange={(val) => handleChange(field.name, val)}
-                />
-              ) : field.type === "select" && Array.isArray(field.options) ? (
-                <select
-                  id={`field-${field.name}`}
-                  className={`msm-form-select ${hasError ? "has-error" : ""}`}
-                  value={values[field.name] ?? ""}
-                  onChange={(e) => handleChange(field.name, e.target.value)}
-                >
-                  <option value="">-- Chọn {field.label} --</option>
-                  {field.options.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {field.option_labels?.[opt] || opt}
-                    </option>
-                  ))}
-                </select>
-              ) : field.type === "bool" ? (
-                <select
-                  id={`field-${field.name}`}
-                  className={`msm-form-select ${hasError ? "has-error" : ""}`}
-                  value={values[field.name] ? "true" : "false"}
-                  onChange={(e) => handleChange(field.name, e.target.value === "true")}
-                >
-                  <option value="true">Có / Đạt</option>
-                  <option value="false">Không</option>
-                </select>
-              ) : field.type === "date" ? (
-                <input
-                  type="date"
-                  id={`field-${field.name}`}
-                  className={`msm-form-input ${hasError ? "has-error" : ""}`}
-                  value={values[field.name] || ""}
-                  onChange={(e) => handleChange(field.name, e.target.value)}
-                />
-              ) : field.type === "int" ? (
-                <input
-                  type="number"
-                  id={`field-${field.name}`}
-                  className={`msm-form-input ${hasError ? "has-error" : ""}`}
-                  value={values[field.name] ?? ""}
-                  onChange={(e) => handleChange(field.name, e.target.value === "" ? "" : Number(e.target.value))}
-                />
-              ) : (
-                <input
-                  type="text"
-                  id={`field-${field.name}`}
-                  className={`msm-form-input ${hasError ? "has-error" : ""}`}
-                  value={values[field.name] ?? ""}
-                  readOnly={Boolean(field.readonly)}
-                  onChange={(e) => handleChange(field.name, e.target.value)}
-                />
-              )}
-              {hasError ? (
-                <span className="msm-form-error" role="alert">
-                  {errors[field.name]}
-                </span>
-              ) : null}
-            </div>
-          );
-        })}
+  function handleNext() {
+    const err = validateStep(safeStep);
+    if (err) {
+      setErrors((prev) => ({ ...prev, [fieldKey]: err }));
+      return;
+    }
+    if (!isLastStep) {
+      setCurrentStep((s) => s + 1);
+    } else {
+      submitFormWithValues();
+    }
+  }
+
+  function handleKeyDown(event) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      handleNext();
+    }
+  }
+
+  function handleChoiceClick(optValue) {
+    handleChange(fieldKey, optValue);
+    const nextValues = { ...values, [fieldKey]: optValue };
+    if (!isLastStep) {
+      setCurrentStep((s) => s + 1);
+    } else {
+      submitFormWithValues(nextValues);
+    }
+  }
+
+  if (fields.length === 0) {
+    return (
+      <div className="msm-form-card msm-wizard">
+        <h3 className="msm-form-title">{schema.title || form.kind || COPY.formTitle}</h3>
+        {formError ? <div className="msm-form-general-error" role="alert">{formError}</div> : null}
+        <div className="msm-wizard-actions">
+          <button
+            type="button"
+            className="msm-wizard-btn msm-wizard-next"
+            disabled={submitting}
+            onClick={() => submitFormWithValues()}
+          >
+            {submitting ? COPY.formSubmitting : "Hoàn tất"}
+          </button>
+          <button
+            type="button"
+            className="msm-wizard-btn msm-wizard-cancel"
+            onClick={onCancel}
+            disabled={submitting}
+          >
+            {COPY.formCancel}
+          </button>
+        </div>
       </div>
-      <div className="msm-form-actions">
+    );
+  }
+
+  const isLookup = Boolean(field?.source || field?.lookup || field?.datalist || field?.type === "lookup");
+  const isChoice = !isLookup && Boolean(
+    field?.type === "bool" ||
+    field?.type === "boolean" ||
+    (Array.isArray(field?.enum) && field.enum.length > 0) ||
+    (Array.isArray(field?.options) && field.options.length > 0)
+  );
+
+  let choiceOptions = [];
+  if (isChoice) {
+    if (field.type === "bool" || field.type === "boolean") {
+      choiceOptions = [
+        { value: true, label: "Có / Đạt" },
+        { value: false, label: "Không" },
+      ];
+    } else if (Array.isArray(field.enum)) {
+      choiceOptions = field.enum.map((opt) =>
+        typeof opt === "object" && opt !== null ? opt : { value: opt, label: field.option_labels?.[opt] || opt }
+      );
+    } else if (Array.isArray(field.options)) {
+      choiceOptions = field.options.map((opt) =>
+        typeof opt === "object" && opt !== null ? opt : { value: opt, label: field.option_labels?.[opt] || opt }
+      );
+    }
+  }
+
+  const hasError = Boolean(errors[fieldKey]);
+
+  return (
+    <form
+      className="msm-form-card msm-wizard"
+      onSubmit={(e) => {
+        e.preventDefault();
+        handleNext();
+      }}
+      noValidate
+    >
+      <div className="msm-wizard-header">
+        <h3 className="msm-form-title">{schema.title || form.kind || COPY.formTitle}</h3>
+        <div className="msm-wizard-step">
+          [Bước {safeStep + 1}/{fields.length}]: {fieldTitle}
+          {isRequired ? <span className="required"> *</span> : null}
+        </div>
+        {fields.length > 1 ? (
+          <div
+            className="msm-wizard-progress"
+            role="progressbar"
+            aria-valuenow={safeStep + 1}
+            aria-valuemin={1}
+            aria-valuemax={fields.length}
+          >
+            <div
+              className="msm-wizard-progress-bar"
+              style={{ width: `${((safeStep + 1) / fields.length) * 100}%` }}
+            />
+          </div>
+        ) : null}
+      </div>
+
+      {formError ? <div className="msm-form-general-error" role="alert">{formError}</div> : null}
+
+      <div className="msm-wizard-body">
+        {field.description ? (
+          <p className="msm-wizard-field-desc">{field.description}</p>
+        ) : null}
+
+        {isChoice ? (
+          <div className="msm-wizard-options" role="radiogroup" aria-label={fieldTitle}>
+            {choiceOptions.map((opt) => {
+              const isSelected = values[fieldKey] === opt.value;
+              return (
+                <button
+                  key={String(opt.value)}
+                  type="button"
+                  className={`msm-wizard-option-btn ${isSelected ? "selected" : ""}`}
+                  onClick={() => handleChoiceClick(opt.value)}
+                  disabled={submitting}
+                >
+                  <span className="msm-wizard-option-check">{isSelected ? "●" : "○"}</span>
+                  <span className="msm-wizard-option-text">{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : isLookup ? (
+          <WizardLookupField
+            field={field}
+            value={values[fieldKey]}
+            employeeId={employeeId}
+            hasError={hasError}
+            inputRef={inputRef}
+            onChange={(val) => handleChange(fieldKey, val)}
+            onKeyDown={handleKeyDown}
+          />
+        ) : (
+          <input
+            ref={inputRef}
+            type={
+              field.type === "date"
+                ? "date"
+                : field.type === "int" || field.type === "number" || field.type === "float"
+                  ? "number"
+                  : "text"
+            }
+            id={`wizard-${fieldKey}`}
+            className={`msm-form-input msm-wizard-input ${hasError ? "has-error" : ""}`}
+            value={values[fieldKey] ?? ""}
+            readOnly={Boolean(field.readonly)}
+            placeholder={field.placeholder || `Nhập ${fieldTitle.toLowerCase()}...`}
+            autoFocus
+            onChange={(e) => {
+              const raw = e.target.value;
+              const val =
+                field.type === "int" || field.type === "number"
+                  ? raw === "" ? "" : Number(raw)
+                  : raw;
+              handleChange(fieldKey, val);
+            }}
+            onKeyDown={handleKeyDown}
+          />
+        )}
+
+        {hasError ? (
+          <span className="msm-form-error" role="alert" style={{ display: "block", marginTop: "6px" }}>
+            {errors[fieldKey]}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="msm-wizard-actions">
+        {safeStep > 0 ? (
+          <button
+            type="button"
+            className="msm-wizard-btn msm-wizard-back"
+            onClick={() => setCurrentStep((s) => Math.max(0, s - 1))}
+            disabled={submitting}
+          >
+            ← Quay lại
+          </button>
+        ) : null}
         <button
           type="submit"
-          className="msm-form-submit"
+          className="msm-wizard-btn msm-wizard-next"
           disabled={submitting}
         >
-          {submitting ? COPY.formSubmitting : COPY.formSubmit}
+          {submitting
+            ? COPY.formSubmitting
+            : isLastStep
+              ? "Hoàn tất"
+              : "Tiếp tục (Enter ⏎)"}
         </button>
         <button
           type="button"
-          className="msm-form-cancel"
-          disabled={submitting}
+          className="msm-wizard-btn msm-wizard-cancel"
           onClick={onCancel}
+          disabled={submitting}
         >
           {COPY.formCancel}
         </button>
@@ -319,9 +512,11 @@ export default function MsmMode({ employeeId, language, presence, ReportArtifact
     return language === "ja"
       ? [
           { question: "機器校正エグゼクティブレポート" },
+          { question: "至急対応が必要な校正タスク一覧" },
+          { question: "今後12ヶ月の校正負荷予測" },
+          { question: "新規設備登録フォームを開いてください" },
           { question: "校正期限が近づいている設備はどれですか？" },
           { question: "ANNEALING部門の設備状態を確認してください" },
-          { question: "新規設備登録フォームを開いてください" },
           { question: "本日の機器サマリーを教えてください" },
           { question: "本日の設備全体状況はどうなっていますか？" },
           { question: "校正期限が切れている設備はありますか？" },
@@ -330,9 +525,11 @@ export default function MsmMode({ employeeId, language, presence, ReportArtifact
         ]
       : [
           { question: "Báo cáo điều hành hiệu chuẩn thiết bị" },
+          { question: "Danh mục việc khẩn cấp cần xử lý ngay" },
+          { question: "Dự báo tải hiệu chuẩn 12 tháng tới" },
+          { question: "Chuẩn bị form thêm thiết bị mới" },
           { question: "Máy nào sắp đến hạn hiệu chuẩn?" },
           { question: "Kiểm tra trạng thái thiết bị bộ phận ANNEALING" },
-          { question: "Chuẩn bị form thêm thiết bị mới" },
           { question: "Bản tin hôm nay của tôi có gì?" },
           { question: "Tổng quan thiết bị hôm nay" },
           { question: "Máy nào đã quá hạn hiệu chuẩn?" },
