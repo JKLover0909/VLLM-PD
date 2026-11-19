@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  EMPLOYEE_PROTECTED_MODES,
   shouldClearEmployeeAuth,
   visibleModeKeys,
   isCctvaiAvailable,
@@ -9,16 +10,21 @@ import {
 } from "../src/mode-tabs.js";
 
 test("shows QA only when enabled and keeps it visible during agent outages", () => {
-  assert.deepEqual(visibleModeKeys(), ["mkac", "mes", "research"]);
-  assert.deepEqual(visibleModeKeys({ qa: true }), ["mkac", "mes", "qa", "research"]);
-  assert.deepEqual(visibleModeKeys({ qa: true, wms: true }), ["mkac", "mes", "wms", "qa", "research"]);
+  assert.deepEqual(visibleModeKeys(), ["mkac", "mes", "msm", "research"]);
+  assert.deepEqual(visibleModeKeys({ qa: true }), ["mkac", "mes", "qa", "msm", "research"]);
+  assert.deepEqual(visibleModeKeys({ qa: true, wms: true }), ["mkac", "mes", "wms", "qa", "msm", "research"]);
 });
 
 test("hides WMS and CCTVAI until available", () => {
-  assert.deepEqual(visibleModeKeys(), ["mkac", "mes", "research"]);
-  assert.deepEqual(visibleModeKeys({ wms: true }), ["mkac", "mes", "wms", "research"]);
-  assert.deepEqual(visibleModeKeys({ cctvai: true }), ["mkac", "mes", "cctvai", "research"]);
-  assert.deepEqual(visibleModeKeys({ wms: true, cctvai: true }), ["mkac", "mes", "wms", "cctvai", "research"]);
+  assert.deepEqual(visibleModeKeys(), ["mkac", "mes", "msm", "research"]);
+  assert.deepEqual(visibleModeKeys({ wms: true }), ["mkac", "mes", "wms", "msm", "research"]);
+  assert.deepEqual(visibleModeKeys({ cctvai: true }), ["mkac", "mes", "cctvai", "msm", "research"]);
+  assert.deepEqual(visibleModeKeys({ wms: true, cctvai: true }), ["mkac", "mes", "wms", "cctvai", "msm", "research"]);
+});
+
+test("msm is always visible and employee protected", () => {
+  assert.ok(visibleModeKeys({}).includes("msm"));
+  assert.ok(EMPLOYEE_PROTECTED_MODES.has("msm"));
 });
 
 test("cctvai is available when either database or hardware is available", () => {
@@ -53,6 +59,7 @@ test("keeps the CCTVAI tab visible and does not force switching when only hardwa
     "mkac",
     "mes",
     "cctvai",
+    "msm",
     "research",
   ]);
 });
@@ -62,7 +69,7 @@ test("hides the CCTVAI tab only when both database and hardware are unavailable"
   const hardware = { available: false, enabled: false, state: "UNAVAILABLE" };
   const available = isCctvaiAvailable({ database, hardware });
   assert.equal(available, false);
-  assert.deepEqual(visibleModeKeys({ cctvai: available }), ["mkac", "mes", "research"]);
+  assert.deepEqual(visibleModeKeys({ cctvai: available }), ["mkac", "mes", "msm", "research"]);
 });
 
 test("keeps the database outage warning accurate regardless of hardware status", () => {
@@ -118,7 +125,7 @@ test("does not warn about hardware monitoring that is switched off", () => {
 });
 
 test("clears stale employee auth for protected query modes", () => {
-  for (const mode of ["mkac", "mes", "wms", "cctvai", "qa"]) {
+  for (const mode of ["mkac", "mes", "wms", "cctvai", "qa", "msm"]) {
     assert.equal(
       shouldClearEmployeeAuth({
         status: 403,

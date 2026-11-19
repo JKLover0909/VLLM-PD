@@ -9,6 +9,7 @@ import IntroSplash from "./components/IntroSplash.jsx";
 import { canAnimate, prefersReducedMotion, runViewTransition } from "./motion.js";
 import { THEME_DEFAULT, THEME_MIGRATION_KEY, resolveStoredTheme } from "./theme-preference.js";
 import TaskLauncher from "./components/TaskLauncher.jsx";
+import MsmMode from "./components/MsmMode.jsx";
 import { buildTaskGroups, prepareTaskRun } from "./task-launcher.js";
 import { resolveAgentPresence } from "./agent-presence.js";
 
@@ -631,6 +632,21 @@ const UI_TEXT = {
         unavailable: "Dữ liệu CCTVAI chưa khả dụng",
         hardwareUnavailable: "Giám sát phần cứng server CCTVAI chưa khả dụng",
       },
+      msm: {
+        label: "Quản lý thiết bị MSM",
+        shortLabel: "MSM",
+        title: "Hỏi đáp quản lý thiết bị MSM",
+        empty: "Tra cứu máy, hạn hiệu chuẩn, kế hoạch MSA và trạng thái thiết bị từ MSM.",
+        metric: "Dữ liệu MSM",
+        authHint: "Nhập mã nhân viên để truy cập dữ liệu thiết bị MSM.",
+        inputLabel: "Câu hỏi về thiết bị MSM",
+        placeholder: "Hỏi theo mã máy hoặc bộ phận, ví dụ: máy nào quá hạn hiệu chuẩn?",
+        guidance: "Agent trả lời bằng tiếng Việt và hiểu câu hỏi nối tiếp trong cùng cuộc trò chuyện. Thao tác ghi chỉ được thực hiện sau khi bạn bấm Xác nhận trên thẻ chờ.",
+        unavailable: "Dữ liệu MSM hiện chưa khả dụng. Vui lòng thử lại sau.",
+        misconfigured: "Chế độ MSM chưa được cấu hình. Vui lòng liên hệ quản trị viên.",
+        // MODE_OPTIONS không có khoá msm, header lấy biểu tượng qua modeText().
+        icon: Server,
+      },
       research: {
         label: "Nghiên cứu tài liệu",
         shortLabel: "Nghiên cứu",
@@ -954,6 +970,20 @@ const UI_TEXT = {
         placeholder: "違反イベント、カメラ、ラインについて質問...",
         unavailable: "CCTVAIデータはまだ利用できません",
         hardwareUnavailable: "CCTVAIサーバーのハードウェア監視はまだ利用できません",
+      },
+      msm: {
+        label: "MSM設備管理",
+        shortLabel: "MSM",
+        title: "MSM設備管理の質問応答",
+        empty: "MSMから設備、校正期限、MSA計画、設備状態を検索します。",
+        metric: "MSMデータ",
+        authHint: "MSM設備データにアクセスするには社員番号を入力してください。",
+        inputLabel: "MSM設備に関する質問",
+        placeholder: "設備コードまたは部署で質問してください（例: 校正期限を過ぎた設備は？）",
+        guidance: "Agentはベトナム語で回答し、同じ会話内の続けての質問を理解します。書き込み操作は確認カードで「確認」を押した後にのみ実行されます。",
+        unavailable: "MSMデータは現在利用できません。後でもう一度お試しください。",
+        misconfigured: "MSMモードが設定されていません。管理者にお問い合わせください。",
+        icon: Server,
       },
       research: {
         label: "資料調査",
@@ -3468,6 +3498,10 @@ function App() {
         )}
 
         <div className="workspace-body">
+          {mode === "msm" ? (
+            <MsmMode employeeId={employee?.id} language={language} />
+          ) : (
+          <>
           <section
             id={`${mode}-conversation`}
             className={`conversation agent-workspace ${messages.length ? "has-conversation" : "is-welcome"}`}
@@ -3765,6 +3799,8 @@ function App() {
               )}
             </div>
           </aside>
+          </>
+          )}
         </div>
       </main>
       <SourcePreviewDialog
