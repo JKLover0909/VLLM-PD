@@ -43,6 +43,11 @@ const LABELS = {
     },
     wms: {},
     cctvai: {},
+    msm: {
+      "Máy nào sắp đến hạn hiệu chuẩn?": "Hạn hiệu chuẩn",
+      "Kiểm tra trạng thái thiết bị bộ phận ANNEALING": "Thiết bị ANNEALING",
+      "Chuẩn bị form thêm thiết bị mới": "Thêm thiết bị",
+    },
     research: {
       "Lập báo cáo nghiên cứu tổng hợp từ các tài liệu": "Báo cáo tổng hợp",
       "So sánh các quan điểm và chỉ ra điểm mâu thuẫn": "So sánh tài liệu",
@@ -85,6 +90,14 @@ const LABELS = {
     },
     wms: {},
     cctvai: {},
+    msm: {
+      "Máy nào sắp đến hạn hiệu chuẩn?": "校正期限",
+      "校正期限が近づいている設備はどれですか？": "校正期限",
+      "Kiểm tra trạng thái thiết bị bộ phận ANNEALING": "ANNEALING設備",
+      "ANNEALING部門の設備状態を確認してください": "ANNEALING設備",
+      "Chuẩn bị form thêm thiết bị mới": "新規登録",
+      "新規設備登録フォームを開いてください": "新規登録",
+    },
     research: {
       "Lập báo cáo nghiên cứu tổng hợp từ các tài liệu": "総合レポート",
       "So sánh các quan điểm và chỉ ra điểm mâu thuẫn": "資料を比較",
@@ -118,6 +131,9 @@ const ICON_KEYS = {
   "Hạng mục phiếu": "checklist",
   "Nhiệt độ I120-01": "temperature",
   "Áp lực B302-01": "gauge",
+  "Hạn hiệu chuẩn": "clock",
+  "Thiết bị ANNEALING": "overview",
+  "Thêm thiết bị": "checklist",
 };
 
 // QA has more Japanese starters than curated Vietnamese labels; pick an icon

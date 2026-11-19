@@ -1,6 +1,9 @@
-import React, { useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { Bot, Send, Square } from "lucide-react";
 import AgentPresence from "./AgentPresence.jsx";
+import TaskLauncher from "./TaskLauncher.jsx";
+import { buildTaskGroups } from "../task-launcher.js";
 import { getMessageMarkdownOptions } from "../markdown-tables";
 import {
   buildMsmPayload,
@@ -23,6 +26,7 @@ const COPY = {
   inputLabel: "Câu hỏi về thiết bị MSM",
   placeholder: "Hỏi theo mã máy hoặc bộ phận, ví dụ: máy nào quá hạn hiệu chuẩn?",
   send: "Gửi",
+  stop: "Dừng",
   sending: "Đang trả lời",
   processing: "Đang xử lý",
   chainTitle: "Các bước sẽ gọi",
@@ -303,8 +307,31 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [cardState, setCardState] = useState({});
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [taskPreviewDraft, setTaskPreviewDraft] = useState("");
+  const [showFreeInput, setShowFreeInput] = useState(false);
+  const [taskInfoOpen, setTaskInfoOpen] = useState(false);
   const sessionIdRef = useRef("");
   const abortRef = useRef(null);
+
+  const starterPrompts = useMemo(() => {
+    return language === "ja"
+      ? [
+          { question: "校正期限が近づいている設備はどれですか？" },
+          { question: "ANNEALING部門の設備状態を確認してください" },
+          { question: "新規設備登録フォームを開いてください" },
+        ]
+      : [
+          { question: "Máy nào sắp đến hạn hiệu chuẩn?" },
+          { question: "Kiểm tra trạng thái thiết bị bộ phận ANNEALING" },
+          { question: "Chuẩn bị form thêm thiết bị mới" },
+        ];
+  }, [language]);
+
+  const taskGroups = useMemo(
+    () => buildTaskGroups("msm", starterPrompts, language),
+    [starterPrompts, language],
+  );
 
   React.useEffect(() => {
     onTurnCountChange?.(turns.length);
@@ -331,9 +358,8 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
     }));
   }
 
-  async function submit(event) {
-    event.preventDefault();
-    const question = draft.trim();
+  async function submitQuestion(q) {
+    const question = (q !== undefined ? q : draft).trim();
     if (!question || !employeeId || streaming) return;
     if (!sessionIdRef.current) sessionIdRef.current = newId();
     const turnId = newId();
@@ -369,6 +395,11 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
       abortRef.current = null;
       setStreaming(false);
     }
+  }
+
+  function submit(event) {
+    event.preventDefault();
+    submitQuestion(draft);
   }
 
   function onKeyDown(event) {
@@ -480,9 +511,51 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
           <div className="empty-conversation">
             <div className="empty-copy">
               <AgentPresence presence={presence} mode="msm" language={language} />
-              <strong>{COPY.emptyTitle}</strong>
-              <p>{COPY.emptyBody}</p>
             </div>
+            <TaskLauncher
+              mode="msm"
+              language={language}
+              groups={taskGroups}
+              selectedTask={selectedTask}
+              previewQuestion={taskPreviewDraft}
+              onPreviewChange={setTaskPreviewDraft}
+              onSelect={(task) => {
+                setSelectedTask(task);
+                setTaskPreviewDraft(task.question);
+              }}
+              onRun={(task) => {
+                setSelectedTask(null);
+                submitQuestion(task.question);
+              }}
+              onBack={() => {
+                setSelectedTask(null);
+                setTaskPreviewDraft("");
+              }}
+              onFreeInput={() => {
+                setSelectedTask(null);
+                setShowFreeInput(true);
+              }}
+              onBackToTasks={() => {
+                setShowFreeInput(false);
+              }}
+              showFreeInput={showFreeInput}
+              onToggleInfo={() => setTaskInfoOpen((o) => !o)}
+              showInfo={taskInfoOpen}
+              modeDescription={COPY.emptyBody}
+              infoItems={
+                language === "ja"
+                  ? [
+                      "設備、校正期限、設備状態の照会",
+                      "校正計画、MSA、期限切れアラート",
+                      "データ保護のための確認カード付き書き込み操作",
+                    ]
+                  : [
+                      "Tra cứu máy, hạn hiệu chuẩn và trạng thái thiết bị",
+                      "Kế hoạch hiệu chuẩn, MSA và cảnh báo quá hạn",
+                      "Soạn thao tác ghi có thẻ xác nhận bảo vệ dữ liệu",
+                    ]
+              }
+            />
           </div>
         ) : null}
         {turns.map((turn) => (
@@ -492,7 +565,9 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
               <div className="message-content">{turn.question}</div>
             </article>
             <article className="message assistant">
-              <div className="message-avatar">MSM</div>
+              <div className="message-avatar">
+                <Bot size={18} />
+              </div>
               <div className="message-content">
                 {turn.answer ? (
                   <ReactMarkdown {...MSM_MARKDOWN_OPTIONS}>{turn.answer}</ReactMarkdown>
@@ -581,11 +656,17 @@ export default function MsmMode({ employeeId, language, presence, onTurnCountCha
           <div className="composer-context" />
           <div className="composer-actions">
             <button
-              type="submit"
-              className="send-button"
-              disabled={disabled || !draft.trim()}
+              className={streaming ? "send-button stopping" : "send-button"}
+              type={streaming ? "button" : "submit"}
+              title={streaming ? COPY.stop : COPY.send}
+              onClick={streaming ? () => abortRef.current?.abort() : undefined}
+              disabled={streaming ? false : !draft.trim() || disabled}
             >
-              {streaming ? COPY.sending : COPY.send}
+              {streaming ? (
+                <Square size={16} fill="currentColor" />
+              ) : (
+                <Send size={18} />
+              )}
             </button>
           </div>
         </div>

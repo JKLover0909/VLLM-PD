@@ -476,6 +476,11 @@ const QUICK_PROMPTS = {
       "Danh sách camera đang hoạt động trong hệ thống?",
     ],
     qa: QA_STARTER_PROMPTS,
+    msm: [
+      "Máy nào sắp đến hạn hiệu chuẩn?",
+      "Kiểm tra trạng thái thiết bị bộ phận ANNEALING",
+      "Chuẩn bị form thêm thiết bị mới",
+    ],
     research: [
       "Lập báo cáo nghiên cứu tổng hợp từ các tài liệu",
       "So sánh các quan điểm và chỉ ra điểm mâu thuẫn",
@@ -505,6 +510,11 @@ const QUICK_PROMPTS = {
     ],
     // Agent QA nhận tiếng Việt; nhãn Nhật được map riêng trước khi gửi câu Việt.
     qa: getQaStarterPrompts("ja").map((item) => item.label),
+    msm: [
+      "校正期限が近づいている設備はどれですか？",
+      "ANNEALING部門の設備状態を確認してください",
+      "新規設備登録フォームを開いてください",
+    ],
     research: [
       "資料から総合的な調査レポートを作成してください",
       "各見解を比較し、矛盾点を示してください",

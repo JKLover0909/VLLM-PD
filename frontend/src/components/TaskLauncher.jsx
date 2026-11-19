@@ -3,11 +3,11 @@ import {
   Activity, AlertTriangle, ArrowLeft, Boxes, Building2, Camera, ChartPie, Check, ChevronDown, ClipboardCheck,
   Cctv, Clock, CornerDownLeft, FileBarChart, FlaskConical, Gauge, GitCompare, Hash, History, Info, Keyboard,
   LayoutDashboard, Lightbulb, ListChecks, ListOrdered, Network, Package, Percent, RefreshCw, Scale, Search,
-  Server, Tags, Thermometer,
+  Server, Tags, Thermometer, Wrench,
 } from "lucide-react";
 import { spotlightVars, taskTransitionName } from "../motion.js";
 
-const MODE_ICONS = { mkac: Building2, mes: Activity, wms: Boxes, cctvai: Cctv, qa: ClipboardCheck, research: FlaskConical };
+const MODE_ICONS = { mkac: Building2, mes: Activity, wms: Boxes, cctvai: Cctv, qa: ClipboardCheck, research: FlaskConical, msm: Wrench };
 
 // Keys come from task-launcher.js (resolveIconKey); unknown keys fall back to the mode icon.
 const TASK_ICONS = {
