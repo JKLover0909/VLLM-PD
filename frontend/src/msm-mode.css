@@ -8,6 +8,7 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  height: 100%;
 }
 
 .msm-scroll {
@@ -17,8 +18,9 @@
 }
 
 .msm-turn {
-  max-width: 980px;
+  width: min(840px, calc(100% - 44px));
   margin: 0 auto;
+  padding: 24px 0 16px;
 }
 
 .msm-mode .empty-copy strong {
@@ -152,7 +154,7 @@
 }
 
 .msm-hint {
-  width: min(980px, calc(100% - 2 * clamp(16px, 4vw, 48px)));
+  width: min(840px, calc(100% - 36px));
   margin: 0 auto 16px;
   color: #7c2d12;
   font-size: 13px;
