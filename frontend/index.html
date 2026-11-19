@@ -6,22 +6,28 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content"
     />
-    <meta name="theme-color" content="#f4f6f8" />
+    <meta name="theme-color" content="#f7f9fc" />
     <meta
       name="description"
       content="Không gian hỏi đáp và nghiên cứu tài liệu Meibook"
     />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Merriweather:ital,opsz,wght@0,18..144,300..900;1,18..144,300..900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
     <title>Meibook Research</title>
     <script>
       (() => {
-        let preference = "system";
+        // Mirrors src/theme-preference.js: light by default, a stored "system"
+        // from older builds counts as light until the one-time migration runs.
+        let preference = "light";
         try {
-          preference = localStorage.getItem("meibook-theme") || "system";
+          const stored = localStorage.getItem("meibook-theme");
+          const migrated = localStorage.getItem("meibook-theme-light-default") === "1";
+          if (stored === "light" || stored === "dark" || (stored === "system" && migrated)) {
+            preference = stored;
+          }
         } catch {
-          // Fall back to the operating system preference.
+          // Storage unavailable: keep the light default.
         }
         const resolved =
           preference === "system"
@@ -33,7 +39,7 @@
         document.documentElement.style.colorScheme = resolved;
         document
           .querySelector('meta[name="theme-color"]')
-          .setAttribute("content", resolved === "dark" ? "#15191f" : "#f4f6f8");
+          .setAttribute("content", resolved === "dark" ? "#0b1220" : "#f7f9fc");
       })();
     </script>
   </head>

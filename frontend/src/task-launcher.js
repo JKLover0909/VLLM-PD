@@ -93,6 +93,57 @@ const LABELS = {
   },
 };
 
+// Icon keys are resolved from a stable registry ID or the Vietnamese label, so
+// the same task keeps the same pictogram in both languages. The key names are
+// mapped to real icon components in TaskLauncher.jsx.
+const ICON_KEYS = {
+  "wms-executive-overview": "report",
+  "wms-item-count": "count",
+  "wms-snapshot-explainer": "refresh",
+  "cctvai-hardware-status": "server",
+  "cctvai-overview": "overview",
+  "cctvai-severity": "alert",
+  "cctvai-cameras": "camera",
+  "cctvai-report": "report",
+  "cctvai-avg-confidence": "gauge",
+  "Phòng ban": "org",
+  "Làm thêm giờ": "clock",
+  "Sản phẩm": "product",
+  "Lot nhiều lỗi": "alert",
+  "Loại lỗi": "pie",
+  "Top 10 mã hàng lỗi": "ranking",
+  "Báo cáo tổng hợp": "report",
+  "So sánh tài liệu": "compare",
+  "Câu hỏi tiếp theo": "idea",
+  "Hạng mục phiếu": "checklist",
+  "Nhiệt độ I120-01": "temperature",
+  "Áp lực B302-01": "gauge",
+};
+
+// QA has more Japanese starters than curated Vietnamese labels; pick an icon
+// from the measured quantity in the (Vietnamese) request question.
+const QA_ICON_RULES = [
+  [/nhiệt độ/i, "temperature"],
+  [/áp lực/i, "gauge"],
+  [/trọng lượng/i, "scale"],
+  [/tỷ lệ/i, "percent"],
+  [/phiên bản/i, "version"],
+  [/hạng mục/i, "checklist"],
+  [/bản ghi/i, "records"],
+];
+
+function resolveIconKey(mode, entry, question) {
+  const id = typeof entry === "object" && entry?.id ? String(entry.id) : "";
+  if (id && ICON_KEYS[id]) return ICON_KEYS[id];
+  const viLabel = LABELS.vi[mode]?.[question];
+  if (viLabel && ICON_KEYS[viLabel]) return ICON_KEYS[viLabel];
+  if (mode === "qa") {
+    const rule = QA_ICON_RULES.find(([pattern]) => pattern.test(question));
+    if (rule) return rule[1];
+  }
+  return "";
+}
+
 export function prepareTaskRun(task, editedQuestion) {
   const edited = String(editedQuestion || "").trim();
   const unchanged = edited === task?.question;
@@ -143,6 +194,7 @@ export function buildTaskGroups(mode, entries = [], language = "vi") {
       sourceQuestion: question,
       label: label || question,
       mapped: Boolean(label),
+      iconKey: resolveIconKey(mode, entry, question),
     };
     (label ? primary : other).push(task);
   }

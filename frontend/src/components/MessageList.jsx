@@ -7,6 +7,23 @@ import {
 } from "../qa-citations";
 import { qaEffectiveQuestion } from "../qa-mode";
 import { getQaMessageSuggestions } from "../qa-prompts";
+import { formatElapsed } from "../intro.js";
+
+// Real wall-clock time since this request started. Kept out of the live
+// region (aria-hidden) so screen readers are not flooded every second.
+function ElapsedTimer({ language }) {
+  const [start] = React.useState(() => Date.now());
+  const [now, setNow] = React.useState(start);
+  React.useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return (
+    <span className="waiting-elapsed" aria-hidden="true">
+      {formatElapsed(now - start, language)}
+    </span>
+  );
+}
 
 function qaCitationTypeLabel(type, language) {
   const labels = language === "ja"
@@ -195,6 +212,7 @@ export function MessageList({
         return (
         <article
           className={`message ${message.role}${message.artifact ? " has-report-artifact" : ""}${isQa ? " qa-message" : ""}`}
+          data-latest={message.id === latestAssistantMessage?.id ? "true" : undefined}
           key={message.id}
         >
           <div className="message-avatar">
@@ -264,6 +282,7 @@ export function MessageList({
                       <small>{t("common.languageConverting")}</small>
                     )}
                   </span>
+                  <ElapsedTimer language={language} />
                 </div>
                 <div className="skeleton" aria-hidden="true">
                   <span className="skeleton-line" />

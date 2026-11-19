@@ -102,3 +102,21 @@ test("maps WMS and CCTVAI short labels only from stable registry IDs", () => {
   assert.equal(cctvai.primary[0].label, "7日間の違反");
   assert.equal(wms.primary[0].question, "WMS item count?");
 });
+
+test("task icons follow the task meaning in both languages", () => {
+  const vi = buildTaskGroups("mkac", [{ question: "Quy định làm thêm giờ ở MKAC như thế nào?" }], "vi").primary[0];
+  const ja = buildTaskGroups("mkac", [{ question: "MKACの残業規定はどうなっていますか？" }], "ja").primary[0];
+  const cctv = buildTaskGroups("cctvai", [{ id: "cctvai-cameras", question: "Camera?" }], "vi").primary[0];
+  assert.equal(vi.iconKey, "clock");
+  assert.equal(ja.iconKey, "clock");
+  assert.equal(cctv.iconKey, "camera");
+});
+
+test("QA icons come from the measured quantity, unknown tasks fall back", () => {
+  const qa = buildTaskGroups("qa", [
+    { question: "Máy F102-01 trong tháng 10/2026 có bao nhiêu lần đo trọng lượng và có lần nào NG không?" },
+    { question: "Câu hỏi không thuộc nhóm nào" },
+  ], "ja");
+  assert.equal(qa.primary[0].iconKey, "scale");
+  assert.equal(qa.other[0].iconKey, "");
+});

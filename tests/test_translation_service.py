@@ -65,8 +65,8 @@ def test_japanese_query_is_translated_for_vietnamese_backend():
     assert result.backend_question == "Lot nào có số lượng lỗi nhiều nhất?"
     call = client.chat.completions.calls[0]
     assert call["model"] == "translation-model"
-    assert "mã Lot" in call["messages"][1]["content"]
-    assert "一番不良が多いロットは？" in call["messages"][1]["content"]
+    assert "mã Lot" in call["messages"][0]["content"]
+    assert call["messages"][1]["content"] == "一番不良が多いロットは？"
 
 
 def test_translation_client_leaves_upstream_options_to_litellm():
@@ -137,3 +137,101 @@ def test_static_japanese_answer_translation_bypasses_model():
 
     assert answer == "データがありません。"
     assert client.chat.completions.calls == []
+
+
+ECHOED_QUERY_PROMPT = (
+    "Chế độ hệ thống: mkac\n"
+    "Nhiệm vụ: dịch câu hỏi sau sang tiếng Việt cho backend xử lý.\n\n"
+    "Quy tắc bắt buộc:\n"
+    "- Với yêu cầu gửi email, dịch thành câu lệnh tiếng Việt bắt đầu tự nhiên "
+    "bằng 'Gửi email...' hoặc 'Gửi thông tin này...'.\n\n"
+    "Glossary thuật ngữ bắt buộc:\n"
+    "- MKAC / Meiko Automation: Meiko Automation\n"
+    "Câu hỏi: MKACの残業申請は誰の承認が必要ですか？"
+)
+
+
+def test_echoed_query_prompt_is_retried_once():
+    client = FakeClient([ECHOED_QUERY_PROMPT, "Đăng ký làm thêm giờ ở MKAC cần ai phê duyệt?"])
+    service = TranslationService(client=client, model="translation-model")
+
+    result = asyncio.run(
+        service.translate_query("MKACの残業申請は誰の承認が必要ですか？", ui_language="ja", mode="mkac")
+    )
+
+    assert result.backend_question == "Đăng ký làm thêm giờ ở MKAC cần ai phê duyệt?"
+    assert len(client.chat.completions.calls) == 2
+
+
+def test_persistently_echoed_query_prompt_falls_back_to_original_question():
+    client = FakeClient([ECHOED_QUERY_PROMPT, ECHOED_QUERY_PROMPT])
+    service = TranslationService(client=client, model="translation-model")
+
+    result = asyncio.run(
+        service.translate_query("MKACの残業申請は誰の承認が必要ですか？", ui_language="ja", mode="mkac")
+    )
+
+    # The prompt text (which mentions "Gửi email") must never reach the backend.
+    assert result.backend_question == "MKACの残業申請は誰の承認が必要ですか？"
+    assert "email" not in result.backend_question.lower()
+
+
+def test_echoed_answer_prompt_keeps_the_vietnamese_answer():
+    echoed = (
+        "Chế độ hệ thống: mkac\nDịch câu trả lời sau sang tiếng Nhật.\n\n"
+        "Quy tắc bắt buộc:\n- Chỉ trả về bản dịch, không giải thích.\n\n"
+        "Glossary thuật ngữ bắt buộc:\n- MES: MES\nCâu trả lời tiếng Việt:\nCó 3 phòng ban."
+    )
+    client = FakeClient([echoed, echoed])
+    service = TranslationService(client=client, model="translation-model")
+
+    answer = asyncio.run(service.translate_answer("Có 3 phòng ban.", ui_language="ja", mode="mkac"))
+
+    assert answer == "Có 3 phòng ban."
+
+
+def test_translation_mentioning_one_rule_word_is_not_treated_as_echo():
+    client = FakeClient(["Quy tắc bắt buộc về làm thêm giờ là gì?"])
+    service = TranslationService(client=client, model="translation-model")
+
+    result = asyncio.run(service.translate_query("残業の必須ルールは？", ui_language="ja", mode="mkac"))
+
+    assert result.backend_question == "Quy tắc bắt buộc về làm thêm giờ là gì?"
+    assert len(client.chat.completions.calls) == 1
+
+
+def test_leaked_prompt_header_prefix_is_stripped():
+    client = FakeClient([
+        "Chế độ hệ thống: mkac. Nhiệm vụ của bạn là xác nhận ai cần phê duyệt cho đơn làm thêm giờ?"
+    ])
+    service = TranslationService(client=client, model="translation-model")
+
+    result = asyncio.run(
+        service.translate_query("MKACの残業申請は誰の承認が必要ですか？", ui_language="ja", mode="mkac")
+    )
+
+    assert result.backend_question == "xác nhận ai cần phê duyệt cho đơn làm thêm giờ?"
+
+
+def test_translation_cannot_introduce_email_context():
+    question = "MKACの残業申請は誰の承認が必要ですか？"
+    service = TranslationService(client=FakeClient(["Gửi email xin phê duyệt làm thêm giờ."]))
+    result = asyncio.run(service.translate_query(question, ui_language="ja", mode="mkac"))
+    assert result.backend_question == question
+
+
+def test_real_email_translation_is_preserved_without_executing_action():
+    question = "レポートを demo@example.invalid にメールで送信してください"
+    translated = "Gửi email báo cáo đến demo@example.invalid."
+    service = TranslationService(client=FakeClient([translated]))
+    result = asyncio.run(service.translate_query(question, ui_language="ja", mode="mkac"))
+    assert result.backend_question == translated
+
+
+def test_leaked_question_label_is_stripped():
+    client = FakeClient(["Câu hỏi: Lot nào có số lượng lỗi nhiều nhất?"])
+    service = TranslationService(client=client, model="translation-model")
+
+    result = asyncio.run(service.translate_query("一番不良が多いロットは？", ui_language="ja", mode="mes"))
+
+    assert result.backend_question == "Lot nào có số lượng lỗi nhiều nhất?"

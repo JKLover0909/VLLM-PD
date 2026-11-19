@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -10,7 +11,24 @@ from typing import Any, Literal
 from openai import AsyncOpenAI
 
 
+logger = logging.getLogger(__name__)
+
 UiLanguage = Literal["vi", "ja"]
+
+# Headings that only exist in our own translation prompts. A completion that
+# contains two or more of them is the prompt echoed back, not a translation;
+# it must never reach the backend (the prompt mentions "Gửi email...", which
+# the email-send parser would then treat as a send command).
+PROMPT_ECHO_MARKERS = (
+    "chế độ hệ thống:",
+    "nhiệm vụ: dịch",
+    "quy tắc bắt buộc:",
+    "glossary thuật ngữ bắt buộc:",
+    "câu hỏi:",
+    "câu trả lời tiếng việt:",
+    "đoạn text:",
+    "loại nội dung:",
+)
 
 
 class TranslationError(RuntimeError):
@@ -120,30 +138,36 @@ class TranslationService:
         if not self.should_translate_query(clean_question, language):
             return TranslatedQuery(clean_question, clean_question, language)
 
+        # All instructions live in the system message and the user message is
+        # only the question. With the rules in the user turn, the local model
+        # sometimes returned the rules themselves, and their "Gửi email" example
+        # then triggered the email-send parser for ordinary HR questions.
         translated = await self._complete(
             system=(
-                "Bạn là lớp dịch truy vấn cho hệ thống Meibook. "
-                "Lõi backend hiểu tốt nhất tiếng Việt, vì vậy hãy dịch câu hỏi "
-                "từ tiếng Nhật sang tiếng Việt tự nhiên, ngắn gọn và rõ intent. "
-                "Nếu đầu vào đã là tiếng Việt hoặc là mã kỹ thuật, giữ nguyên phần đó."
-            ),
-            user=(
-                f"Chế độ hệ thống: {mode}\n"
-                "Nhiệm vụ: dịch câu hỏi sau sang tiếng Việt cho backend xử lý.\n\n"
-                "Quy tắc bắt buộc:\n"
+                f"Bạn là lớp dịch truy vấn cho hệ thống Meibook (chế độ {mode}). "
+                "Dịch câu tiếng Nhật của người dùng sang tiếng Việt tự nhiên, ngắn gọn, "
+                "giữ rõ intent. Nếu đầu vào đã là tiếng Việt hoặc là mã kỹ thuật, giữ nguyên.\n"
+                "Quy tắc:\n"
                 "- Giữ nguyên mã Lot, mã hàng, mã lỗi, mã nhân viên, email, URL, "
                 "tên file, số liệu và ký hiệu kỹ thuật.\n"
-                "- Không thêm giải thích, không markdown, chỉ trả về câu đã dịch.\n"
-                "- Với MES, dịch ロット/ロット番号 thành Lot, 品番/製品コード thành mã hàng, "
-                "不良/エラー thành lỗi.\n"
-                "- Với yêu cầu gửi email, dịch thành câu lệnh tiếng Việt bắt đầu tự nhiên "
-                "bằng 'Gửi email...' hoặc 'Gửi thông tin này...'.\n\n"
-                "Glossary thuật ngữ bắt buộc:\n"
-                f"{self.GLOSSARY}\n"
-                f"Câu hỏi: {clean_question}"
+                "- MES: ロット/ロット番号 → Lot, 品番/製品コード → mã hàng, 不良/エラー → lỗi.\n"
+                "- Chỉ dùng cụm 'Gửi email' khi câu gốc thật sự yêu cầu gửi email "
+                "(có メール/送信).\n"
+                "- Chỉ trả về câu đã dịch, không giải thích, không markdown.\n"
+                "Glossary:\n"
+                f"{self.GLOSSARY}"
             ),
+            user=clean_question,
             max_tokens=700,
         )
+        # Translation must not introduce email intent into an unrelated question.
+        # Preserve the original rather than routing invented instructions to actions.
+        mail_terms = r"メール|電子郵便|e[- ]?mail|thư\s+điện\s+tử"
+        if re.search(mail_terms, translated, re.IGNORECASE) and not re.search(
+            mail_terms, clean_question, re.IGNORECASE
+        ):
+            logger.warning("Discarding query translation that introduced email context.")
+            translated = ""
         return TranslatedQuery(
             clean_question,
             self._clean_completion(translated) or clean_question,
@@ -248,13 +272,25 @@ class TranslationService:
         provider_options = self._provider_options()
         if provider_options:
             kwargs.update(provider_options)
-        try:
-            response = await self.client.chat.completions.create(**kwargs)
-        except Exception as exc:  # pragma: no cover - provider-specific failures
-            raise TranslationError("Không thể dịch nội dung cho giao diện.") from exc
+        # Small local models occasionally echo the instruction block instead of
+        # translating. Retry once; if it echoes again, return "" so every caller
+        # falls back to the untranslated text.
+        for attempt in range(2):
+            try:
+                response = await self.client.chat.completions.create(**kwargs)
+            except Exception as exc:  # pragma: no cover - provider-specific failures
+                raise TranslationError("Không thể dịch nội dung cho giao diện.") from exc
 
-        content = response.choices[0].message.content or ""
-        return self._clean_completion(content)
+            content = self._clean_completion(response.choices[0].message.content or "")
+            if not self._is_prompt_echo(content):
+                return content
+            logger.warning("Translation model echoed the prompt (attempt %d); discarding output.", attempt + 1)
+        return ""
+
+    @staticmethod
+    def _is_prompt_echo(text: str) -> bool:
+        normalized = (text or "").lower()
+        return sum(marker in normalized for marker in PROMPT_ECHO_MARKERS) >= 2
 
     def _provider_options(self) -> dict[str, Any]:
         """Keep upstream-specific request bodies in LiteLLM configuration."""
@@ -281,4 +317,17 @@ class TranslationService:
         quoted = re.match(r'(?is)^(?:đây là|dưới đây là)[^"\n]{0,180}"(.+)"\s*$', clean_text)
         if quoted:
             clean_text = quoted.group(1).strip()
+        # Drop prompt headings the model copied in front of the translation, e.g.
+        # "Chế độ hệ thống: mkac. Nhiệm vụ của bạn là <translation>". The task
+        # phrase is only stripped after the mode header, so a real question such
+        # as "Nhiệm vụ của bạn là gì?" is left intact.
+        header = re.match(r"(?is)^chế độ hệ thống:\s*[\w-]+\s*[.\n]\s*", clean_text)
+        if header:
+            clean_text = clean_text[header.end():]
+            clean_text = re.sub(r"(?is)^nhiệm vụ(?: của bạn)?(?:\s+là|\s*:)\s*", "", clean_text).strip()
+        clean_text = re.sub(
+            r"(?is)^(?:câu hỏi|câu trả lời(?: tiếng việt)?|đoạn text)\s*:\s*",
+            "",
+            clean_text,
+        ).strip()
         return clean_text.strip(' "\'')

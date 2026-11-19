@@ -315,7 +315,7 @@ class RAGPipeline:
             mode == "research" and not search_results and not image_paths
         ):
             return (
-                _no_information_answer(mode, question),
+                _no_information_answer(mode),
                 [],
                 routed_model,
                 answer_scope,
@@ -514,7 +514,7 @@ class RAGPipeline:
             mode == "research" and not search_results and not image_paths
         ):
             return (
-                _fixed_token_stream(_no_information_answer(mode, question)),
+                _fixed_token_stream(_no_information_answer(mode)),
                 [],
                 routed_model,
                 answer_scope,

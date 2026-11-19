@@ -1,8 +1,13 @@
 import { StrictMode, memo, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { flushSync } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import { getMessageMarkdownOptions } from "./markdown-tables";
-import AgentPresence from "./components/AgentPresence.jsx";
+import AgentPresence, { AgentStatus, MotionToggle } from "./components/AgentPresence.jsx";
+import RoamingRobot from "./components/RoamingRobot.jsx";
+import IntroSplash from "./components/IntroSplash.jsx";
+import { canAnimate, prefersReducedMotion, runViewTransition } from "./motion.js";
+import { THEME_DEFAULT, THEME_MIGRATION_KEY, resolveStoredTheme } from "./theme-preference.js";
 import TaskLauncher from "./components/TaskLauncher.jsx";
 import { buildTaskGroups, prepareTaskRun } from "./task-launcher.js";
 import { resolveAgentPresence } from "./agent-presence.js";
@@ -75,6 +80,7 @@ import {
   cctvaiHealthBannerVisibility,
 } from "./mode-tabs";
 import "./styles.css";
+import "./intro.css";
 
 // Icon theo loại file để người dùng phân biệt nhanh PDF/Word/Excel/ảnh trong
 // danh sách tài liệu (trước đây mọi file dùng chung một icon FileText).
@@ -1216,10 +1222,17 @@ const UI_TEXT = {
 
 function storedTheme() {
   try {
-    const value = localStorage.getItem(THEME_STORAGE_KEY);
-    return THEME_OPTIONS.includes(value) ? value : "system";
+    const { theme, migrate } = resolveStoredTheme(
+      localStorage.getItem(THEME_STORAGE_KEY),
+      localStorage.getItem(THEME_MIGRATION_KEY),
+    );
+    if (migrate) {
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+      localStorage.setItem(THEME_MIGRATION_KEY, "1");
+    }
+    return THEME_OPTIONS.includes(theme) ? theme : THEME_DEFAULT;
   } catch {
-    return "system";
+    return THEME_DEFAULT;
   }
 }
 
@@ -2189,7 +2202,7 @@ function App() {
       document.documentElement.style.colorScheme = resolvedTheme;
       document
         .querySelector('meta[name="theme-color"]')
-        ?.setAttribute("content", resolvedTheme === "dark" ? "#15191f" : "#f4f6f8");
+        ?.setAttribute("content", resolvedTheme === "dark" ? "#0b1220" : "#f7f9fc");
     };
 
     try {
@@ -3160,18 +3173,37 @@ function App() {
       : [formatText(modeText("research").documentsSummary, { count: researchTopicsTotalFiles(), topics: researchTopics.topics.length })];
   }
 
+  // Card ↔ preview swaps morph with the View Transitions API when motion is
+  // allowed; otherwise the state changes instantly.
+  function withTaskTransition(update) {
+    runViewTransition(() => flushSync(update), {
+      enabled: canAnimate({ motion: agentMotion, reduced: prefersReducedMotion() }),
+    });
+  }
+
   function chooseTask(task) {
     if (busy || uploading || !mkacAuthorized || !researchReady) return;
-    setSelectedTask(task);
-    setTaskPreviewDraft(task.question);
-    setComposerOpen(false);
+    withTaskTransition(() => {
+      setSelectedTask(task);
+      setTaskPreviewDraft(task.question);
+      setComposerOpen(false);
+    });
+  }
+
+  function closeTaskPreview() {
+    withTaskTransition(() => {
+      setSelectedTask(null);
+      setTaskPreviewDraft("");
+    });
   }
 
   function runSelectedTask(task, editedQuestion) {
     if (!task || busy || uploading || !mkacAuthorized || !researchReady) return;
     const { question: questionToRun, valid, usePreparedAnswer, quickAnswerId } = prepareTaskRun(task, editedQuestion);
     if (!valid || (mode === "qa" && !isValidQaQuestion(questionToRun))) {
-      setError(mode === "qa" ? t("common.qaQuestionLimit", { limit: QA_MAX_CODE_POINTS }) : "Vui lòng nhập câu hỏi.");
+      setError(mode === "qa"
+        ? t("common.qaQuestionLimit", { limit: QA_MAX_CODE_POINTS })
+        : language === "ja" ? "質問を1行で入力してください。" : "Vui lòng nhập câu hỏi trên một dòng.");
       return;
     }
     setSelectedTask(null);
@@ -3181,16 +3213,6 @@ function App() {
       return;
     }
     sendMessage(questionToRun);
-  }
-
-  function editSelectedTask() {
-    if (!selectedTask || busy) return;
-    setQuestion(taskPreviewDraft || selectedTask.sourceQuestion || selectedTask.question);
-    composerDraftRef.current = taskPreviewDraft || selectedTask.sourceQuestion || selectedTask.question;
-    setFreeComposer(false);
-    setSelectedTask(null);
-    setTaskPreviewDraft("");
-    setComposerOpen(true);
   }
 
   function openFreeComposer() {
@@ -3221,6 +3243,7 @@ function App() {
 
   return (
     <div className={`app-shell mode-${mode} ${mode !== "research" ? "mkac-layout" : ""}`}>
+      <IntroSplash language={language} health={health} />
       <ResearchSidebar
         mode={mode}
         t={t}
@@ -3332,6 +3355,8 @@ function App() {
               <ChevronDown className="mode-selector-chevron" size={15} aria-hidden="true" />
             </div>
 
+            <MotionToggle motion={agentMotion} onMotionChange={setAgentMotion} language={language} />
+
             <button
               className="icon-button header-tool theme-toggle"
               type="button"
@@ -3370,7 +3395,7 @@ function App() {
             >
               {sourcePanelOpen ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
               {latestSources.length > 0 && (
-                <span className="panel-count">{latestSources.length}</span>
+                <span className="panel-count" key={latestSources.length}>{latestSources.length}</span>
               )}
             </button>
 
@@ -3447,13 +3472,20 @@ function App() {
             id={`${mode}-conversation`}
             className={`conversation agent-workspace ${messages.length ? "has-conversation" : "is-welcome"}`}
             data-motion={agentMotion}
+            data-agent-state={agentPresence.state}
             role="tabpanel"
             aria-label={currentMode.title}
             aria-busy={busy}
           >
-            {mkacAuthorized && messages.length > 0 && (
-              <AgentPresence presence={agentPresence} compact mode={mode} language={language}
-                motion={agentMotion} onMotionChange={setAgentMotion} />
+            <AgentStatus presence={agentPresence} language={language} />
+            {mkacAuthorized && (
+              <RoamingRobot
+                state={agentPresence.state}
+                motion={agentMotion}
+                hasConversation={messages.length > 0}
+                hasError={Boolean(error)}
+                previewOpen={Boolean(selectedTask)}
+              />
             )}
             <div className="conversation-scroll" ref={conversationScrollRef}>
               {["mkac", "mes", "wms", "cctvai", "qa"].includes(mode) && !mkacAuthorized ? (
@@ -3470,8 +3502,7 @@ function App() {
               ) : messages.length === 0 ? (
                 <div className="empty-conversation">
                   <div className="empty-copy">
-                    <AgentPresence presence={agentPresence} mode={mode} language={language}
-                      motion={agentMotion} onMotionChange={setAgentMotion} onOpenComposer={openFreeComposer} />
+                    <AgentPresence presence={agentPresence} mode={mode} language={language} />
                     {mode === "research" && (
                       <div className="research-source-choice" role="tablist">
                         <button
@@ -3571,9 +3602,7 @@ function App() {
                       onPreviewChange={setTaskPreviewDraft}
                       onSelect={chooseTask}
                       onRun={runSelectedTask}
-                      onPreviewQuestionChange={(value) => setTaskPreviewDraft(value)}
-                      onEdit={editSelectedTask}
-                      onBack={() => { setSelectedTask(null); setTaskPreviewDraft(""); }}
+                      onBack={closeTaskPreview}
                       onFreeInput={openFreeComposer}
                       onBackToTasks={closeFreeComposer}
                       showFreeInput={freeComposer}
