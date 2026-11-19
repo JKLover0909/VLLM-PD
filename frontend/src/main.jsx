@@ -3502,11 +3502,21 @@ function App() {
         <div className="workspace-body">
           {mode === "msm" ? (
             <section
+              id="msm-conversation"
               className="conversation agent-workspace has-conversation"
+              data-motion={agentMotion}
+              data-agent-state={agentPresence.state}
               role="tabpanel"
               aria-label={currentMode.title}
             >
               <AgentStatus presence={agentPresence} language={language} />
+              <RoamingRobot
+                state={agentPresence.state}
+                motion={agentMotion}
+                hasConversation={false}
+                hasError={false}
+                previewOpen={false}
+              />
               <MsmMode employeeId={employee?.id} language={language} presence={agentPresence} />
             </section>
           ) : (
