@@ -104,3 +104,21 @@ class MsmTokenCache:
         if not token:
             raise MsmAgentUnavailable("MSM agent login returned no token")
         return token
+
+
+def to_meibook_event(event: dict) -> dict | None:
+    """Translate one agent SSE event into the vocabulary meibook renders."""
+    kind = event.get("type")
+    if kind == "answer":
+        return {"type": "token", "content": event["text"]}
+    if kind == "done":
+        return {"type": "done", "result": event.get("result", {})}
+    if kind == "error":
+        return {
+            "type": "error",
+            "code": event.get("code", "INTERNAL"),
+            "message": event.get("message", ""),
+        }
+    if event.get("label"):
+        return {"type": "meta", "label": event["label"]}
+    return None

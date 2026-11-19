@@ -1,7 +1,12 @@
 import httpx
 import pytest
 
-from src.api.msm_agent import MsmAgentUnavailable, MsmTokenCache, load_config
+from src.api.msm_agent import (
+    MsmAgentUnavailable,
+    MsmTokenCache,
+    load_config,
+    to_meibook_event,
+)
 
 
 def test_load_config_fails_closed_when_a_key_is_missing():
@@ -51,3 +56,24 @@ async def test_invalidate_forces_a_new_login():
     assert await cache.token() == "jwt-1"
     cache.invalidate()
     assert await cache.token() == "jwt-2"
+
+
+def test_answer_becomes_a_token_event():
+    assert to_meibook_event({"type": "answer", "text": "Xin chào"}) == {
+        "type": "token", "content": "Xin chào",
+    }
+
+
+def test_done_carries_pending_and_views_untouched():
+    result = {"answer": "ok", "pending": [{"action_id": "a1"}], "views": [{"kind": "table"}]}
+    assert to_meibook_event({"type": "done", "result": result})["result"] == result
+
+
+def test_progress_events_become_meta():
+    assert to_meibook_event({"type": "tool_start", "tool": "search_machines", "label": "Đang tra máy"}) == {
+        "type": "meta", "label": "Đang tra máy",
+    }
+
+
+def test_unknown_events_are_dropped():
+    assert to_meibook_event({"type": "llm_wait", "step": "think"}) is None
