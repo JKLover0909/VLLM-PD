@@ -288,6 +288,7 @@ function MsmForm({ form, employeeId, onSubmit, onCancel }) {
   }
 
   function handleKeyDown(event) {
+    if (event.nativeEvent?.isComposing || event.keyCode === 229) return;
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       handleNext();
@@ -409,7 +410,7 @@ function MsmForm({ form, employeeId, onSubmit, onCancel }) {
                   onClick={() => handleChoiceClick(opt.value)}
                   disabled={submitting}
                 >
-                  <span className="msm-wizard-option-check">{isSelected ? "●" : "○"}</span>
+                  <span className="msm-wizard-option-check" aria-hidden="true" />
                   <span className="msm-wizard-option-text">{opt.label}</span>
                 </button>
               );
@@ -417,6 +418,7 @@ function MsmForm({ form, employeeId, onSubmit, onCancel }) {
           </div>
         ) : isLookup ? (
           <WizardLookupField
+            key={fieldKey}
             field={field}
             value={values[fieldKey]}
             employeeId={employeeId}
@@ -427,6 +429,7 @@ function MsmForm({ form, employeeId, onSubmit, onCancel }) {
           />
         ) : (
           <input
+            key={fieldKey}
             ref={inputRef}
             type={
               field.type === "date"
@@ -468,7 +471,7 @@ function MsmForm({ form, employeeId, onSubmit, onCancel }) {
             onClick={() => setCurrentStep((s) => Math.max(0, s - 1))}
             disabled={submitting}
           >
-            ← Quay lại
+            Quay lại
           </button>
         ) : null}
         <button
@@ -480,7 +483,7 @@ function MsmForm({ form, employeeId, onSubmit, onCancel }) {
             ? COPY.formSubmitting
             : isLastStep
               ? "Hoàn tất"
-              : "Tiếp tục (Enter ⏎)"}
+              : "Tiếp tục"}
         </button>
         <button
           type="button"
