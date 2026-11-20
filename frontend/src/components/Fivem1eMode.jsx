@@ -64,7 +64,7 @@ export function Fivem1eMode({
   language = "vi",
   presence,
   onTurnCountChange,
-  onPreviewOpenChange, onStreamingChange, onErrorChange,
+  onPreviewOpenChange, onStreamingChange, onAnsweringChange, onErrorChange,
 }) {
   const [turns, setTurns] = useState([]);
   const [draft, setDraft] = useState("");
@@ -83,6 +83,8 @@ export function Fivem1eMode({
   }
   const abortRef = useRef(null);
   const activeTurnRef = useRef(null);
+  const employeeRef = useRef(employeeId);
+  employeeRef.current = employeeId;
   const textareaRef = useRef(null);
   const scrollRef = useRef(null);
 
@@ -115,25 +117,32 @@ export function Fivem1eMode({
   }, [turns, scrollToBottom]);
 
   const cancelActiveStream = useCallback(() => {
+    const turnId = activeTurnRef.current;
     const controller = abortRef.current;
-    if (controller) {
-      controller.abort();
+    if (turnId && controller) {
+      setTurns((prev) => prev.map((turn) => (
+        turn.id === turnId ? reduceFivem1eEvent(turn, { type: "stopped" }) : turn
+      )));
+      activeTurnRef.current = null;
       abortRef.current = null;
+      controller.abort();
       void stopFivem1eQuery({ sessionId: sessionIdRef.current, employeeId });
     }
-    activeTurnRef.current = null;
     setStreaming(false);
     onStreamingChange?.(false);
-  }, [employeeId, onStreamingChange]);
+    onAnsweringChange?.(false);
+  }, [employeeId, onAnsweringChange, onStreamingChange]);
 
   useEffect(() => () => {
     const controller = abortRef.current;
-    if (controller) {
-      controller.abort();
-      void stopFivem1eQuery({ sessionId: sessionIdRef.current, employeeId });
-    }
+    if (!controller) return;
     activeTurnRef.current = null;
-  }, [employeeId]);
+    abortRef.current = null;
+    controller.abort();
+    void stopFivem1eQuery({ sessionId: sessionIdRef.current, employeeId: employeeRef.current });
+    onStreamingChange?.(false);
+    onAnsweringChange?.(false);
+  }, []);
 
   const submitQuestion = useCallback(
     async (rawQuestion) => {
@@ -150,9 +159,11 @@ export function Fivem1eMode({
         pills: [],
         error: null,
         done: false,
+        stopped: false,
       };
       activeTurnRef.current = newTurn.id;
       onErrorChange?.("");
+      onAnsweringChange?.(false);
 
       setTurns((prev) => [...prev, newTurn]);
       setDraft("");
@@ -169,16 +180,20 @@ export function Fivem1eMode({
 
       const onEvent = (event) => {
         if (!shouldApplyFivem1eEvent({ turnId: newTurn.id, activeTurnId: activeTurnRef.current, controller, activeController: abortRef.current })) return;
-        currentState = reduceFivem1eEvent(currentState, event);
+        const previousAnswer = currentState.answer;
+        const next = reduceFivem1eEvent(currentState, event);
+        currentState = next;
+        if (event?.type === "token" && event.content && !previousAnswer) onAnsweringChange?.(true);
         if (event?.type === "error") onErrorChange?.(event.code || "");
         setTurns((prev) => {
           return prev.map((turn) => turn.id === newTurn.id ? {
             ...turn,
-            answer: currentState.answer,
-            meta: currentState.meta,
-            pills: currentState.pills,
-            error: currentState.error,
-            done: currentState.done,
+            answer: next.answer,
+            meta: next.meta,
+            pills: next.pills,
+            error: next.error,
+            done: next.done,
+            stopped: next.stopped,
           } : turn);
         });
       };
@@ -199,12 +214,13 @@ export function Fivem1eMode({
         if (activeTurnRef.current === newTurn.id && abortRef.current === controller) {
           setStreaming(false);
           onStreamingChange?.(false);
+          onAnsweringChange?.(false);
           activeTurnRef.current = null;
           abortRef.current = null;
         }
       }
     },
-    [cancelActiveStream, employeeId, onErrorChange, onStreamingChange, streaming]
+    [cancelActiveStream, employeeId, onAnsweringChange, onErrorChange, onStreamingChange, streaming]
   );
 
   const handleSubmit = (e) => {
@@ -301,6 +317,11 @@ export function Fivem1eMode({
                   <div className="msm-progress" role="status">
                     {turn.meta || t.processing}
                   </div>
+                ) : null}
+                {turn.stopped ? (
+                  <p className="msm-progress" role="status">
+                    {language === "ja" ? "停止済み" : "Đã dừng"}
+                  </p>
                 ) : null}
                 {turn.error ? (
                   <p className="msm-error" role="alert">

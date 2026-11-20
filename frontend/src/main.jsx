@@ -1743,6 +1743,7 @@ function App() {
   const [fivem1eResetEpoch, setFivem1eResetEpoch] = useState(0);
   const [fivem1ePreviewOpen, setFivem1ePreviewOpen] = useState(false);
   const [fivem1eStreaming, setFivem1eStreaming] = useState(false);
+  const [fivem1eAnswering, setFivem1eAnswering] = useState(false);
   const [fivem1eError, setFivem1eError] = useState("");
   const [messagesByMode, setMessagesByMode] = useState(() =>
     createLanguageScopedState(() => []),
@@ -1990,7 +1991,11 @@ function App() {
     question, error, needsSelection: !researchReady,
   });
   const activeAgentPresence = mode === "fivem1e"
-    ? resolveFivem1ePresence(agentPresence, { streaming: fivem1eStreaming, error: Boolean(fivem1eError) })
+    ? resolveFivem1ePresence(agentPresence, {
+      streaming: fivem1eStreaming,
+      answering: fivem1eAnswering,
+      error: Boolean(fivem1eError),
+    })
     : mode === "msm"
       ? resolveStreamingModePresence(agentPresence, {
         streaming: msmStreaming,
@@ -2689,6 +2694,7 @@ function App() {
       setFivem1eTurnCount(0);
       setFivem1ePreviewOpen(false);
       setFivem1eStreaming(false);
+      setFivem1eAnswering(false);
       setFivem1eError("");
     }
   }
@@ -3659,6 +3665,7 @@ function App() {
                 onTurnCountChange={setFivem1eTurnCount}
                 onPreviewOpenChange={setFivem1ePreviewOpen}
                 onStreamingChange={setFivem1eStreaming}
+                onAnsweringChange={setFivem1eAnswering}
                 onErrorChange={setFivem1eError}
               />}
             </section>
