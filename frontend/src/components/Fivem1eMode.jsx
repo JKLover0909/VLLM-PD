@@ -1,23 +1,17 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
-import { getMessageMarkdownOptions } from "../markdown-tables";
-import {
-  AlertCircle,
-  ArrowUp,
-  RotateCcw,
-  Square,
-  User,
-  ListChecks,
-} from "lucide-react";
+import { Bot, Send, Square } from "lucide-react";
+import AgentPresence from "./AgentPresence.jsx";
 import TaskLauncher from "./TaskLauncher.jsx";
 import { buildTaskGroups } from "../task-launcher.js";
-import "../msm-mode.css";
+import { getMessageMarkdownOptions } from "../markdown-tables";
 import {
   buildFivem1ePayload,
   initialFivem1eState,
   reduceFivem1eEvent,
   streamFivem1eQuery,
 } from "../fivem1e-mode.js";
+import "../msm-mode.css";
 
 const FIVEM1E_MARKDOWN_OPTIONS = getMessageMarkdownOptions({ qa: true });
 
@@ -38,34 +32,39 @@ const STARTER_PROMPTS = {
 
 const COPY = {
   vi: {
-    welcomeSubtitle: "Tra cứu báo cáo thay đổi 5M1E và theo dõi tiến độ 30 bước",
-    placeholder: "Nhập mã quản lý, mã báo cáo hoặc câu hỏi tra cứu 5M1E...",
+    emptyTitle: "Báo cáo thay đổi 5M1E",
+    emptyBody:
+      "Tra cứu báo cáo thay đổi 5M1E, kiểm tra tiến độ 30 bước, lọc theo bước chờ hoặc xem thống kê theo hạng.",
+    inputLabel: "Câu hỏi về 5M1E",
+    placeholder: "Hỏi theo mã quản lý hoặc tiến độ bước, ví dụ: báo cáo nào ở bước 16?",
     send: "Gửi",
     stop: "Dừng",
-    clear: "Làm mới",
-    clearConfirm: "Bắt đầu cuộc trò chuyện 5M1E mới?",
-    emptySession: "Chưa có lượt trao đổi nào.",
-    errorPrefix: "Lỗi:",
+    sending: "Đang trả lời",
+    processing: "Đang xử lý",
+    loginRequired: "Vui lòng nhập mã nhân viên ở góc trên để gửi câu hỏi.",
+    nextCandidate: "Gợi ý tiếp theo:",
   },
   ja: {
-    welcomeSubtitle: "5M1E変更レポートの検索および30ステップ進捗管理",
-    placeholder: "管理コード、レポートコード、または5M1Eの質問を入力...",
+    emptyTitle: "5M1E変更管理",
+    emptyBody:
+      "5M1E変更レポートの検索、30ステップ進捗確認、待機ステップ別絞り込み、ランク別集計を行います。",
+    inputLabel: "5M1Eに関する質問",
+    placeholder: "管理コードまたは進捗ステップで質問（例: ステップ16で待機中のレポートは？）",
     send: "送信",
     stop: "停止",
-    clear: "クリア",
-    clearConfirm: "新しい5M1Eの会話を開始しますか？",
-    emptySession: "履歴はありません。",
-    errorPrefix: "エラー:",
+    sending: "回答中",
+    processing: "処理中",
+    loginRequired: "質問を送信するには上部で社員番号を入力してください。",
+    nextCandidate: "次の候補:",
   },
 };
 
 export function Fivem1eMode({
   employeeId,
   language = "vi",
+  presence,
   onTurnCountChange,
-  onLogout,
-  onClearChat,
-  onResetConversation,
+  onPreviewOpenChange,
 }) {
   const [turns, setTurns] = useState([]);
   const [draft, setDraft] = useState("");
@@ -84,28 +83,35 @@ export function Fivem1eMode({
   }
   const abortRef = useRef(null);
   const textareaRef = useRef(null);
-  const turnsEndRef = useRef(null);
+  const scrollRef = useRef(null);
 
   const t = COPY[language] || COPY.vi;
   const starterPrompts = useMemo(() => {
     return STARTER_PROMPTS[language] || STARTER_PROMPTS.vi;
   }, [language]);
+
   const taskGroups = useMemo(
     () => buildTaskGroups("fivem1e", starterPrompts, language),
     [starterPrompts, language]
   );
 
+  useEffect(() => {
+    onTurnCountChange?.(turns.length);
+  }, [turns.length, onTurnCountChange]);
+
+  useEffect(() => {
+    onPreviewOpenChange?.(Boolean(selectedTask));
+  }, [selectedTask, onPreviewOpenChange]);
+
   const scrollToBottom = useCallback(() => {
-    turnsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
   }, []);
 
   useEffect(() => {
     scrollToBottom();
   }, [turns, scrollToBottom]);
-
-  useEffect(() => {
-    onTurnCountChange?.(turns.length);
-  }, [turns.length, onTurnCountChange]);
 
   const cancelActiveStream = useCallback(() => {
     if (abortRef.current) {
@@ -115,20 +121,6 @@ export function Fivem1eMode({
     setStreaming(false);
   }, []);
 
-  const clearConversation = useCallback(() => {
-    cancelActiveStream();
-    setTurns([]);
-    sessionIdRef.current =
-      typeof crypto !== "undefined" && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `fivem1e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    setSelectedTask(null);
-    setTaskPreviewDraft("");
-    setShowFreeInput(false);
-    if (onClearChat) onClearChat();
-    if (onResetConversation) onResetConversation();
-  }, [cancelActiveStream, onClearChat, onResetConversation]);
-
   const submitQuestion = useCallback(
     async (rawQuestion) => {
       const q = String(rawQuestion || "").trim();
@@ -137,13 +129,13 @@ export function Fivem1eMode({
       cancelActiveStream();
 
       const newTurn = {
+        id: `turn-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         question: q,
         answer: "",
         meta: "",
         pills: [],
         error: null,
         done: false,
-        timestamp: new Date().toISOString(),
       };
 
       setTurns((prev) => [...prev, newTurn]);
@@ -205,180 +197,171 @@ export function Fivem1eMode({
     [cancelActiveStream, employeeId, streaming]
   );
 
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!draft.trim() || streaming || !employeeId) return;
+    submitQuestion(draft);
+  };
+
   const handleKeyDown = (e) => {
     if (e.nativeEvent?.isComposing) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      if (!draft.trim() || streaming || !employeeId) return;
       submitQuestion(draft);
     }
   };
 
+  const isComposerOpen = turns.length > 0 || showFreeInput;
+
   return (
-    <div className="msm-workspace">
-      <div className="msm-header">
-        <div className="msm-header-title">
-          <ListChecks size={20} className="msm-header-icon" />
-          <span>5M1E Change Report</span>
-        </div>
-        <div className="msm-header-actions">
-          {turns.length > 0 && (
-            <button
-              type="button"
-              className="msm-btn msm-btn-ghost"
-              onClick={clearConversation}
-              title={t.clear}
-            >
-              <RotateCcw size={16} />
-              <span>{t.clear}</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="msm-body">
+    <div className="msm-mode" lang={language === "ja" ? "ja" : "vi"} aria-label={t.emptyTitle}>
+      <div className="msm-scroll" ref={scrollRef}>
         {turns.length === 0 ? (
-          <div className="msm-welcome">
-            <div className="msm-welcome-hero">
-              <h2 className="msm-welcome-title">5M1E Agent</h2>
-              <p className="msm-welcome-subtitle">{t.welcomeSubtitle}</p>
+          <div className="empty-conversation">
+            <div className="empty-copy">
+              <AgentPresence presence={presence} mode="fivem1e" language={language} />
             </div>
-            <div className="msm-launcher-wrap">
-              <TaskLauncher
-                mode="fivem1e"
-                groups={taskGroups}
-                language={language}
-                selectedTask={selectedTask}
-                previewQuestion={taskPreviewDraft}
-                onPreviewChange={setTaskPreviewDraft}
-                onSelect={(task) => {
-                  if (!task) return;
-                  submitQuestion(task.question);
-                }}
-                onRun={(task, edited) => {
-                  const q = typeof edited === "string" && edited.trim() ? edited.trim() : task?.question || task;
-                  if (!q) return;
-                  setSelectedTask(null);
-                  setTaskPreviewDraft("");
-                  submitQuestion(q);
-                }}
-                onBack={() => {
-                  setSelectedTask(null);
-                  setTaskPreviewDraft("");
-                }}
-                onFreeInput={() => {
-                  setSelectedTask(null);
-                  setShowFreeInput(true);
-                  setTimeout(() => textareaRef.current?.focus(), 50);
-                }}
-                onBackToTasks={() => {
-                  setShowFreeInput(false);
-                }}
-                showFreeInput={showFreeInput}
-                onToggleInfo={() => setTaskInfoOpen((prev) => !prev)}
-                showInfo={taskInfoOpen}
-                modeDescription={t.welcomeSubtitle}
-                infoItems={[t.welcomeSubtitle]}
-              />
-            </div>
+            <TaskLauncher
+              mode="fivem1e"
+              language={language}
+              groups={taskGroups}
+              selectedTask={selectedTask}
+              previewQuestion={taskPreviewDraft}
+              onPreviewChange={setTaskPreviewDraft}
+              onSelect={(task) => {
+                setSelectedTask(null);
+                submitQuestion(task.question);
+              }}
+              onRun={(task, edited) => {
+                const q = typeof edited === "string" && edited.trim() ? edited.trim() : task?.question || task;
+                if (!q) return;
+                setSelectedTask(null);
+                setTaskPreviewDraft("");
+                submitQuestion(q);
+              }}
+              onBack={() => {
+                setSelectedTask(null);
+                setTaskPreviewDraft("");
+              }}
+              onFreeInput={() => {
+                setSelectedTask(null);
+                setShowFreeInput(true);
+                setTimeout(() => textareaRef.current?.focus(), 50);
+              }}
+              onBackToTasks={() => {
+                setShowFreeInput(false);
+              }}
+              showFreeInput={showFreeInput}
+              onToggleInfo={() => setTaskInfoOpen((o) => !o)}
+              showInfo={taskInfoOpen}
+              modeDescription={t.emptyBody}
+              infoItems={
+                language === "ja"
+                  ? [
+                      "5M1E変更レポートの照会および進捗トラッキング",
+                      "30ステップ進捗、待機ステップ、ランク別集計",
+                      "レポートコードまたは管理コードによる即時検索",
+                    ]
+                  : [
+                      "Tra cứu báo cáo thay đổi 5M1E và theo dõi tiến độ",
+                      "Kiểm tra 30 bước, lọc bước đang chờ, thống kê theo hạng",
+                      "Tìm kiếm tức thì theo mã quản lý hoặc mã báo cáo",
+                    ]
+              }
+            />
           </div>
-        ) : (
-          <div className="msm-turns">
-            {turns.map((turn, idx) => (
-              <div key={idx} className="msm-turn">
-                <div className="msm-user-row">
-                  <div className="msm-bubble msm-bubble-user">
-                    <span>{turn.question}</span>
-                  </div>
-                  <div className="msm-avatar msm-avatar-user">
-                    <User size={16} />
-                  </div>
-                </div>
+        ) : null}
 
-                <div className="msm-bot-row">
-                  <div className="msm-avatar msm-avatar-bot">
-                    <ListChecks size={18} />
-                  </div>
-                  <div className="msm-bubble msm-bubble-bot">
-                    {turn.meta && !turn.done && (
-                      <div className="msm-meta-status">
-                        <span className="msm-pulse-dot" />
-                        <span>{turn.meta}</span>
-                      </div>
-                    )}
-
-                    {turn.answer && (
-                      <div className="msm-markdown-answer">
-                        <ReactMarkdown {...FIVEM1E_MARKDOWN_OPTIONS}>{turn.answer}</ReactMarkdown>
-                      </div>
-                    )}
-
-                    {turn.error && (
-                      <div className="msm-error-box">
-                        <AlertCircle size={16} />
-                        <span>
-                          {t.errorPrefix} {turn.error.message}
-                        </span>
-                      </div>
-                    )}
-
-                    {turn.pills && turn.pills.length > 0 && (
-                      <div className="msm-pills">
-                        {turn.pills.map((pill, pIdx) => (
-                          <button
-                            key={pIdx}
-                            type="button"
-                            className="msm-pill"
-                            disabled={streaming}
-                            onClick={() => submitQuestion(pill)}
-                          >
-                            <span>{pill}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
+        {turns.map((turn) => (
+          <div className="msm-turn" key={turn.id}>
+            <article className="message user">
+              <div className="message-avatar">U</div>
+              <div className="message-content">{turn.question}</div>
+            </article>
+            <article className="message assistant">
+              <div className="message-avatar">
+                <Bot size={18} />
               </div>
-            ))}
-            <div ref={turnsEndRef} />
+              <div className="message-content">
+                {turn.answer ? (
+                  <ReactMarkdown {...FIVEM1E_MARKDOWN_OPTIONS}>{turn.answer}</ReactMarkdown>
+                ) : null}
+                {!turn.done && !turn.error ? (
+                  <div className="msm-progress" role="status">
+                    {turn.meta || t.processing}
+                  </div>
+                ) : null}
+                {turn.error ? (
+                  <p className="msm-error" role="alert">
+                    {turn.error.message}
+                  </p>
+                ) : null}
+                {Array.isArray(turn.pills) && turn.pills.length > 0 ? (
+                  <div className="msm-pills" role="group" aria-label={t.nextCandidate}>
+                    <p className="msm-pills-label">
+                      <span>{t.nextCandidate}</span>
+                    </p>
+                    <div className="msm-pills-list">
+                      {turn.pills.map((pill, idx) => (
+                        <button
+                          key={`${turn.id}-pill-${idx}`}
+                          type="button"
+                          className="msm-pill"
+                          onClick={() => submitQuestion(pill)}
+                          disabled={streaming}
+                        >
+                          {pill}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </article>
           </div>
-        )}
+        ))}
       </div>
 
-      <div className="msm-footer">
-        <div className="msm-composer">
+      {isComposerOpen ? (
+        <form className="composer" onSubmit={handleSubmit}>
           <textarea
             ref={textareaRef}
-            className="msm-composer-input"
-            rows={1}
             value={draft}
-            placeholder={t.placeholder}
-            disabled={streaming}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(event) => setDraft(event.target.value)}
             onKeyDown={handleKeyDown}
+            aria-label={t.inputLabel}
+            placeholder={t.placeholder}
+            rows={2}
+            disabled={streaming || !employeeId}
           />
-          {streaming ? (
-            <button
-              type="button"
-              className="msm-send-btn msm-stop-btn"
-              onClick={cancelActiveStream}
-              title={t.stop}
-            >
-              <Square size={16} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="msm-send-btn"
-              disabled={!draft.trim()}
-              onClick={() => submitQuestion(draft)}
-              title={t.send}
-            >
-              <ArrowUp size={16} />
-            </button>
-          )}
-        </div>
-      </div>
+          <div className="composer-footer">
+            <div className="composer-context" />
+            <div className="composer-actions">
+              <button
+                className={streaming ? "send-button stopping" : "send-button"}
+                type={streaming ? "button" : "submit"}
+                title={streaming ? t.stop : t.send}
+                onClick={streaming ? cancelActiveStream : undefined}
+                disabled={streaming ? false : !draft.trim() || !employeeId}
+              >
+                {streaming ? (
+                  <Square size={16} fill="currentColor" />
+                ) : (
+                  <Send size={18} />
+                )}
+              </button>
+            </div>
+          </div>
+        </form>
+      ) : null}
+
+      {!employeeId && isComposerOpen ? (
+        <p className="msm-hint" role="status">
+          {t.loginRequired}
+        </p>
+      ) : null}
     </div>
   );
 }
+export default Fivem1eMode;

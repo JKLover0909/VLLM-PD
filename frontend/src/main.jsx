@@ -1736,6 +1736,7 @@ function App() {
   const [msmPreviewOpen, setMsmPreviewOpen] = useState(false);
   const [fivem1eTurnCount, setFivem1eTurnCount] = useState(0);
   const [fivem1eResetEpoch, setFivem1eResetEpoch] = useState(0);
+  const [fivem1ePreviewOpen, setFivem1ePreviewOpen] = useState(false);
   const [messagesByMode, setMessagesByMode] = useState(() =>
     createLanguageScopedState(() => []),
   );
@@ -2667,6 +2668,7 @@ function App() {
     if (mode === "fivem1e") {
       setFivem1eResetEpoch((e) => e + 1);
       setFivem1eTurnCount(0);
+      setFivem1ePreviewOpen(false);
     }
   }
 
@@ -3623,13 +3625,15 @@ function App() {
                 motion={agentMotion}
                 hasConversation={fivem1eTurnCount > 0}
                 hasError={false}
-                previewOpen={false}
+                previewOpen={fivem1ePreviewOpen}
               />
               <Fivem1eMode
                 key={fivem1eResetEpoch}
                 employeeId={employee?.id}
                 language={language}
+                presence={agentPresence}
                 onTurnCountChange={setFivem1eTurnCount}
+                onPreviewOpenChange={setFivem1ePreviewOpen}
               />
             </section>
           ) : (
