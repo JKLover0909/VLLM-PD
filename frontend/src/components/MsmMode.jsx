@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Bot, Send, Sparkles, Square } from "lucide-react";
+import { Bot, Send, Square } from "lucide-react";
 import AgentPresence from "./AgentPresence.jsx";
 import TaskLauncher from "./TaskLauncher.jsx";
 import { buildTaskGroups } from "../task-launcher.js";
@@ -744,8 +744,8 @@ export default function MsmMode({ employeeId, language, presence, ReportArtifact
               previewQuestion={taskPreviewDraft}
               onPreviewChange={setTaskPreviewDraft}
               onSelect={(task) => {
-                setSelectedTask(task);
-                setTaskPreviewDraft(task.question);
+                setSelectedTask(null);
+                submitQuestion(task.question);
               }}
               onRun={(task) => {
                 setSelectedTask(null);
@@ -872,7 +872,7 @@ export default function MsmMode({ employeeId, language, presence, ReportArtifact
                 {Array.isArray(turn.pills) && turn.pills.length > 0 ? (
                   <div className="msm-pills" role="group" aria-label={language === "ja" ? "次の候補" : "Gợi ý tiếp theo"}>
                     <p className="msm-pills-label">
-                      <Sparkles size={13} aria-hidden="true" />
+                      
                       <span>{language === "ja" ? "次の候補:" : "Gợi ý tiếp theo:"}</span>
                     </p>
                     <div className="msm-pills-list">
