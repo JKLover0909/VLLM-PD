@@ -125,6 +125,14 @@ test("MsmMode reports stream flags and guards stale streams", () => {
   assert.match(source, /data-latest=\{index === turns\.length - 1/);
 });
 
+test("MsmMode reports answering only for the first non-empty token event", () => {
+  const source = readFileSync(componentPath, "utf8");
+  assert.match(
+    source,
+    /item\?\.type === "token" && item\.content && !previousAnswer\) onAnsweringChange\?\.\(true\);/,
+  );
+});
+
 test("main blocks mode switch and clear while MSM or 5M1E streams", () => {
   const source = readFileSync(mainPath, "utf8");
   assert.match(source, /msmStreaming \|\| fivem1eStreaming/);

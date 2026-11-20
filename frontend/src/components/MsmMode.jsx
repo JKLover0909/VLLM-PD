@@ -639,7 +639,7 @@ export default function MsmMode({
       })) return;
       const previousAnswer = activeState.answer;
       activeState = reduceMsmEvent(activeState, item);
-      if (!previousAnswer && activeState.answer) onAnsweringChange?.(true);
+      if (item?.type === "token" && item.content && !previousAnswer) onAnsweringChange?.(true);
       if (item?.type === "error") onErrorChange?.(item.code || "ERROR");
       setTurns((current) =>
         current.map((turn) => (turn.id === turnId ? { ...turn, ...activeState } : turn)),
