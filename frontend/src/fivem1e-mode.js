@@ -1,3 +1,4 @@
+import { resolveStreamingModePresence } from "./agent-presence.js";
 import { shouldApplyStreamEvent, streamQuery } from "./query-stream.js";
 
 export function buildFivem1ePayload({ sessionId, question, employeeId }) {
@@ -6,7 +7,9 @@ export function buildFivem1ePayload({ sessionId, question, employeeId }) {
   return payload;
 }
 
-export function resolveFivem1ePresence(basePresence, { streaming = false, error = false } = {}) { if (error) return { state: "error", detail: "" }; if (streaming) return { state: "working", detail: "" }; return basePresence || { state: "ready", detail: "" }; }
+export function resolveFivem1ePresence(basePresence, { streaming = false, answering = false, error = false } = {}) {
+  return resolveStreamingModePresence(basePresence, { streaming, answering, error });
+}
 
 export function canSubmitFivem1eQuestion({ question, employeeId }) {
   return Boolean(String(question || "").trim() && employeeId);

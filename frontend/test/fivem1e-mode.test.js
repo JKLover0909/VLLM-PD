@@ -69,4 +69,8 @@ test("shouldApplyFivem1eEvent is the shared stream guard", () => {
   assert.equal(shouldApplyFivem1eEvent, shouldApplyStreamEvent);
 });
 
-test("maps 5M1E stream state to robot presence", () => { assert.equal(resolveFivem1ePresence({ state: "ready" }, { streaming: true }).state, "working"); assert.equal(resolveFivem1ePresence({ state: "ready" }, { error: true }).state, "error"); });
+test("maps 5M1E stream state to robot presence", () => {
+  assert.equal(resolveFivem1ePresence({ state: "ready" }, { streaming: true }).state, "working");
+  assert.equal(resolveFivem1ePresence({ state: "ready" }, { streaming: true, answering: true }).state, "answering");
+  assert.equal(resolveFivem1ePresence({ state: "ready" }, { error: true }).state, "error");
+});
