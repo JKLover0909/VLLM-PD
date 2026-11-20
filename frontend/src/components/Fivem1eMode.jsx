@@ -10,6 +10,8 @@ import {
   ListChecks,
 } from "lucide-react";
 import TaskLauncher from "./TaskLauncher.jsx";
+import { buildTaskGroups } from "../task-launcher.js";
+import "../msm-mode.css";
 import {
   buildFivem1ePayload,
   initialFivem1eState,
@@ -85,6 +87,7 @@ export function Fivem1eMode({
 
   const t = COPY[language] || COPY.vi;
   const starterPrompts = STARTER_PROMPTS[language] || STARTER_PROMPTS.vi;
+  const taskGroups = useMemo(() => buildTaskGroups("fivem1e", starterPrompts, language), [starterPrompts, language]);
 
   const scrollToBottom = useCallback(() => {
     turnsEndRef.current?.scrollIntoView({ behavior: "smooth" });
