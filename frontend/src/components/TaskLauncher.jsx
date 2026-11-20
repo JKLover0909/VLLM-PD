@@ -7,14 +7,14 @@ import {
 } from "lucide-react";
 import { spotlightVars, taskTransitionName } from "../motion.js";
 
-const MODE_ICONS = { mkac: Building2, mes: Activity, wms: Boxes, cctvai: Cctv, qa: ClipboardCheck, research: FlaskConical, msm: Wrench };
+const MODE_ICONS = { mkac: Building2, mes: Activity, wms: Boxes, cctvai: Cctv, qa: ClipboardCheck, research: FlaskConical, msm: Wrench, fivem1e: ListChecks };
 
 // Keys come from task-launcher.js (resolveIconKey); unknown keys fall back to the mode icon.
 const TASK_ICONS = {
   org: Network, clock: Clock, product: Package, alert: AlertTriangle, pie: ChartPie, ranking: ListOrdered,
   report: FileBarChart, compare: GitCompare, idea: Lightbulb, checklist: ListChecks, temperature: Thermometer,
   gauge: Gauge, scale: Scale, percent: Percent, version: Tags, records: History, count: Hash, refresh: RefreshCw,
-  server: Server, overview: LayoutDashboard, camera: Camera,
+  server: Server, overview: LayoutDashboard, camera: Camera, search: Search,
 };
 
 const COPY = {

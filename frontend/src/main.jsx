@@ -10,6 +10,7 @@ import { canAnimate, prefersReducedMotion, runViewTransition } from "./motion.js
 import { THEME_DEFAULT, THEME_MIGRATION_KEY, resolveStoredTheme } from "./theme-preference.js";
 import TaskLauncher from "./components/TaskLauncher.jsx";
 import MsmMode from "./components/MsmMode.jsx";
+import { Fivem1eMode } from "./components/Fivem1eMode.jsx";
 import { buildTaskGroups, prepareTaskRun } from "./task-launcher.js";
 import { resolveAgentPresence } from "./agent-presence.js";
 
@@ -63,6 +64,7 @@ import {
   X,
   Cctv,
   ExternalLink,
+  ListChecks,
 } from "lucide-react";
 import { EmployeeLogin } from "./components/EmployeeLogin";
 import { SourcePreviewDialog } from "./components/SourcePreviewDialog";
@@ -485,6 +487,12 @@ const QUICK_PROMPTS = {
       "Dự báo tải hiệu chuẩn 12 tháng tới",
       "Chuẩn bị form thêm thiết bị mới",
     ],
+    fivem1e: [
+      "Tìm báo cáo có mã quản lý HB-C04-2512-01",
+      "Báo cáo PCB_5M1E_20251216_0119 đang ở bước nào và tiến độ ra sao?",
+      "Có những báo cáo nào đang dừng ở bước 16?",
+      "Có bao nhiêu báo cáo theo từng hạng?",
+    ],
     research: [
       "Lập báo cáo nghiên cứu tổng hợp từ các tài liệu",
       "So sánh các quan điểm và chỉ ra điểm mâu thuẫn",
@@ -519,6 +527,12 @@ const QUICK_PROMPTS = {
       "至急対応が必要な校正タスク一覧",
       "今後12ヶ月の校正負荷予測",
       "新規設備登録フォームを開いてください",
+    ],
+    fivem1e: [
+      "管理コードHB-C04-2512-01のレポートを検索",
+      "レポートPCB_5M1E_20251216_0119の30ステップ進捗",
+      "ステップ16で待機中のレポート一覧",
+      "ランク別のレポート件数一覧",
     ],
     research: [
       "資料から総合的な調査レポートを作成してください",
@@ -661,6 +675,20 @@ const UI_TEXT = {
         misconfigured: "Chế độ MSM chưa được cấu hình. Vui lòng liên hệ quản trị viên.",
         // MODE_OPTIONS không có khoá msm, header lấy biểu tượng qua modeText().
         icon: Server,
+      },
+      fivem1e: {
+        label: "Báo cáo thay đổi 5M1E",
+        shortLabel: "5M1E",
+        title: "Tra cứu báo cáo thay đổi 5M1E",
+        empty: "Tra cứu tiến độ 30 bước, mã quản lý và thống kê báo cáo thay đổi 5M1E.",
+        metric: "Dữ liệu 5M1E",
+        authHint: "Nhập mã nhân viên để truy cập dữ liệu 5M1E.",
+        inputLabel: "Câu hỏi về 5M1E",
+        placeholder: "Hỏi theo mã quản lý hoặc tiến độ bước, ví dụ: báo cáo nào ở bước 16?",
+        guidance: "Agent trả lời bằng tiếng Việt, tra cứu trực tiếp theo dữ liệu hệ thống 5M1E.",
+        unavailable: "Dữ liệu 5M1E hiện chưa khả dụng. Vui lòng thử lại sau.",
+        misconfigured: "Chế độ 5M1E chưa được cấu hình. Vui lòng liên hệ quản trị viên.",
+        icon: ListChecks,
       },
       research: {
         label: "Nghiên cứu tài liệu",
@@ -999,6 +1027,20 @@ const UI_TEXT = {
         unavailable: "MSMデータは現在利用できません。後でもう一度お試しください。",
         misconfigured: "MSMモードが設定されていません。管理者にお問い合わせください。",
         icon: Server,
+      },
+      fivem1e: {
+        label: "5M1E変更管理",
+        shortLabel: "5M1E",
+        title: "5M1E変更レポート検索",
+        empty: "5M1Eから30ステップ進捗、管理コード、変更レポートを検索します。",
+        metric: "5M1Eデータ",
+        authHint: "5M1Eデータにアクセスするには社員番号を入力してください。",
+        inputLabel: "5M1Eに関する質問",
+        placeholder: "管理コードまたは進捗ステップで質問（例: ステップ16で待機中のレポートは？）",
+        guidance: "Agentはベトナム語で回答し、5M1Eシステムデータを直接照会します。",
+        unavailable: "5M1Eデータは現在利用できません。後でもう一度お試しください。",
+        misconfigured: "5M1Eモードが設定されていません。管理者にお問い合わせください。",
+        icon: ListChecks,
       },
       research: {
         label: "資料調査",
@@ -3548,6 +3590,21 @@ function App() {
                 ReportArtifactCard={ReportArtifactCard}
                 onTurnCountChange={setMsmTurnCount}
                 onPreviewOpenChange={setMsmPreviewOpen}
+              />
+            </section>
+          ) : mode === "fivem1e" ? (
+            <section
+              id="fivem1e-conversation"
+              className="conversation agent-workspace has-conversation"
+              data-motion={agentMotion}
+              data-agent-state={agentPresence.state}
+              role="tabpanel"
+              aria-label={currentMode.title}
+            >
+              <AgentStatus presence={agentPresence} language={language} />
+              <Fivem1eMode
+                employeeId={employee?.id}
+                language={language}
               />
             </section>
           ) : (
