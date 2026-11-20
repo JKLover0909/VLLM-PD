@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { streamQuery } from "../src/query-stream.js";
+import { shouldApplyStreamEvent, streamQuery } from "../src/query-stream.js";
 
 function responseFromChunks(chunks, { status = 200, body } = {}) {
   const encoder = new TextEncoder();
@@ -35,6 +35,15 @@ function responseFromChunks(chunks, { status = 200, body } = {}) {
 }
 
 const event = (value) => `data: ${JSON.stringify(value)}\n\n`;
+
+test("shouldApplyStreamEvent requires matching turn and controller", () => {
+  const controller = new AbortController();
+  const other = new AbortController();
+  assert.equal(shouldApplyStreamEvent({ turnId: "t1", activeTurnId: "t1", controller, activeController: controller }), true);
+  assert.equal(shouldApplyStreamEvent({ turnId: "t1", activeTurnId: "t2", controller, activeController: controller }), false);
+  assert.equal(shouldApplyStreamEvent({ turnId: "t1", activeTurnId: "t1", controller, activeController: other }), false);
+  assert.equal(shouldApplyStreamEvent({ turnId: "", activeTurnId: "", controller, activeController: controller }), false);
+});
 
 test("parses split SSE frames, UTF-8, and replaces content exactly", async () => {
   const encoder = new TextEncoder();

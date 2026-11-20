@@ -25,6 +25,7 @@ export function initialMsmState() {
     artifact: null,
     error: null,
     done: false,
+    stopped: false,
   };
 }
 
@@ -36,6 +37,8 @@ export function reduceMsmEvent(state, event) {
       return { ...state, answer: state.answer + (event.content || "") };
     case "meta":
       return { ...state, meta: event.label || "" };
+    case "stopped":
+      return { ...state, done: true, stopped: true };
     case "done": {
       const result = event.result || {};
       return {

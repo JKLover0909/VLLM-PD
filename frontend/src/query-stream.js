@@ -55,6 +55,10 @@ function terminalError(event) {
   return error;
 }
 
+export function shouldApplyStreamEvent({ turnId, activeTurnId, controller, activeController }) {
+  return Boolean(turnId && turnId === activeTurnId && controller && controller === activeController);
+}
+
 export async function streamQuery(payload, onEvent, signal, fetchImpl = fetch, endpoint = "/query/stream", { requireTerminal = payload.mode === "qa", incompleteCode = payload.mode === "fivem1e" ? "FIVEM1E_INCOMPLETE_STREAM" : "QA_INCOMPLETE_STREAM" } = {}) {
   const response = await fetchImpl(endpoint, {
     method: "POST",

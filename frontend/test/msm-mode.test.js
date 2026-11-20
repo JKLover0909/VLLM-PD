@@ -95,6 +95,12 @@ test("reduceMsmEvent collects artifact from done event", () => {
   assert.equal(state.artifact.report_type, "msm_executive_report");
 });
 
+test("reduceMsmEvent stopped keeps answer, views, forms and pending", () => {
+  const state = { ...initialMsmState(), answer: "partial", views: ["v"], forms: ["f"], pending: { id: "p" } };
+  assert.deepEqual(reduceMsmEvent(state, { type: "stopped" }), { ...state, done: true, stopped: true });
+  assert.equal(initialMsmState().stopped, false);
+});
+
 test("does not submit Enter while an IME composition is active", async () => {
   assert.equal(shouldSubmitOnEnter({ key: "Enter", shiftKey: false, nativeEvent: { isComposing: true } }), false);
   assert.equal(shouldSubmitOnEnter({ key: "Enter", keyCode: 229, shiftKey: false, nativeEvent: {} }), false);

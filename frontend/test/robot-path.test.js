@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chooseRobotTarget, placeRobot, robotHeight, travelDuration } from "../src/robot-path.js";
+import { chooseRobotTarget, placeRobot, robotAnchorSelectors, robotHeight, travelDuration } from "../src/robot-path.js";
 
 const base = { state: "ready", hasConversation: false, hasError: false, previewOpen: false, hoverIndex: null, patrolIndex: null, messageVisible: true };
 
@@ -30,6 +30,20 @@ test("conversation: sits by the latest answer, or the bar if it is scrolled away
   assert.equal(chooseRobotTarget({ ...base, hasConversation: true, state: "composing" }), "composer");
   // Patrol never runs once a conversation exists.
   assert.equal(chooseRobotTarget({ ...base, hasConversation: true, patrolIndex: 0 }), "message");
+});
+
+test("robotAnchorSelectors scopes error to latest alert and keeps error-banner first", () => {
+  assert.deepEqual(robotAnchorSelectors("error"), [".error-banner", '.message[data-latest="true"] .msm-error[role="alert"]']);
+});
+
+test("robotAnchorSelectors keeps existing target selectors and rejects unknown targets", () => {
+  assert.deepEqual(robotAnchorSelectors("home"), [".agent-presence.stage [data-robot-anchor]"]);
+  assert.deepEqual(robotAnchorSelectors("corner"), [".conversation-scroll"]);
+  assert.deepEqual(robotAnchorSelectors("preview"), [".task-preview"]);
+  assert.deepEqual(robotAnchorSelectors("composer"), [".composer"]);
+  assert.deepEqual(robotAnchorSelectors("message"), ['.message[data-latest="true"] .message-avatar']);
+  assert.deepEqual(robotAnchorSelectors("card:2"), ['.task-card[data-task-index="2"]']);
+  assert.deepEqual(robotAnchorSelectors("unknown"), []);
 });
 
 const container = { left: 100, top: 50, width: 1000, height: 700, right: 1100, bottom: 750 };

@@ -1,4 +1,4 @@
-import { streamQuery } from "./query-stream.js";
+import { shouldApplyStreamEvent, streamQuery } from "./query-stream.js";
 
 export function buildFivem1ePayload({ sessionId, question, employeeId }) {
   const payload = { session_id: sessionId, question: String(question || "").trim() };
@@ -12,9 +12,7 @@ export function canSubmitFivem1eQuestion({ question, employeeId }) {
   return Boolean(String(question || "").trim() && employeeId);
 }
 
-export function shouldApplyFivem1eEvent({ turnId, activeTurnId, controller, activeController }) {
-  return Boolean(turnId && turnId === activeTurnId && controller && controller === activeController);
-}
+export { shouldApplyStreamEvent as shouldApplyFivem1eEvent };
 
 export async function stopFivem1eQuery({ sessionId, employeeId }, fetchImpl = fetch) {
   if (!sessionId || !employeeId) return false;
@@ -31,13 +29,14 @@ export async function stopFivem1eQuery({ sessionId, employeeId }, fetchImpl = fe
 }
 
 export function initialFivem1eState() {
-  return { answer: "", meta: "", pills: [], error: null, done: false };
+  return { answer: "", meta: "", pills: [], error: null, done: false, stopped: false };
 }
 
 export function reduceFivem1eEvent(state, event) {
   switch (event?.type) {
     case "token": return { ...state, answer: state.answer + (event.content || "") };
     case "meta": return { ...state, meta: event.label || "" };
+    case "stopped": return { ...state, done: true, stopped: true };
     case "done": {
       const result = event.result || {};
       return { ...state, answer: state.answer || result.answer || "", pills: Array.isArray(result.pills) ? result.pills : [], done: true };

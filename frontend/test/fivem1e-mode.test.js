@@ -10,6 +10,7 @@ import {
   shouldApplyFivem1eEvent,
   stopFivem1eQuery,
 } from "../src/fivem1e-mode.js";
+import { shouldApplyStreamEvent } from "../src/query-stream.js";
 
 test("rejects 5M1E questions without an employee for every entry path", () => {
   assert.equal(canSubmitFivem1eQuestion({ question: "starter", employeeId: "" }), false);
@@ -56,6 +57,16 @@ test("posts 5M1E stop with session and employee without blocking UI", async () =
     body: { session_id: "s1", employee_id: "E1" },
     method: "POST",
   }]);
+});
+
+test("reduceFivem1eEvent stopped keeps the partial answer and terminal fields", () => {
+  const state = { ...initialFivem1eState(), answer: "partial", pills: ["p"], error: { code: "X", message: "m" } };
+  assert.deepEqual(reduceFivem1eEvent(state, { type: "stopped" }), { ...state, done: true, stopped: true });
+  assert.equal(initialFivem1eState().stopped, false);
+});
+
+test("shouldApplyFivem1eEvent is the shared stream guard", () => {
+  assert.equal(shouldApplyFivem1eEvent, shouldApplyStreamEvent);
 });
 
 test("maps 5M1E stream state to robot presence", () => { assert.equal(resolveFivem1ePresence({ state: "ready" }, { streaming: true }).state, "working"); assert.equal(resolveFivem1ePresence({ state: "ready" }, { error: true }).state, "error"); });

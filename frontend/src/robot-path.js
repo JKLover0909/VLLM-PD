@@ -34,6 +34,30 @@ export function chooseRobotTarget({
   return resting;
 }
 
+// DOM anchors the robot travels to. Each selector points at an element the real
+// UI renders, so the robot only ever targets what the user can see. The table
+// lives here so the robot component and its tests share one source of truth.
+export function robotAnchorSelectors(target) {
+  switch (target) {
+    case "home":
+      return [".agent-presence.stage [data-robot-anchor]"];
+    case "corner":
+      return [".conversation-scroll"];
+    case "preview":
+      return [".task-preview"];
+    case "composer":
+      return [".composer"];
+    case "error":
+      return [".error-banner", '.message[data-latest="true"] .msm-error[role="alert"]'];
+    case "message":
+      return ['.message[data-latest="true"] .message-avatar'];
+    default:
+      return typeof target === "string" && target.startsWith("card:")
+        ? [`.task-card[data-task-index="${target.slice(5)}"]`]
+        : [];
+  }
+}
+
 function validRect(rect) {
   return Boolean(rect) && rect.width > 0 && rect.height > 0;
 }

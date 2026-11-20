@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveAgentPresence, gazePosition } from "../src/agent-presence.js";
+import { resolveAgentPresence, resolveStreamingModePresence, gazePosition } from "../src/agent-presence.js";
 
 test("empty and typing states do not imply microphone or service readiness", () => {
   assert.equal(resolveAgentPresence({}).state, "ready");
@@ -31,6 +31,14 @@ test("partial output, cancellation, errors and clarification stay distinct", () 
 test("failed tool is not celebrated as a successful result", () => {
   const message = { agentTimeline: { steps: [{ status: "error" }] } };
   assert.equal(resolveAgentPresence({ message }).state, "error");
+});
+
+test("resolveStreamingModePresence maps error > answering > working > base", () => {
+  assert.deepEqual(resolveStreamingModePresence({ state: "composing", detail: "" }, { streaming: true, answering: true, error: false }), { state: "answering", detail: "" });
+  assert.deepEqual(resolveStreamingModePresence(null, { streaming: true }), { state: "working", detail: "" });
+  assert.deepEqual(resolveStreamingModePresence({ state: "ready", detail: "" }, { streaming: true, answering: true, error: true }), { state: "error", detail: "" });
+  assert.deepEqual(resolveStreamingModePresence({ state: "stopped", detail: "" }), { state: "stopped", detail: "" });
+  assert.deepEqual(resolveStreamingModePresence(null, {}), { state: "ready", detail: "" });
 });
 
 test("gaze is bounded and centered for invalid inputs", () => {
