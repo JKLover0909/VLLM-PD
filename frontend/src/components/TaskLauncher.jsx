@@ -58,7 +58,7 @@ export default function TaskLauncher({
   onToggleInfo, showInfo = false, children,
 }) {
   const copy = COPY[language] || COPY.vi;
-  const safeGroups = groups && Array.isArray(groups?.primary) ? groups : { primary: [], other: [] };
+  const safeGroups = { primary: Array.isArray(groups?.primary) ? groups.primary : [], other: Array.isArray(groups?.other) ? groups.other : [] };
   const hasSelection = Boolean(selectedTask);
   // The chosen card and the preview share one view-transition name so the
   // browser morphs one into the other.

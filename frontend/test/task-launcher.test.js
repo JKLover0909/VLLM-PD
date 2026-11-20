@@ -171,3 +171,45 @@ test("maps all 4 MSM starter prompts to labels and icons in VI and JA", () => {
     "checklist",
   ]);
 });
+
+test("maps all 4 5M1E starter prompts to labels and icons in VI and JA", () => {
+  const viPrompts = [
+    "Tìm báo cáo có mã quản lý HB-C04-2512-01",
+    "Báo cáo PCB_5M1E_20251216_0119 đang ở bước nào và tiến độ ra sao?",
+    "Có những báo cáo nào đang dừng ở bước 16?",
+    "Có bao nhiêu báo cáo theo từng hạng?",
+  ];
+  const vi = buildTaskGroups("fivem1e", viPrompts, "vi");
+  assert.deepEqual(vi.primary.map((item) => item.label), [
+    "Tra mã quản lý",
+    "Tiến độ 30 bước",
+    "Báo cáo bước 16",
+    "Thống kê theo hạng",
+  ]);
+  assert.deepEqual(vi.primary.map((item) => item.iconKey), [
+    "search",
+    "checklist",
+    "clock",
+    "ranking",
+  ]);
+
+  const jaPrompts = [
+    "管理コードHB-C04-2512-01のレポートを検索",
+    "レポートPCB_5M1E_20251216_0119の30ステップ進捗",
+    "ステップ16で待機中のレポート一覧",
+    "ランク別のレポート件数一覧",
+  ];
+  const ja = buildTaskGroups("fivem1e", jaPrompts, "ja");
+  assert.deepEqual(ja.primary.map((item) => item.label), [
+    "管理コード検索",
+    "30ステップ進捗",
+    "ステップ16待機",
+    "ランク別件数",
+  ]);
+  assert.deepEqual(ja.primary.map((item) => item.iconKey), [
+    "search",
+    "checklist",
+    "clock",
+    "ranking",
+  ]);
+});
