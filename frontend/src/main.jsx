@@ -560,6 +560,12 @@ const MODE_OPTIONS = {
   qa: {
     icon: ClipboardCheck,
   },
+  msm: {
+    icon: Server,
+  },
+  fivem1e: {
+    icon: ListChecks,
+  },
   research: {
     icon: FlaskConical,
   },
@@ -1728,6 +1734,8 @@ function App() {
   const [msmTurnCount, setMsmTurnCount] = useState(0);
   const [msmResetEpoch, setMsmResetEpoch] = useState(0);
   const [msmPreviewOpen, setMsmPreviewOpen] = useState(false);
+  const [fivem1eTurnCount, setFivem1eTurnCount] = useState(0);
+  const [fivem1eResetEpoch, setFivem1eResetEpoch] = useState(0);
   const [messagesByMode, setMessagesByMode] = useState(() =>
     createLanguageScopedState(() => []),
   );
@@ -2656,6 +2664,10 @@ function App() {
       setMsmTurnCount(0);
       setMsmPreviewOpen(false);
     }
+    if (mode === "fivem1e") {
+      setFivem1eResetEpoch((e) => e + 1);
+      setFivem1eTurnCount(0);
+    }
   }
 
   function sourcePreviewUrl(source, sourceMode = mode) {
@@ -3262,6 +3274,8 @@ function App() {
     if (mode === "qa") return [
       qaStatus.configured ? (qaStatus.state === "ONLINE" ? modeText("qa").metric : modeText("qa").unavailable) : modeText("qa").misconfigured,
     ];
+    if (mode === "msm") return [modeText("msm").metric];
+    if (mode === "fivem1e") return [modeText("fivem1e").metric];
     if (researchScope === "upload") return [`${files.length} ${modeText("research").metric}`];
     return researchTopicId
       ? [`${selectedResearchTopic()?.num_files ?? 0} ${modeText("research").metric}`]
@@ -3421,7 +3435,9 @@ function App() {
                           ? modeText("qa").metric
                           : mode === "msm"
                             ? modeText("msm").metric
-                            : researchScope === "upload"
+                            : mode === "fivem1e"
+                              ? modeText("fivem1e").metric
+                              : researchScope === "upload"
                         ? `${files.length} ${t("common.sessionDocuments")}`
                         : researchTopicId
                         ? formatText(modeText("research").scopeLabel, {
@@ -3517,7 +3533,7 @@ function App() {
               title={t("common.clearConversation")}
               aria-label={t("common.clearConversation")}
               onClick={() => setConfirmClearOpen(true)}
-              disabled={busy || (mode === "msm" ? msmTurnCount === 0 : messages.length === 0)}
+              disabled={busy || (mode === "msm" ? msmTurnCount === 0 : mode === "fivem1e" ? fivem1eTurnCount === 0 : messages.length === 0)}
             >
               <Trash2 size={18} />
             </button>
@@ -3595,16 +3611,25 @@ function App() {
           ) : mode === "fivem1e" ? (
             <section
               id="fivem1e-conversation"
-              className="conversation agent-workspace has-conversation"
+              className={`conversation agent-workspace ${fivem1eTurnCount > 0 ? "has-conversation" : "is-welcome"}`}
               data-motion={agentMotion}
               data-agent-state={agentPresence.state}
               role="tabpanel"
               aria-label={currentMode.title}
             >
               <AgentStatus presence={agentPresence} language={language} />
+              <RoamingRobot
+                state={agentPresence.state}
+                motion={agentMotion}
+                hasConversation={fivem1eTurnCount > 0}
+                hasError={false}
+                previewOpen={false}
+              />
               <Fivem1eMode
+                key={fivem1eResetEpoch}
                 employeeId={employee?.id}
                 language={language}
+                onTurnCountChange={setFivem1eTurnCount}
               />
             </section>
           ) : (

@@ -62,6 +62,7 @@ const COPY = {
 export function Fivem1eMode({
   employeeId,
   language = "vi",
+  onTurnCountChange,
   onLogout,
   onClearChat,
   onResetConversation,
@@ -89,11 +90,10 @@ export function Fivem1eMode({
   const starterPrompts = useMemo(() => {
     return STARTER_PROMPTS[language] || STARTER_PROMPTS.vi;
   }, [language]);
-  const taskGroups = useMemo(() => {
-    const res = buildTaskGroups("fivem1e", starterPrompts, language);
-    console.log("fivem1e taskGroups rendered:", res);
-    return res;
-  }, [starterPrompts, language]);
+  const taskGroups = useMemo(
+    () => buildTaskGroups("fivem1e", starterPrompts, language),
+    [starterPrompts, language]
+  );
 
   const scrollToBottom = useCallback(() => {
     turnsEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -102,6 +102,10 @@ export function Fivem1eMode({
   useEffect(() => {
     scrollToBottom();
   }, [turns, scrollToBottom]);
+
+  useEffect(() => {
+    onTurnCountChange?.(turns.length);
+  }, [turns.length, onTurnCountChange]);
 
   const cancelActiveStream = useCallback(() => {
     if (abortRef.current) {
@@ -244,25 +248,36 @@ export function Fivem1eMode({
                 groups={taskGroups}
                 language={language}
                 selectedTask={selectedTask}
-                taskPreviewDraft={taskPreviewDraft}
-                showFreeInput={showFreeInput}
-                taskInfoOpen={taskInfoOpen}
-                streaming={streaming}
+                previewQuestion={taskPreviewDraft}
+                onPreviewChange={setTaskPreviewDraft}
                 onSelect={(task) => {
                   if (!task) return;
                   submitQuestion(task.question);
                 }}
-                onPreviewChange={setTaskPreviewDraft}
-                onRun={submitQuestion}
+                onRun={(task, edited) => {
+                  const q = typeof edited === "string" && edited.trim() ? edited.trim() : task?.question || task;
+                  if (!q) return;
+                  setSelectedTask(null);
+                  setTaskPreviewDraft("");
+                  submitQuestion(q);
+                }}
                 onBack={() => {
                   setSelectedTask(null);
                   setTaskPreviewDraft("");
                 }}
-                onToggleFreeInput={() => {
-                  setShowFreeInput((prev) => !prev);
+                onFreeInput={() => {
+                  setSelectedTask(null);
+                  setShowFreeInput(true);
                   setTimeout(() => textareaRef.current?.focus(), 50);
                 }}
-                onToggleTaskInfo={() => setTaskInfoOpen((prev) => !prev)}
+                onBackToTasks={() => {
+                  setShowFreeInput(false);
+                }}
+                showFreeInput={showFreeInput}
+                onToggleInfo={() => setTaskInfoOpen((prev) => !prev)}
+                showInfo={taskInfoOpen}
+                modeDescription={t.welcomeSubtitle}
+                infoItems={[t.welcomeSubtitle]}
               />
             </div>
           </div>

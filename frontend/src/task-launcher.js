@@ -25,16 +25,6 @@ const LABELS_BY_ID = {
 
 const LABELS = {
   vi: {
-    fivem1e: {
-      "Tìm báo cáo có mã quản lý HB-C04-2512-01": "管理コード検索",
-      "管理コードHB-C04-2512-01のレポートを検索": "管理コード検索",
-      "Báo cáo PCB_5M1E_20251216_0119 đang ở bước nào và tiến độ ra sao?": "30ステップ進捗",
-      "レポートPCB_5M1E_20251216_0119の30ステップ進捗": "30ステップ進捗",
-      "Có những báo cáo nào đang dừng ở bước 16?": "ステップ16待機",
-      "ステップ16で待機中のレポート一覧": "ステップ16待機",
-      "Có bao nhiêu báo cáo theo từng hạng?": "ランク別件数",
-      "ランク別のレポート件数一覧": "ランク別件数",
-    },
     mkac: {
       "Meiko Automation gồm những phòng ban nào?": "Phòng ban",
       "Meiko Automationにはどの部署がありますか？": "Phòng ban",
@@ -97,16 +87,6 @@ const LABELS = {
       "Máy F102-01 trong tháng 10/2026 có bao nhiêu lần đo trọng lượng và có lần nào NG không?": "F102-01 重量",
       "Máy F102-01 có bao nhiêu tên hạng mục kiểm tra khác nhau?": "F102-01 検査項目",
     },
-    fivem1e: {
-      "Tìm báo cáo có mã quản lý HB-C04-2512-01": "管理コード検索",
-      "管理コードHB-C04-2512-01のレポートを検索": "管理コード検索",
-      "Báo cáo PCB_5M1E_20251216_0119 đang ở bước nào và tiến độ ra sao?": "30ステップ進捗",
-      "レポートPCB_5M1E_20251216_0119の30ステップ進捗": "30ステップ進捗",
-      "Có những báo cáo nào đang dừng ở bước 16?": "ステップ16待機",
-      "ステップ16で待機中のレポート一覧": "ステップ16待機",
-      "Có bao nhiêu báo cáo theo từng hạng?": "ランク別件数",
-      "ランク別のレポート件数一覧": "ランク別件数",
-    },
     mkac: {
       "Meiko Automation gồm những phòng ban nào?": "部署",
       "Meiko Automationにはどの部署がありますか？": "部署",
@@ -136,14 +116,14 @@ const LABELS = {
       "新規設備登録フォームを開いてください": "新規登録",
     },
     fivem1e: {
-      "Tìm báo cáo có mã quản lý HB-C04-2512-01": "Tra mã quản lý",
-      "管理コードHB-C04-2512-01のレポートを検索": "Tra mã quản lý",
-      "Báo cáo PCB_5M1E_20251216_0119 đang ở bước nào và tiến độ ra sao?": "Tiến độ 30 bước",
-      "レポートPCB_5M1E_20251216_0119の30ステップ進捗": "Tiến độ 30 bước",
-      "Có những báo cáo nào đang dừng ở bước 16?": "Báo cáo bước 16",
-      "ステップ16で待機中のレポート一覧": "Báo cáo bước 16",
-      "Có bao nhiêu báo cáo theo từng hạng?": "Thống kê theo hạng",
-      "ランク別のレポート件数一覧": "Thống kê theo hạng",
+      "Tìm báo cáo có mã quản lý HB-C04-2512-01": "管理コード検索",
+      "管理コードHB-C04-2512-01のレポートを検索": "管理コード検索",
+      "Báo cáo PCB_5M1E_20251216_0119 đang ở bước nào và tiến độ ra sao?": "30ステップ進捗",
+      "レポートPCB_5M1E_20251216_0119の30ステップ進捗": "30ステップ進捗",
+      "Có những báo cáo nào đang dừng ở bước 16?": "ステップ16待機",
+      "ステップ16で待機中のレポート一覧": "ステップ16待機",
+      "Có bao nhiêu báo cáo theo từng hạng?": "ランク別件数",
+      "ランク別のレポート件数一覧": "ランク別件数",
     },
     research: {
       "Lập báo cáo nghiên cứu tổng hợp từ các tài liệu": "総合レポート",
