@@ -86,7 +86,10 @@ export function Fivem1eMode({
   const turnsEndRef = useRef(null);
 
   const t = COPY[language] || COPY.vi;
-  const starterPrompts = STARTER_PROMPTS[language] || STARTER_PROMPTS.vi;
+  const starterPrompts = useMemo(() => {
+    const list = STARTER_PROMPTS[language] || STARTER_PROMPTS.vi;
+    return list.map((q) => ({ question: q }));
+  }, [language]);
   const taskGroups = useMemo(() => buildTaskGroups("fivem1e", starterPrompts, language), [starterPrompts, language]);
 
   const scrollToBottom = useCallback(() => {

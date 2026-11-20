@@ -53,15 +53,16 @@ function TaskIcon({ mode, iconKey, size }) {
 }
 
 export default function TaskLauncher({
-  mode, language, groups, selectedTask, previewQuestion, onPreviewChange, onSelect, onRun, onBack,
+  mode, language, groups = { primary: [], other: [] }, selectedTask, previewQuestion, onPreviewChange, onSelect, onRun, onBack,
   onFreeInput, onBackToTasks, showFreeInput = false, qaGuidance, modeDescription, researchContext, infoItems = [],
   onToggleInfo, showInfo = false, children,
 }) {
   const copy = COPY[language] || COPY.vi;
+  const safeGroups = groups && Array.isArray(safeGroups.primary) ? groups : { primary: [], other: [] };
   const hasSelection = Boolean(selectedTask);
   // The chosen card and the preview share one view-transition name so the
   // browser morphs one into the other.
-  const selectedIndex = hasSelection ? groups.primary.findIndex((task) => task.question === selectedTask.question) : -1;
+  const selectedIndex = hasSelection ? safeGroups.primary.findIndex((task) => task.question === selectedTask.question) : -1;
   const previewName = taskTransitionName(selectedIndex) || "task-preview";
 
   return (
@@ -106,8 +107,8 @@ export default function TaskLauncher({
         </div>
       ) : (
         <>
-          <div className="task-grid" role="group" aria-label={copy.title} style={{ "--task-cols": groups.primary.length <= 4 ? Math.max(groups.primary.length, 1) : 3 }}>
-            {groups.primary.map((task, index) => (
+          <div className="task-grid" role="group" aria-label={copy.title} style={{ "--task-cols": safeGroups.primary.length <= 4 ? Math.max(safeGroups.primary.length, 1) : 3 }}>
+            {safeGroups.primary.map((task, index) => (
               <button
                 type="button"
                 className="task-card"
@@ -135,11 +136,11 @@ export default function TaskLauncher({
                 <Keyboard size={15} aria-hidden="true" /> {copy.free}
               </button>
             )}
-            {groups.other.length > 0 && (
+            {safeGroups.other.length > 0 && (
               <details className="task-other">
-                <summary className="task-link"><ChevronDown size={14} aria-hidden="true" /> {copy.other} ({groups.other.length})</summary>
+                <summary className="task-link"><ChevronDown size={14} aria-hidden="true" /> {copy.other} ({safeGroups.other.length})</summary>
                 <div className="task-other-list">
-                  {groups.other.map((task) => (
+                  {safeGroups.other.map((task) => (
                     <button type="button" key={task.question} onClick={() => onSelect(task)}>
                       <TaskIcon mode={mode} iconKey={task.iconKey} size={14} />
                       <span>{task.question}</span>
