@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { chooseRobotTarget, placeRobot, robotAnchorSelectors, robotHeight, travelDuration } from "../src/robot-path.js";
+
+const SRC = join(dirname(fileURLToPath(import.meta.url)), "../src");
 
 const base = { state: "ready", hasConversation: false, hasError: false, previewOpen: false, hoverIndex: null, patrolIndex: null, messageVisible: true };
 
@@ -88,4 +93,28 @@ test("corner: docks inside the conversation area's top-right corner", () => {
   const p = placeRobot("corner", scroller, container, 56);
   assert.equal(Math.round(p.x), Math.round(1100 - 56 - 16 - 100));
   assert.equal(Math.round(p.y), Math.round(120 + 10 - 50));
+});
+
+const robotComponentPath = join(SRC, "components/RoamingRobot.jsx");
+const robotCssPath = join(SRC, "msm-mode.css");
+
+test("robot source uses shared selector table and mobile rule is exact", () => {
+  const source = readFileSync(robotComponentPath, "utf8");
+  assert.match(source, /import \{[^}]*\brobotAnchorSelectors\b[^}]*\} from "\.\.\/robot-path\.js";/);
+
+  const start = source.indexOf("function findAnchor(root, target) {");
+  assert.notEqual(start, -1, "findAnchor exists");
+  const body = source.slice(start, source.indexOf("\n}", start));
+  assert.match(body, /for \(const selector of robotAnchorSelectors\(target\)\) \{/);
+  assert.match(body, /const match = root\.querySelector\(selector\);/);
+  assert.match(body, /if \(match\) return match;/);
+  // First match wins: the return sits inside the loop, before any fallback.
+  assert.ok(body.indexOf("for (const selector") < body.indexOf("if (match) return match;"));
+  // The old hardcoded error branch is gone; the shared table owns selectors.
+  assert.doesNotMatch(body, /target === "error"/);
+  assert.doesNotMatch(body, /\.error-banner/);
+
+  const css = readFileSync(robotCssPath, "utf8");
+  const rule = '@media (max-width: 700px) {\n  .msm-turn { width: calc(100% - 18px); padding: 14px 0 16px; }\n}\n';
+  assert.equal(css.slice(-rule.length), rule, "msm-mode.css ends with the exact mobile rule");
 });

@@ -741,3 +741,7 @@ html[data-theme="dark"] .msm-wizard-cancel:hover:not(:disabled) {
   background: #252e3b;
   color: #cbd5e1;
 }
+
+@media (max-width: 700px) {
+  .msm-turn { width: calc(100% - 18px); padding: 14px 0 16px; }
+}

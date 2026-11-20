@@ -1,23 +1,21 @@
 import React, { useEffect, useRef, useState } from "react";
 import AgentRobot from "./AgentRobot.jsx";
 import { canAnimate, prefersReducedMotion } from "../motion.js";
-import { chooseRobotTarget, placeRobot, robotHeight, travelDuration } from "../robot-path.js";
+import { chooseRobotTarget, placeRobot, robotAnchorSelectors, robotHeight, travelDuration } from "../robot-path.js";
 
 const SMALL_SIZE = 56;
 const PHONE_SIZE = 44;
 const PATROL_EVERY_MS = 6500;
 const PATROL_STAY_MS = 2400;
 
-// DOM anchors the robot can travel to. Each is rendered by the real UI, so the
-// robot only ever points at something the user can actually see.
+// DOM anchors the robot can travel to, taken from the shared selector table so
+// the robot and its tests agree on what the real UI renders. The first selector
+// that matches wins: `.error-banner` before a scoped latest-turn alert.
 function findAnchor(root, target) {
-  if (target === "home") return root.querySelector(".agent-presence.stage [data-robot-anchor]");
-  if (target === "corner") return root.querySelector(".conversation-scroll");
-  if (target === "preview") return root.querySelector(".task-preview");
-  if (target === "composer") return root.querySelector(".composer");
-  if (target === "error") return root.querySelector(".error-banner");
-  if (target === "message") return root.querySelector('.message[data-latest="true"] .message-avatar');
-  if (target.startsWith("card:")) return root.querySelector(`.task-card[data-task-index="${target.slice(5)}"]`);
+  for (const selector of robotAnchorSelectors(target)) {
+    const match = root.querySelector(selector);
+    if (match) return match;
+  }
   return null;
 }
 
