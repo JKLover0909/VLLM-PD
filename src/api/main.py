@@ -171,6 +171,8 @@ from src.api.helpers import (
 )
 from src.api import msm_agent
 from src.api.msm_agent import router as msm_router
+from src.api import fivem1e_agent
+from src.api.fivem1e_agent import router as fivem1e_router
 
 ENABLE_AGENT = config.ENABLE_AGENT
 agent_executor = None
@@ -4269,6 +4271,9 @@ async def favicon():
 
 msm_agent.set_employee_verifier(verify_mkac_employee)
 app.include_router(msm_router)
+
+fivem1e_agent.set_employee_verifier(verify_mkac_employee)
+app.include_router(fivem1e_router)
 
 
 if FRONTEND_DIST.exists():
