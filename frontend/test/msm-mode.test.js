@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 import {
   buildMsmPayload,
@@ -105,4 +109,39 @@ test("does not submit Enter while an IME composition is active", async () => {
   assert.equal(shouldSubmitOnEnter({ key: "Enter", shiftKey: false, nativeEvent: { isComposing: true } }), false);
   assert.equal(shouldSubmitOnEnter({ key: "Enter", keyCode: 229, shiftKey: false, nativeEvent: {} }), false);
   assert.equal(shouldSubmitOnEnter({ key: "Enter", shiftKey: false, nativeEvent: {} }), true);
+});
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../src");
+const componentPath = join(ROOT, "components/MsmMode.jsx");
+const mainPath = join(ROOT, "main.jsx");
+const crypto = await import("node:crypto");
+
+test("MsmMode reports stream flags and guards stale streams", () => {
+  const source = readFileSync(componentPath, "utf8");
+  assert.match(source, /onStreamingChange/);
+  assert.match(source, /onAnsweringChange/);
+  assert.match(source, /onErrorChange/);
+  assert.match(source, /shouldApplyStreamEvent/);
+  assert.match(source, /data-latest=\{index === turns\.length - 1/);
+});
+
+test("main blocks mode switch and clear while MSM or 5M1E streams", () => {
+  const source = readFileSync(mainPath, "utf8");
+  assert.match(source, /msmStreaming \|\| fivem1eStreaming/);
+  assert.match(source, /disabled=\{[^}]*msmStreaming/);
+});
+
+test("msm write path regions are byte-identical to 8db9719", () => {
+  const current = readFileSync(componentPath, "utf8");
+  const baseline = String(execFileSync("git", ["show", "8db9719:frontend/src/components/MsmMode.jsx"], { encoding: "utf8", cwd: join(ROOT, "../..") }));
+  const regions = [
+    ["MsmTableView", "function MsmTableView", "export default function MsmMode", "38987953bf078bc36be4af9e5bcc73fe9562f714efcd707713ad86f7e0ee8801"],
+    ["handleFormSubmit", "  async function handleFormSubmit", "  const disabled", "310d3816ab2405460a8248c19fca353ab6cdf0cb261b293b3a441ff0284c3032"],
+    ["forms-pending", "        {turn.views.map", "        {turn.notice", "ee8338cd7a4b656025001476866c835734291dafabf62ab9f900cc6df9ee8505"],
+  ];
+  for (const [name, start, end, expected] of regions) {
+    const slice = (source) => source.slice(source.indexOf(start), source.indexOf(end));
+    assert.equal(crypto.createHash("sha256").update(slice(current)).digest("hex"), expected, name);
+    assert.equal(slice(current), slice(baseline), name);
+  }
 });

@@ -13,7 +13,7 @@ import MsmMode from "./components/MsmMode.jsx";
 import { Fivem1eMode } from "./components/Fivem1eMode.jsx";
 import { resolveFivem1ePresence } from "./fivem1e-mode.js";
 import { buildTaskGroups, prepareTaskRun } from "./task-launcher.js";
-import { resolveAgentPresence } from "./agent-presence.js";
+import { resolveAgentPresence, resolveStreamingModePresence } from "./agent-presence.js";
 
 // Memo hoá theo nội dung: khi stream token, chỉ message đang thay đổi mới
 // parse lại markdown; các message cũ giữ nguyên nên không re-parse (tránh
@@ -1736,6 +1736,9 @@ function App() {
   const [msmTurnCount, setMsmTurnCount] = useState(0);
   const [msmResetEpoch, setMsmResetEpoch] = useState(0);
   const [msmPreviewOpen, setMsmPreviewOpen] = useState(false);
+  const [msmStreaming, setMsmStreaming] = useState(false);
+  const [msmAnswering, setMsmAnswering] = useState(false);
+  const [msmError, setMsmError] = useState("");
   const [fivem1eTurnCount, setFivem1eTurnCount] = useState(0);
   const [fivem1eResetEpoch, setFivem1eResetEpoch] = useState(0);
   const [fivem1ePreviewOpen, setFivem1ePreviewOpen] = useState(false);
@@ -1986,7 +1989,15 @@ function App() {
     busy, pendingId: pendingAssistantId, message: latestAssistantMessage,
     question, error, needsSelection: !researchReady,
   });
-  const activeAgentPresence = mode === "fivem1e" ? resolveFivem1ePresence(agentPresence, { streaming: fivem1eStreaming, error: Boolean(fivem1eError) }) : agentPresence;
+  const activeAgentPresence = mode === "fivem1e"
+    ? resolveFivem1ePresence(agentPresence, { streaming: fivem1eStreaming, error: Boolean(fivem1eError) })
+    : mode === "msm"
+      ? resolveStreamingModePresence(agentPresence, {
+        streaming: msmStreaming,
+        answering: msmAnswering,
+        error: Boolean(msmError),
+      })
+      : agentPresence;
   const latestSources = sources.length
     ? sources
     : latestAssistantMessage?.sources || [];
@@ -2644,7 +2655,7 @@ function App() {
 
   function switchMode(nextMode) {
     if (!visibleModes.includes(nextMode)) return;
-    if (nextMode === mode || busy || uploading) return;
+    if (nextMode === mode || busy || uploading || msmStreaming || fivem1eStreaming) return;
     setMode(nextMode);
     setSelectedTask(null);
     setTaskInfoOpen(false);
@@ -2669,6 +2680,9 @@ function App() {
       setMsmResetEpoch((e) => e + 1);
       setMsmTurnCount(0);
       setMsmPreviewOpen(false);
+      setMsmStreaming(false);
+      setMsmAnswering(false);
+      setMsmError("");
     }
     if (mode === "fivem1e") {
       setFivem1eResetEpoch((e) => e + 1);
@@ -3464,7 +3478,7 @@ function App() {
                 className="mode-selector"
                 value={mode}
                 onChange={(event) => switchMode(event.target.value)}
-                disabled={busy || uploading}
+                disabled={busy || uploading || msmStreaming || fivem1eStreaming}
                 aria-label={t("common.qaModes")}
                 title={currentMode.label}
               >
@@ -3542,7 +3556,7 @@ function App() {
               title={t("common.clearConversation")}
               aria-label={t("common.clearConversation")}
               onClick={() => setConfirmClearOpen(true)}
-              disabled={busy || fivem1eStreaming || (mode === "msm" ? msmTurnCount === 0 : mode === "fivem1e" ? fivem1eTurnCount === 0 : messages.length === 0)}
+              disabled={busy || fivem1eStreaming || msmStreaming || (mode === "msm" ? msmTurnCount === 0 : mode === "fivem1e" ? fivem1eTurnCount === 0 : messages.length === 0)}
             >
               <Trash2 size={18} />
             </button>
@@ -3595,26 +3609,29 @@ function App() {
               id="msm-conversation"
               className={`conversation agent-workspace ${msmTurnCount > 0 ? "has-conversation" : "is-welcome"}`}
               data-motion={agentMotion}
-              data-agent-state={agentPresence.state}
+              data-agent-state={activeAgentPresence.state}
               role="tabpanel"
               aria-label={currentMode.title}
             >
-              <AgentStatus presence={agentPresence} language={language} />
+              <AgentStatus presence={activeAgentPresence} language={language} />
               <RoamingRobot
-                state={agentPresence.state}
+                state={activeAgentPresence.state}
                 motion={agentMotion}
                 hasConversation={msmTurnCount > 0}
-                hasError={false}
+                hasError={Boolean(msmError)}
                 previewOpen={msmPreviewOpen}
               />
               <MsmMode
                 key={msmResetEpoch}
                 employeeId={employee?.id}
                 language={language}
-                presence={agentPresence}
+                presence={activeAgentPresence}
                 ReportArtifactCard={ReportArtifactCard}
                 onTurnCountChange={setMsmTurnCount}
                 onPreviewOpenChange={setMsmPreviewOpen}
+                onStreamingChange={setMsmStreaming}
+                onAnsweringChange={setMsmAnswering}
+                onErrorChange={setMsmError}
               />
             </section>
           ) : mode === "fivem1e" ? (

@@ -14,6 +14,7 @@ import {
   lookupMsmCategory,
   shouldSubmitOnEnter,
 } from "../msm-mode";
+import { shouldApplyStreamEvent } from "../query-stream";
 import "../msm-mode.css";
 
 // Cùng bộ tuỳ chọn bảng Markdown với chế độ QA để bảng rộng cuộn ngang trong
@@ -499,7 +500,17 @@ function MsmForm({ form, employeeId, onSubmit, onCancel }) {
   );
 }
 
-export default function MsmMode({ employeeId, language, presence, ReportArtifactCard, onTurnCountChange, onPreviewOpenChange }) {
+export default function MsmMode({
+  employeeId,
+  language,
+  presence,
+  ReportArtifactCard,
+  onTurnCountChange,
+  onPreviewOpenChange,
+  onStreamingChange,
+  onAnsweringChange,
+  onErrorChange,
+}) {
   const [turns, setTurns] = useState([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -511,6 +522,8 @@ export default function MsmMode({ employeeId, language, presence, ReportArtifact
   const textareaRef = useRef(null);
   const sessionIdRef = useRef("");
   const abortRef = useRef(null);
+  const activeTurnRef = useRef(null);
+  const scrollRef = useRef(null);
 
   const starterPrompts = useMemo(() => {
     return language === "ja"
@@ -561,6 +574,22 @@ export default function MsmMode({ employeeId, language, presence, ReportArtifact
     }
   }, [showFreeInput]);
 
+  React.useEffect(() => {
+    if (!streaming) return;
+    const node = scrollRef.current;
+    if (node) node.scrollTop = node.scrollHeight;
+  }, [turns, streaming]);
+
+  React.useEffect(() => () => {
+    const controller = abortRef.current;
+    if (!controller) return;
+    activeTurnRef.current = null;
+    abortRef.current = null;
+    controller.abort();
+    onStreamingChange?.(false);
+    onAnsweringChange?.(false);
+  }, []);
+
   function patchTurn(turnId, updater) {
     setTurns((current) =>
       current.map((turn) => (turn.id === turnId ? updater(turn) : turn)),
@@ -587,14 +616,36 @@ export default function MsmMode({ employeeId, language, presence, ReportArtifact
     if (!question || !employeeId || streaming) return;
     if (!sessionIdRef.current) sessionIdRef.current = newId();
     const turnId = newId();
+    activeTurnRef.current = turnId;
+    onErrorChange?.("");
+    onAnsweringChange?.(false);
     setTurns((current) => [
       ...current,
       { id: turnId, question, notice: "", ...initialMsmState() },
     ]);
     setDraft("");
     setStreaming(true);
+    onStreamingChange?.(true);
     const controller = new AbortController();
     abortRef.current = controller;
+    let activeState = initialMsmState();
+
+    const onEvent = (item) => {
+      if (!shouldApplyStreamEvent({
+        turnId,
+        activeTurnId: activeTurnRef.current,
+        controller,
+        activeController: abortRef.current,
+      })) return;
+      const previousAnswer = activeState.answer;
+      activeState = reduceMsmEvent(activeState, item);
+      if (!previousAnswer && activeState.answer) onAnsweringChange?.(true);
+      if (item?.type === "error") onErrorChange?.(item.code || "ERROR");
+      setTurns((current) =>
+        current.map((turn) => (turn.id === turnId ? { ...turn, ...activeState } : turn)),
+      );
+    };
+
     try {
       await streamMsmQuery(
         buildMsmPayload({
@@ -602,23 +653,51 @@ export default function MsmMode({ employeeId, language, presence, ReportArtifact
           question,
           employeeId,
         }),
-        (item) => patchTurn(turnId, (turn) => reduceMsmEvent(turn, item)),
+        onEvent,
         controller.signal,
       );
     } catch (error) {
-      if (error?.name !== "AbortError") {
-        patchTurn(turnId, (turn) =>
-          reduceMsmEvent(turn, {
-            type: "error",
-            code: error?.code || "",
-            message: errorCopy(error),
-          }),
+      if (error?.name !== "AbortError" && shouldApplyStreamEvent({
+        turnId,
+        activeTurnId: activeTurnRef.current,
+        controller,
+        activeController: abortRef.current,
+      })) {
+        onErrorChange?.(error?.code || "ERROR");
+        setTurns((current) =>
+          current.map((turn) =>
+            turn.id === turnId
+              ? reduceMsmEvent(turn, {
+                type: "error",
+                code: error?.code || "",
+                message: errorCopy(error),
+              })
+              : turn,
+          ),
         );
       }
     } finally {
-      abortRef.current = null;
-      setStreaming(false);
+      if (activeTurnRef.current === turnId && abortRef.current === controller) {
+        abortRef.current = null;
+        activeTurnRef.current = null;
+        setStreaming(false);
+        onStreamingChange?.(false);
+        onAnsweringChange?.(false);
+      }
     }
+  }
+
+  function stopStreaming() {
+    const turnId = activeTurnRef.current;
+    const controller = abortRef.current;
+    if (!turnId || !controller) return;
+    patchTurn(turnId, (turn) => reduceMsmEvent(turn, { type: "stopped" }));
+    activeTurnRef.current = null;
+    abortRef.current = null;
+    controller.abort();
+    setStreaming(false);
+    onStreamingChange?.(false);
+    onAnsweringChange?.(false);
   }
 
   function submit(event) {
@@ -731,7 +810,7 @@ export default function MsmMode({ employeeId, language, presence, ReportArtifact
 
   return (
     <div className="msm-mode" lang={language === "ja" ? "ja" : "vi"} aria-label={COPY.emptyTitle}>
-      <div className="msm-scroll conversation-scroll">
+      <div className="msm-scroll conversation-scroll" ref={scrollRef}>
         {turns.length === 0 ? (
           <div className="empty-conversation">
             <div className="empty-copy">
@@ -783,13 +862,13 @@ export default function MsmMode({ employeeId, language, presence, ReportArtifact
             />
           </div>
         ) : null}
-        {turns.map((turn) => (
+        {turns.map((turn, index) => (
           <div className="msm-turn" key={turn.id}>
             <article className="message user">
               <div className="message-avatar">U</div>
               <div className="message-content">{turn.question}</div>
             </article>
-            <article className="message assistant">
+            <article className="message assistant" data-latest={index === turns.length - 1 ? "true" : undefined}>
               <div className="message-avatar">
                 <Bot size={18} />
               </div>
@@ -809,6 +888,11 @@ export default function MsmMode({ employeeId, language, presence, ReportArtifact
                   <div className="msm-progress" role="status">
                     {turn.meta || COPY.processing}
                   </div>
+                ) : null}
+                {turn.stopped ? (
+                  <p className="msm-progress" role="status">
+                    {language === "ja" ? "停止済み" : "Đã dừng"}
+                  </p>
                 ) : null}
                 {turn.error ? (
                   <p className="msm-error" role="alert">
@@ -915,7 +999,7 @@ export default function MsmMode({ employeeId, language, presence, ReportArtifact
                 className={streaming ? "send-button stopping" : "send-button"}
                 type={streaming ? "button" : "submit"}
                 title={streaming ? COPY.stop : COPY.send}
-                onClick={streaming ? () => abortRef.current?.abort() : undefined}
+                onClick={streaming ? stopStreaming : undefined}
                 disabled={streaming ? false : !draft.trim() || disabled}
               >
                 {streaming ? (
