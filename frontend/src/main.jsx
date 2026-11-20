@@ -11,6 +11,7 @@ import { THEME_DEFAULT, THEME_MIGRATION_KEY, resolveStoredTheme } from "./theme-
 import TaskLauncher from "./components/TaskLauncher.jsx";
 import MsmMode from "./components/MsmMode.jsx";
 import { Fivem1eMode } from "./components/Fivem1eMode.jsx";
+import { resolveFivem1ePresence } from "./fivem1e-mode.js";
 import { buildTaskGroups, prepareTaskRun } from "./task-launcher.js";
 import { resolveAgentPresence } from "./agent-presence.js";
 
@@ -81,6 +82,7 @@ import {
   visibleModeKeys,
   isCctvaiAvailable,
   cctvaiHealthBannerVisibility,
+  EMPLOYEE_PROTECTED_MODES,
 } from "./mode-tabs";
 import "./styles.css";
 import "./intro.css";
@@ -1737,6 +1739,8 @@ function App() {
   const [fivem1eTurnCount, setFivem1eTurnCount] = useState(0);
   const [fivem1eResetEpoch, setFivem1eResetEpoch] = useState(0);
   const [fivem1ePreviewOpen, setFivem1ePreviewOpen] = useState(false);
+  const [fivem1eStreaming, setFivem1eStreaming] = useState(false);
+  const [fivem1eError, setFivem1eError] = useState("");
   const [messagesByMode, setMessagesByMode] = useState(() =>
     createLanguageScopedState(() => []),
   );
@@ -1925,7 +1929,7 @@ function App() {
     (researchScope === "upload"
       ? files.length > 0
       : Boolean(researchTopicId && selectedTopic?.ready));
-  const employeeProtectedMode = ["mkac", "mes", "wms", "cctvai", "qa"].includes(mode);
+  const employeeProtectedMode = EMPLOYEE_PROTECTED_MODES.has(mode);
   const qaAuthorized = Boolean(employee?.id && employee?.name && !isGuestEmployee(employee));
   const mkacAuthorized = !employeeProtectedMode || (mode === "qa" ? qaAuthorized : Boolean(employee?.id && employee?.name));
   const qaQuestionValid = mode !== "qa" || isValidQaQuestion(question);
@@ -1982,6 +1986,7 @@ function App() {
     busy, pendingId: pendingAssistantId, message: latestAssistantMessage,
     question, error, needsSelection: !researchReady,
   });
+  const activeAgentPresence = mode === "fivem1e" ? resolveFivem1ePresence(agentPresence, { streaming: fivem1eStreaming, error: Boolean(fivem1eError) }) : agentPresence;
   const latestSources = sources.length
     ? sources
     : latestAssistantMessage?.sources || [];
@@ -2669,6 +2674,8 @@ function App() {
       setFivem1eResetEpoch((e) => e + 1);
       setFivem1eTurnCount(0);
       setFivem1ePreviewOpen(false);
+      setFivem1eStreaming(false);
+      setFivem1eError("");
     }
   }
 
@@ -3248,7 +3255,7 @@ function App() {
     setEmployeeCodeInput("");
     setEmployeeCodeError("");
     setQuestion("");
-    for (const workspaceMode of ["mkac", "mes", "wms", "cctvai", "qa"]) {
+    for (const workspaceMode of ["mkac", "mes", "wms", "cctvai", "qa", "msm", "fivem1e"])  {
       for (const item of LANGUAGE_OPTIONS) {
         setModeMessages(workspaceMode, [], item);
         setModeSources(workspaceMode, [], item);
@@ -3516,7 +3523,7 @@ function App() {
 
             <span className="header-divider" role="separator" aria-hidden="true" />
 
-            {["mkac", "mes", "wms", "cctvai", "qa"].includes(mode) && employee && (
+            {EMPLOYEE_PROTECTED_MODES.has(mode) && employee && (
               <button
                 className="icon-button header-tool"
                 type="button"
@@ -3535,7 +3542,7 @@ function App() {
               title={t("common.clearConversation")}
               aria-label={t("common.clearConversation")}
               onClick={() => setConfirmClearOpen(true)}
-              disabled={busy || (mode === "msm" ? msmTurnCount === 0 : mode === "fivem1e" ? fivem1eTurnCount === 0 : messages.length === 0)}
+              disabled={busy || fivem1eStreaming || (mode === "msm" ? msmTurnCount === 0 : mode === "fivem1e" ? fivem1eTurnCount === 0 : messages.length === 0)}
             >
               <Trash2 size={18} />
             </button>
@@ -3615,26 +3622,28 @@ function App() {
               id="fivem1e-conversation"
               className={`conversation agent-workspace ${fivem1eTurnCount > 0 ? "has-conversation" : "is-welcome"}`}
               data-motion={agentMotion}
-              data-agent-state={agentPresence.state}
+              data-agent-state={activeAgentPresence.state}
               role="tabpanel"
               aria-label={currentMode.title}
             >
-              <AgentStatus presence={agentPresence} language={language} />
-              <RoamingRobot
-                state={agentPresence.state}
+              <AgentStatus presence={activeAgentPresence} language={language} />
+              {mkacAuthorized && <RoamingRobot
+                state={activeAgentPresence.state}
                 motion={agentMotion}
                 hasConversation={fivem1eTurnCount > 0}
-                hasError={false}
+                hasError={Boolean(fivem1eError)}
                 previewOpen={fivem1ePreviewOpen}
-              />
-              <Fivem1eMode
+              />}
+              {!mkacAuthorized ? <div className="conversation-scroll"><EmployeeLogin mode={mode} modeText={modeText} t={t} verifyEmployeeCode={verifyEmployeeCode} employeeCodeInput={employeeCodeInput} updateEmployeeCodeInput={updateEmployeeCodeInput} employeeCodeError={employeeCodeError} employeeVerifying={employeeVerifying} /></div> : <Fivem1eMode
                 key={fivem1eResetEpoch}
                 employeeId={employee?.id}
                 language={language}
-                presence={agentPresence}
+                presence={activeAgentPresence}
                 onTurnCountChange={setFivem1eTurnCount}
                 onPreviewOpenChange={setFivem1ePreviewOpen}
-              />
+                onStreamingChange={setFivem1eStreaming}
+                onErrorChange={setFivem1eError}
+              />}
             </section>
           ) : (
           <>

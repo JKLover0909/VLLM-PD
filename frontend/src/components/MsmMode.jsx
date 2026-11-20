@@ -12,6 +12,7 @@ import {
   streamMsmQuery,
   submitMsmForm,
   lookupMsmCategory,
+  shouldSubmitOnEnter,
 } from "../msm-mode";
 import "../msm-mode.css";
 
@@ -289,7 +290,7 @@ function MsmForm({ form, employeeId, onSubmit, onCancel }) {
 
   function handleKeyDown(event) {
     if (event.nativeEvent?.isComposing || event.keyCode === 229) return;
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (shouldSubmitOnEnter(event)) {
       event.preventDefault();
       handleNext();
     }
@@ -626,7 +627,7 @@ export default function MsmMode({ employeeId, language, presence, ReportArtifact
   }
 
   function onKeyDown(event) {
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (shouldSubmitOnEnter(event)) {
       event.preventDefault();
       event.currentTarget.form?.requestSubmit();
     }
@@ -730,7 +731,7 @@ export default function MsmMode({ employeeId, language, presence, ReportArtifact
 
   return (
     <div className="msm-mode" lang={language === "ja" ? "ja" : "vi"} aria-label={COPY.emptyTitle}>
-      <div className="msm-scroll">
+      <div className="msm-scroll conversation-scroll">
         {turns.length === 0 ? (
           <div className="empty-conversation">
             <div className="empty-copy">

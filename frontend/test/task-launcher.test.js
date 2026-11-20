@@ -213,3 +213,10 @@ test("maps all 4 5M1E starter prompts to labels and icons in VI and JA", () => {
     "ranking",
   ]);
 });
+
+test("keeps primary and other groups independent when one group is missing", () => {
+  const primary = [{ question: "Primary question", label: "Primary" }];
+  const groups = buildTaskGroups("fivem1e", primary, "vi");
+  assert.deepEqual(groups.primary.map((task) => task.label), ["Primary"]);
+  assert.deepEqual(groups.other, []);
+});

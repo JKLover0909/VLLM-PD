@@ -7,6 +7,7 @@ import {
   reduceMsmEvent,
   submitMsmForm,
   lookupMsmCategory,
+  shouldSubmitOnEnter,
 } from "../src/msm-mode.js";
 
 test("buildMsmPayload trims the question and keeps the session", () => {
@@ -92,4 +93,10 @@ test("reduceMsmEvent collects artifact from done event", () => {
   });
   assert.equal(state.artifact.id, "art-1");
   assert.equal(state.artifact.report_type, "msm_executive_report");
+});
+
+test("does not submit Enter while an IME composition is active", async () => {
+  assert.equal(shouldSubmitOnEnter({ key: "Enter", shiftKey: false, nativeEvent: { isComposing: true } }), false);
+  assert.equal(shouldSubmitOnEnter({ key: "Enter", keyCode: 229, shiftKey: false, nativeEvent: {} }), false);
+  assert.equal(shouldSubmitOnEnter({ key: "Enter", shiftKey: false, nativeEvent: {} }), true);
 });

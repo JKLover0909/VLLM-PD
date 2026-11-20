@@ -1,5 +1,9 @@
 import { streamQuery } from "./query-stream.js";
 
+export function shouldSubmitOnEnter(event) {
+  return event?.key === "Enter" && !event.shiftKey && !event.nativeEvent?.isComposing && event.keyCode !== 229;
+}
+
 // Tin nhắn gửi proxy MSM: meibook giữ session_id của chính nó, server map sang
 // thread của agent. Câu hỏi cắt khoảng trắng đầu/cuối trước khi gửi.
 export function buildMsmPayload({ sessionId, question, employeeId }) {

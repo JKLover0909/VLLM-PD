@@ -115,3 +115,12 @@ test("streamQuery posts to the endpoint it is given", async () => {
   await streamQuery({ a: 1 }, () => {}, undefined, fetchImpl, "/msm/query/stream");
   assert.deepEqual(seen, ["/msm/query/stream"]);
 });
+
+test("rejects 5M1E streams that end without done or error", async () => {
+  const { response, state } = responseFromChunks([event({ type: "token", content: "partial" })]);
+  await assert.rejects(
+    streamQuery({ mode: "fivem1e" }, () => {}, undefined, async () => response, "/fivem1e/query/stream", { requireTerminal: true }),
+    /FIVEM1E_INCOMPLETE_STREAM/,
+  );
+  assert.equal(state.released, true);
+});

@@ -8,7 +8,7 @@ import { getMessageMarkdownOptions } from "../markdown-tables";
 import {
   buildFivem1ePayload,
   initialFivem1eState,
-  reduceFivem1eEvent,
+  reduceFivem1eEvent, canSubmitFivem1eQuestion, shouldApplyFivem1eEvent, stopFivem1eQuery,
   streamFivem1eQuery,
 } from "../fivem1e-mode.js";
 import "../msm-mode.css";
@@ -64,7 +64,7 @@ export function Fivem1eMode({
   language = "vi",
   presence,
   onTurnCountChange,
-  onPreviewOpenChange,
+  onPreviewOpenChange, onStreamingChange, onErrorChange,
 }) {
   const [turns, setTurns] = useState([]);
   const [draft, setDraft] = useState("");
@@ -82,6 +82,7 @@ export function Fivem1eMode({
         : `fivem1e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   }
   const abortRef = useRef(null);
+  const activeTurnRef = useRef(null);
   const textareaRef = useRef(null);
   const scrollRef = useRef(null);
 
@@ -114,17 +115,30 @@ export function Fivem1eMode({
   }, [turns, scrollToBottom]);
 
   const cancelActiveStream = useCallback(() => {
-    if (abortRef.current) {
-      abortRef.current.abort();
+    const controller = abortRef.current;
+    if (controller) {
+      controller.abort();
       abortRef.current = null;
+      void stopFivem1eQuery({ sessionId: sessionIdRef.current, employeeId });
     }
+    activeTurnRef.current = null;
     setStreaming(false);
-  }, []);
+    onStreamingChange?.(false);
+  }, [employeeId, onStreamingChange]);
+
+  useEffect(() => () => {
+    const controller = abortRef.current;
+    if (controller) {
+      controller.abort();
+      void stopFivem1eQuery({ sessionId: sessionIdRef.current, employeeId });
+    }
+    activeTurnRef.current = null;
+  }, [employeeId]);
 
   const submitQuestion = useCallback(
     async (rawQuestion) => {
       const q = String(rawQuestion || "").trim();
-      if (!q || streaming) return;
+      if (!canSubmitFivem1eQuestion({ question: q, employeeId }) || streaming) return;
 
       cancelActiveStream();
 
@@ -137,6 +151,8 @@ export function Fivem1eMode({
         error: null,
         done: false,
       };
+      activeTurnRef.current = newTurn.id;
+      onErrorChange?.("");
 
       setTurns((prev) => [...prev, newTurn]);
       setDraft("");
@@ -144,6 +160,7 @@ export function Fivem1eMode({
       setTaskPreviewDraft("");
       setShowFreeInput(false);
       setStreaming(true);
+      onStreamingChange?.(true);
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -151,20 +168,18 @@ export function Fivem1eMode({
       let currentState = initialFivem1eState();
 
       const onEvent = (event) => {
+        if (!shouldApplyFivem1eEvent({ turnId: newTurn.id, activeTurnId: activeTurnRef.current, controller, activeController: abortRef.current })) return;
         currentState = reduceFivem1eEvent(currentState, event);
+        if (event?.type === "error") onErrorChange?.(event.code || "");
         setTurns((prev) => {
-          if (!prev.length) return prev;
-          const lastIdx = prev.length - 1;
-          const updated = [...prev];
-          updated[lastIdx] = {
-            ...updated[lastIdx],
+          return prev.map((turn) => turn.id === newTurn.id ? {
+            ...turn,
             answer: currentState.answer,
             meta: currentState.meta,
             pills: currentState.pills,
             error: currentState.error,
             done: currentState.done,
-          };
-          return updated;
+          } : turn);
         });
       };
 
@@ -176,38 +191,33 @@ export function Fivem1eMode({
         });
         await streamFivem1eQuery(payload, onEvent, controller.signal);
       } catch (err) {
-        if (err.name !== "AbortError") {
-          setTurns((prev) => {
-            if (!prev.length) return prev;
-            const lastIdx = prev.length - 1;
-            const updated = [...prev];
-            updated[lastIdx] = {
-              ...updated[lastIdx],
-              error: { code: "ERROR", message: err.message || "Lỗi kết nối" },
-              done: true,
-            };
-            return updated;
-          });
+        if (err.name !== "AbortError" && shouldApplyFivem1eEvent({ turnId: newTurn.id, activeTurnId: activeTurnRef.current, controller, activeController: abortRef.current })) {
+          onErrorChange?.(err.code || "ERROR");
+          setTurns((prev) => prev.map((turn) => turn.id === newTurn.id ? { ...turn, error: { code: err.code || "ERROR", message: err.message || "Lỗi kết nối" }, done: true } : turn));
         }
       } finally {
-        setStreaming(false);
-        abortRef.current = null;
+        if (activeTurnRef.current === newTurn.id && abortRef.current === controller) {
+          setStreaming(false);
+          onStreamingChange?.(false);
+          activeTurnRef.current = null;
+          abortRef.current = null;
+        }
       }
     },
-    [cancelActiveStream, employeeId, streaming]
+    [cancelActiveStream, employeeId, onErrorChange, onStreamingChange, streaming]
   );
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!draft.trim() || streaming || !employeeId) return;
+    if (!canSubmitFivem1eQuestion({ question: draft, employeeId }) || streaming) return;
     submitQuestion(draft);
   };
 
   const handleKeyDown = (e) => {
-    if (e.nativeEvent?.isComposing) return;
+    if (e.nativeEvent?.isComposing || e.keyCode === 229) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!draft.trim() || streaming || !employeeId) return;
+      if (!canSubmitFivem1eQuestion({ question: draft, employeeId }) || streaming) return;
       submitQuestion(draft);
     }
   };
@@ -216,7 +226,7 @@ export function Fivem1eMode({
 
   return (
     <div className="msm-mode" lang={language === "ja" ? "ja" : "vi"} aria-label={t.emptyTitle}>
-      <div className="msm-scroll" ref={scrollRef}>
+      <div className="msm-scroll conversation-scroll" ref={scrollRef}>
         {turns.length === 0 ? (
           <div className="empty-conversation">
             <div className="empty-copy">
@@ -273,13 +283,13 @@ export function Fivem1eMode({
           </div>
         ) : null}
 
-        {turns.map((turn) => (
+        {turns.map((turn, index) => (
           <div className="msm-turn" key={turn.id}>
             <article className="message user">
               <div className="message-avatar">U</div>
               <div className="message-content">{turn.question}</div>
             </article>
-            <article className="message assistant">
+            <article className="message assistant" data-latest={index === turns.length - 1 ? "true" : undefined}>
               <div className="message-avatar">
                 <Bot size={18} />
               </div>

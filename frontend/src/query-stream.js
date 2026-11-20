@@ -55,7 +55,7 @@ function terminalError(event) {
   return error;
 }
 
-export async function streamQuery(payload, onEvent, signal, fetchImpl = fetch, endpoint = "/query/stream") {
+export async function streamQuery(payload, onEvent, signal, fetchImpl = fetch, endpoint = "/query/stream", { requireTerminal = payload.mode === "qa", incompleteCode = payload.mode === "fivem1e" ? "FIVEM1E_INCOMPLETE_STREAM" : "QA_INCOMPLETE_STREAM" } = {}) {
   const response = await fetchImpl(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -82,7 +82,7 @@ export async function streamQuery(payload, onEvent, signal, fetchImpl = fetch, e
     throw error;
   }
   if (!response.body?.getReader) {
-    if (payload.mode === "qa") throw new Error("QA_INCOMPLETE_STREAM");
+    if (requireTerminal) throw new Error(incompleteCode);
     return;
   }
 
@@ -134,8 +134,8 @@ export async function streamQuery(payload, onEvent, signal, fetchImpl = fetch, e
       buffer = buffer.replace(/\r\n?/g, "\n");
       await consumeBlocks();
     }
-    if (payload.mode === "qa" && !terminal) {
-      throw new Error("QA_INCOMPLETE_STREAM");
+    if (requireTerminal && !terminal) {
+      throw new Error(incompleteCode);
     }
   } finally {
     if (!reachedEof) {
