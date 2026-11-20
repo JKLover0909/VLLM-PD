@@ -23,16 +23,16 @@ const FIVEM1E_MARKDOWN_OPTIONS = getMessageMarkdownOptions({ qa: true });
 
 const STARTER_PROMPTS = {
   vi: [
-    "Tìm báo cáo có mã quản lý HB-C04-2512-01",
-    "Báo cáo PCB_5M1E_20251216_0119 đang ở bước nào và tiến độ ra sao?",
-    "Có những báo cáo nào đang dừng ở bước 16?",
-    "Có bao nhiêu báo cáo theo từng hạng?",
+    { label: "Tra mã quản lý", question: "Tìm báo cáo có mã quản lý HB-C04-2512-01" },
+    { label: "Tiến độ 30 bước", question: "Báo cáo PCB_5M1E_20251216_0119 đang ở bước nào và tiến độ ra sao?" },
+    { label: "Báo cáo bước 16", question: "Có những báo cáo nào đang dừng ở bước 16?" },
+    { label: "Thống kê theo hạng", question: "Có bao nhiêu báo cáo theo từng hạng?" },
   ],
   ja: [
-    "管理コードHB-C04-2512-01のレポートを検索",
-    "レポートPCB_5M1E_20251216_0119の30ステップ進捗",
-    "ステップ16で待機中のレポート一覧",
-    "ランク別のレポート件数一覧",
+    { label: "管理コード検索", question: "管理コードHB-C04-2512-01のレポートを検索" },
+    { label: "30ステップ進捗", question: "レポートPCB_5M1E_20251216_0119の30ステップ進捗" },
+    { label: "ステップ16待機", question: "ステップ16で待機中のレポート一覧" },
+    { label: "ランク別件数", question: "ランク別のレポート件数一覧" },
   ],
 };
 
@@ -87,10 +87,13 @@ export function Fivem1eMode({
 
   const t = COPY[language] || COPY.vi;
   const starterPrompts = useMemo(() => {
-    const list = STARTER_PROMPTS[language] || STARTER_PROMPTS.vi;
-    return list.map((q) => ({ question: q }));
+    return STARTER_PROMPTS[language] || STARTER_PROMPTS.vi;
   }, [language]);
-  const taskGroups = useMemo(() => buildTaskGroups("fivem1e", starterPrompts, language), [starterPrompts, language]);
+  const taskGroups = useMemo(() => {
+    const res = buildTaskGroups("fivem1e", starterPrompts, language);
+    console.log("fivem1e taskGroups rendered:", res);
+    return res;
+  }, [starterPrompts, language]);
 
   const scrollToBottom = useCallback(() => {
     turnsEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -238,7 +241,7 @@ export function Fivem1eMode({
             <div className="msm-launcher-wrap">
               <TaskLauncher
                 mode="fivem1e"
-                starterPrompts={starterPrompts}
+                groups={taskGroups}
                 language={language}
                 selectedTask={selectedTask}
                 taskPreviewDraft={taskPreviewDraft}
